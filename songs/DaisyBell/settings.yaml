@@ -1,7 +1,7 @@
 # Different voice options [:np] [:nb] [:nh] [:nd] [:nf] [:nu] [:nr] [:nw] [:nk]
 
 # How much to shift pitches by (DECTALK Pitches not the same as midi, should be 48 off or so)
-noteOffset: -52 
+noteOffset: -48
 
 # Words are broken up into phonemes, the playback lengths of which must be specified in code
 # This is calculated by setting a standard fraction of each word to dedicate to consonants
@@ -10,15 +10,15 @@ consonantFractionTarget: 0.15
 consonantMinMs: 5
 consonantMaxMs: 75
 
-# Set Specific settings for each track
-# Make sure each track is listed here, included in the MIDI file, and has a .txt file in lyrics all with the same title
+# Set specific settings for each output track. LYRICS_FILENAME and TRACK_FILENAME
+# default to the output track name if omitted.
 Tracks:
   Vocals:
     DEC_SETUP: "[:np][:dv hs 125]"
     VOLUME_ADJUST_DB: 5.0
     VID_Label: "Lead"
     VID_HSB: [347, 79, 100]
-    VID_Position: [0.666, 0.0, 0.0]
+    VID_Position: [0.333, 0.333, 0.0]
 
   Alto:
     DEC_SETUP: "[:nk][:dv hs 75]"
@@ -30,6 +30,7 @@ Tracks:
     DEC_SETUP: "[:np][:dv hs 100]"
     VOLUME_ADJUST_DB: 5.0
     LYRICS_FILENAME: 'Tenor'
+    TRACK_FILENAME: 'Tenor1'
     VID_Label: "Tenor 1"
     VID_HSB: [339, 63, 53]
     VID_Position: [0.333, 0.666, 0.666]
@@ -38,6 +39,7 @@ Tracks:
     DEC_SETUP: "[:np][:dv hs 111]"
     VOLUME_ADJUST_DB: 5.0
     LYRICS_FILENAME: 'Tenor'
+    TRACK_FILENAME: 'Tenor2'
     VID_Label: "Tenor 2"
     VID_HSB: [322, 59, 65]
     VID_Position: [0.333, 0.333, 0.666]

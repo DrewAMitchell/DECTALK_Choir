@@ -8,12 +8,124 @@ DECTALK_Arpabet_Conversions = {
     'y':'yx',
 }
 
+DIRECT_VOWEL_PHONEMES = {
+    'aa', 'ae', 'ah', 'ao', 'ar', 'aw', 'ax', 'ay',
+    'eh', 'en', 'er', 'ey',
+    'ih', 'ir', 'iy', 'ix',
+    'or', 'ow', 'oy',
+    'uh', 'ur', 'uw', 'yu',
+}
+
+DIRECT_CONSONANT_PHONEMES = {
+    'b', 'ch', 'd', 'dh', 'dx', 'dz', 'f', 'g', 'hx',
+    'jh', 'k', 'l', 'll', 'lx', 'm', 'n', 'ng', 'nx',
+    'p', 'r', 'rr', 'rx', 's', 'sh', 't', 'th', 'tx',
+    'v', 'w', 'yx', 'z', 'zh',
+}
+
+DIRECT_PHONEMES = sorted(
+    DIRECT_VOWEL_PHONEMES | DIRECT_CONSONANT_PHONEMES,
+    key=len,
+    reverse=True,
+)
+
+Pronunciation_Overrides = {
+    'dong': ['D', 'AO1', 'NG'],
+    'feeling': ['F', 'IY1', 'L', 'IY0', 'NG'],
+    'the': ['TH', 'IY0'],
+    'to': ['T', 'UW1'],
+}
+
+
+def isDirectVowelPhoneme(phoneme):
+    phoneme = phoneme.lower()
+    while len(phoneme) > 0 and not phoneme[0].isalpha():
+        phoneme = phoneme[1:]
+    return phoneme in DIRECT_VOWEL_PHONEMES
+
+
+def splitDirectPhonemeSyllable(syllable, strict=False):
+    syllable = syllable.strip().lower()
+    outPhonemes = []
+    syllableIndex = 0
+
+    while syllableIndex < len(syllable):
+        prefix = ''
+        if not syllable[syllableIndex].isalpha():
+            prefix = syllable[syllableIndex]
+            syllableIndex += 1
+            if syllableIndex >= len(syllable):
+                if strict:
+                    return([])
+                outPhonemes.append(prefix)
+                break
+
+        matchPhoneme = None
+        remainingSyllable = syllable[syllableIndex:]
+        for phoneme in DIRECT_PHONEMES:
+            if remainingSyllable.startswith(phoneme):
+                matchPhoneme = phoneme
+                break
+
+        if matchPhoneme is None:
+            if strict:
+                return([])
+            outPhonemes.append(prefix + syllable[syllableIndex])
+            syllableIndex += 1
+        else:
+            outPhonemes.append(prefix + matchPhoneme)
+            syllableIndex += len(matchPhoneme)
+
+    return(outPhonemes)
+
+
+def stressDirectVowels(outPhonemes):
+    stressedPhonemes = []
+    for phoneme in outPhonemes:
+        if isDirectVowelPhoneme(phoneme):
+            stressedPhonemes.append(phoneme + '1')
+        else:
+            stressedPhonemes.append(phoneme)
+    return(stressedPhonemes)
+
+
+def convertDirectSyllableToPhonemes(fooWord):
+    if len(fooWord) == 0 or fooWord[0] != '`':
+        return([])
+
+    outPhonemes = splitDirectPhonemeSyllable(fooWord[1:], strict=True)
+    if len(outPhonemes) == 0 or not any(isDirectVowelPhoneme(foo) for foo in outPhonemes):
+        return([])
+    return(stressDirectVowels(outPhonemes))
+
+
+def normalizeSungPhonemes(outPhonemes):
+    for ii in range(len(outPhonemes) -1):
+        phoneme = outPhonemes[ii]
+        nextPhoneme = outPhonemes[ii+1]
+        if phoneme[:2].upper() == 'IH' and nextPhoneme.upper() == 'NG':
+            outPhonemes[ii] = 'IY' + phoneme[2:]
+    return(outPhonemes)
+
 
 def convertWordToPhonemes(fooWord, convertLowercase=True, DECTALK_check=True):
-    outPhonemes = cmu_dict[fooWord] 
-    if len(outPhonemes) == 0: return([])
-    outPhonemes = outPhonemes[-1]
-    
+    if fooWord in Pronunciation_Overrides:
+        outPhonemes = Pronunciation_Overrides[fooWord].copy()
+    else:
+        try:
+            outPhonemes = cmu_dict[fooWord]
+        except KeyError:
+            outPhonemes = splitDirectPhonemeSyllable(fooWord, strict=True)
+            if len(outPhonemes) == 0 or not any(isDirectVowelPhoneme(foo) for foo in outPhonemes):
+                return([])
+            outPhonemes = stressDirectVowels(outPhonemes)
+            print(f"      CMU fallback direct phonemes {fooWord} -> {outPhonemes}")
+        else:
+            if len(outPhonemes) == 0: return([])
+            outPhonemes = outPhonemes[-1].copy()
+
+    outPhonemes = normalizeSungPhonemes(outPhonemes)
+
     for ii in range(len(outPhonemes)):
         if convertLowercase: outPhonemes[ii] = outPhonemes[ii].lower()
 
@@ -21,7 +133,7 @@ def convertWordToPhonemes(fooWord, convertLowercase=True, DECTALK_check=True):
             if outPhonemes[ii] in DECTALK_Arpabet_Conversions:
                 print(f"      DECTALK Arpabet conversion {outPhonemes[ii]} -> {DECTALK_Arpabet_Conversions[outPhonemes[ii]]}")
                 outPhonemes[ii] = DECTALK_Arpabet_Conversions[outPhonemes[ii]]
-    
+
     return(outPhonemes)
 
 
@@ -32,13 +144,14 @@ def lyricsToPhonemes(lyricsFileName, printInfo=True, convertLowercase=True, DECT
     lyricRepetitions = 1
     for fooLine in readLyrics.readlines(): # Iterate over lines in lyric files
         currentLineIndex += 1
-        if fooLine[0] == '#': continue # Skip line if it's a comment
-        splt = fooLine[:-1].lower().split(' ') # Split line into words
-        
+        lineText = fooLine.rstrip('\r\n')
+        if lineText.startswith('#'): continue # Skip line if it's a comment
+        splt = lineText.lower().split(' ') # Split line into words
+
         currentLinePhonemes = []
         for fooWord in splt:    # Iterate over words in line
             if len(fooWord) == 0: continue  # If fooWord has no characters, skip
-            
+
             if fooWord[0] == '!': # !X Indicates to repeat the following line X times
                 try: lyricRepetitions = int(fooWord.split('!')[-1])
                 except:
@@ -51,61 +164,67 @@ def lyricsToPhonemes(lyricsFileName, printInfo=True, convertLowercase=True, DECT
 
             elif '*' in fooWord:    # * indicates that the word should be played for multiple notes per syllable
                 splitWord = fooWord.split('*')
-                outPhonemes = convertWordToPhonemes(splitWord[-1])
-                
+                if splitWord[-1].startswith('`'):
+                    outPhonemes = convertDirectSyllableToPhonemes(splitWord[-1])
+                else:
+                    outPhonemes = convertWordToPhonemes(splitWord[-1])
+
                 if len(outPhonemes) == 0:
                     print(f"ERROR: Unable to match \"{fooWord}\" to phonemes in {lyricsFileName}   (line {currentLineIndex})")
                     exit()
-                
+
                 try: outPhonemes = [int(splitWord[0])] + outPhonemes
                 except:
                     print(f"Error converting \"{fooWord}\" to repeat lyrics   (line {currentLineIndex})")
                     exit()
-                
+
 
             elif '|' in fooWord:    # X|Y|Z|lyric indicates notes per specific syllables
                 splitWord = fooWord.split('|')
-                outPhonemes = convertWordToPhonemes(splitWord[-1])
+                if splitWord[-1].startswith('`'):
+                    outPhonemes = convertDirectSyllableToPhonemes(splitWord[-1])
+                else:
+                    outPhonemes = convertWordToPhonemes(splitWord[-1])
 
 
                 if len(outPhonemes) == 0:
                     print(f"ERROR: Unable to match \"{fooWord}\" to phonemes in {lyricsFileName}   (line {currentLineIndex})")
                     exit()
-                
+
                 try:
                     outPhonemes = [[int(foo) for foo in splitWord[:-1]]] + outPhonemes
                 except:
                     print(f"ERROR: Unable to converting \"{fooWord}\" to phonemes in {lyricsFileName}   (line {currentLineIndex})")
-                    
+
             else:   # No special case, convert directly
                 outPhonemes = convertWordToPhonemes(fooWord)
 
                 if len(outPhonemes) == 0:
                     print(f"ERROR: Unable to match \"{fooWord}\" to phonemes in {lyricsFileName}   (line {currentLineIndex})")
                     exit()
-            
+
             currentLinePhonemes.append(outPhonemes)
             if printInfo: print(f"{fooWord} -> {currentLinePhonemes[-1]}")
-        
+
         if printInfo: print('')
         currentLinePhonemes.append(['\n'])
 
         for ii in range(lyricRepetitions):
             outLyrics = outLyrics + currentLinePhonemes
-            
+
         lyricRepetitions = 1
-    
+
     return(outLyrics)
 
 
 def savePhonemesToFile(phonemes, fileName):
     outFile = open(fileName, 'w')
-    
+
     for foo in phonemes:
         for bar in foo:
             outFile.write(f"{bar} ")
         outFile.write('     ')
-    
+
     outFile.close()
 
 
@@ -122,5 +241,5 @@ def loadPhonemesFromFile(fileName):
         else:
             for foo in lineSplt[:-1]:
                 phonemes.append(foo.split(' '))
-    
+
     inFile.close()

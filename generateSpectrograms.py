@@ -14,12 +14,89 @@ from PIL import Image, ImageDraw
 import sys
 import os
 import time
+from pathlib import Path
 
 import pyFuncs.spectrogramAnimation as specAnimate
 
 
-videoDimensions = (2560, 1440) # Width and height of video
+BASE_DIR = Path(__file__).resolve().parent
+os.chdir(BASE_DIR)
+
+DEFAULT_VIDEO_DIMENSIONS = (2560, 1440) # Width and height of video if host size is unavailable
 framesPerSecond = 30 # Output FPS
+
+
+def _even_dimension(value):
+    value = max(2, int(round(float(value))))
+    if value % 2:
+        value -= 1
+    return value
+
+
+def _parse_video_dimensions(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        for delimiter in ('x', 'X', ',', ' '):
+            value = value.replace(delimiter, ' ')
+        parts = [part for part in value.split() if part]
+    else:
+        parts = list(value)
+    if len(parts) != 2:
+        return None
+    try:
+        return (_even_dimension(parts[0]), _even_dimension(parts[1]))
+    except (TypeError, ValueError):
+        return None
+
+
+def _host_video_dimensions():
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            pass
+        user32 = ctypes.windll.user32
+        dims = (user32.GetSystemMetrics(0), user32.GetSystemMetrics(1))
+        if dims[0] > 0 and dims[1] > 0:
+            return (_even_dimension(dims[0]), _even_dimension(dims[1]))
+    except Exception:
+        pass
+
+    try:
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()
+        dims = (root.winfo_screenwidth(), root.winfo_screenheight())
+        root.destroy()
+        if dims[0] > 0 and dims[1] > 0:
+            return (_even_dimension(dims[0]), _even_dimension(dims[1]))
+    except Exception:
+        pass
+
+    return None
+
+
+def _video_dimensions(settings_yaml):
+    env_dims = _parse_video_dimensions(os.environ.get('DECTALK_VIDEO_SIZE'))
+    if env_dims:
+        print(f"Using DECTALK_VIDEO_SIZE: {env_dims}")
+        return env_dims
+
+    configured_dims = _parse_video_dimensions(settings_yaml.get('videoDimensions'))
+    if configured_dims:
+        print(f"Using settings videoDimensions: {configured_dims}")
+        return configured_dims
+
+    host_dims = _host_video_dimensions()
+    if host_dims:
+        print(f"Using host video dimensions: {host_dims}")
+        return host_dims
+
+    print(f"Using default video dimensions: {DEFAULT_VIDEO_DIMENSIONS}")
+    return DEFAULT_VIDEO_DIMENSIONS
+
 
 # Make sure song is specified in command
 if len(sys.argv) < 2:
@@ -44,6 +121,8 @@ try:
 except:
     print(f"songs/{songTitle}/settings.yaml NOT FOUND")
     exit()
+
+videoDimensions = _video_dimensions(settings_yaml)
 
 # Folder for output files
 os.makedirs(f"outputs/{songTitle}/_animation", exist_ok = True)

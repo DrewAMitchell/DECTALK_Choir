@@ -21,6 +21,8 @@ Tracks:
     # VID_LabelDur: 4.0
     # VID_LabelFade: 1.0
     OCTAVE_BOOST: 2
+    SEGMENT_NORMALIZE_TARGET_DBFS: -10.0
+    SEGMENT_NORMALIZE_MAX_BOOST_DB: 15.0
     
   Alto:
     DEC_SETUP: "[:nk][:dv hs 100]"

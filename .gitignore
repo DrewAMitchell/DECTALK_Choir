@@ -6,6 +6,7 @@ outputs/*
 zips/*
 klattclassic/*
 dectalk/*
+external/*
 
 # Ignore all songs except for the 3 example tracks
 

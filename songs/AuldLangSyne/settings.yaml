@@ -1,7 +1,7 @@
 # Different voice options [:np] [:nb] [:nh] [:nd] [:nf] [:nu] [:nr] [:nw] [:nk]
 
 # How much to shift pitches by (DECTALK Pitches not the same as midi, should be 48 off or so)
-noteOffset: -52 
+noteOffset: -52
 
 # Words are broken up into phonemes, the playback lengths of which must be specified in code
 # This is calculated by setting a standard fraction of each word to dedicate to consonants
@@ -10,15 +10,25 @@ consonantFractionTarget: 0.25
 consonantMinMs: 5
 consonantMaxMs: 100
 
+# Gaps at or below this threshold are folded into the previous note instead of emitted as rests.
+# Tracks can override this with GAP_MEND_MS.
+gapMendMs: 20
+
 # Set Specific settings for each track
 # Make sure each track is listed here, included in the MIDI file, and has a .txt file in lyrics all with the same title
 Tracks:
   Soprano:
     DEC_SETUP: "[:np][:dv hs 95]"
-    VOLUME_ADJUST_DB: 7.0
+    VOLUME_ADJUST_DB: 15.0
+    PITCH_VOLUME_BOOST_START: 29
+    PITCH_VOLUME_BOOST_DB_PER_SEMITONE: 1.2
+    PITCH_VOLUME_BOOST_MAX_DB: 6.0
+    SEGMENT_NORMALIZE_PITCH_START: 29
+    SEGMENT_NORMALIZE_TARGET_DBFS: -18.0
+    SEGMENT_NORMALIZE_MAX_BOOST_DB: 8.0
     VID_HSB: [328, 70, 97]
     VID_Position: [0.5, 0.0, 0.0]
-    
+
   Alto:
     DEC_SETUP: "[:nk][:dv hs 100]"
     VOLUME_ADJUST_DB: 0.0
@@ -30,10 +40,10 @@ Tracks:
     VOLUME_ADJUST_DB: -5.0
     VID_HSB: [322, 59, 65]
     VID_Position: [0.5, 0.0, 0.5]
-    
+
   Bass:
     DEC_SETUP: "[:np][:dv hs 120]"
     VOLUME_ADJUST_DB: -10.0
     VID_HSB: [301, 49, 41]
     VID_Position: [0.5, 0.5, 0.5]
-    
+
