@@ -1,0 +1,2 @@
+# Native Windows operator interface for the existing choir.py command contract.
+PySide6==6.11.1
