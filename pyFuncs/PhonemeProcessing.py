@@ -36,6 +36,71 @@ Pronunciation_Overrides = {
     'to': ['T', 'UW1'],
 }
 
+LINE_TIMING_MARKER = '@line_timing'
+
+
+def parseClockTimestampMs(timeText):
+    timeText = timeText.strip().lower()
+    if len(timeText) == 0:
+        return(None)
+
+    if timeText.endswith('ms'):
+        return(round(float(timeText[:-2])))
+
+    if timeText.endswith('s'):
+        return(round(float(timeText[:-1]) * 1000))
+
+    if ':' in timeText:
+        fields = timeText.split(':')
+        seconds = 0.0
+        multiplier = 1.0
+        for field in reversed(fields):
+            if len(field) == 0:
+                raise ValueError(f"Invalid timestamp field in {timeText}")
+            seconds += float(field) * multiplier
+            multiplier *= 60.0
+        return(round(seconds * 1000))
+
+    return(round(float(timeText) * 1000))
+
+
+def parseDurationMs(durationText):
+    durationText = durationText.strip().lower()
+    if len(durationText) == 0:
+        return(None)
+
+    if durationText.endswith('ms'):
+        return(round(float(durationText[:-2])))
+
+    if durationText.endswith('s') or ':' in durationText:
+        return(parseClockTimestampMs(durationText))
+
+    return(round(float(durationText)))
+
+
+def parseLineTimingToken(fooWord):
+    fooWord = fooWord.strip()
+    if len(fooWord) < 2 or fooWord[0] != '[' or fooWord[-1] != ']':
+        return(None)
+
+    timingText = fooWord[1:-1].strip()
+    if len(timingText) == 0:
+        raise ValueError("Empty line timing token")
+
+    timingParts = timingText.split('|')
+    if len(timingParts) > 2:
+        raise ValueError(f"Invalid line timing token {fooWord}")
+
+    startMs = parseClockTimestampMs(timingParts[0])
+    durationMs = None
+    if len(timingParts) == 2:
+        durationMs = parseDurationMs(timingParts[1])
+
+    if startMs is None and durationMs is None:
+        raise ValueError(f"Line timing token {fooWord} did not specify a start or duration")
+
+    return([LINE_TIMING_MARKER, startMs, durationMs])
+
 
 def isDirectVowelPhoneme(phoneme):
     phoneme = phoneme.lower()
@@ -152,7 +217,20 @@ def lyricsToPhonemes(lyricsFileName, printInfo=True, convertLowercase=True, DECT
         for fooWord in splt:    # Iterate over words in line
             if len(fooWord) == 0: continue  # If fooWord has no characters, skip
 
-            if fooWord[0] == '!': # !X Indicates to repeat the following line X times
+            if fooWord[0] == '[':
+                try:
+                    lineTiming = parseLineTimingToken(fooWord)
+                except ValueError as err:
+                    print(f"ERROR: {err} in {lyricsFileName}   (line {currentLineIndex})")
+                    exit()
+
+                if lineTiming is not None:
+                    outPhonemes = lineTiming
+                else:
+                    print(f"ERROR: Invalid line timing token \"{fooWord}\" in {lyricsFileName}   (line {currentLineIndex})")
+                    exit()
+
+            elif fooWord[0] == '!': # !X Indicates to repeat the following line X times
                 try: lyricRepetitions = int(fooWord.split('!')[-1])
                 except:
                     print(f"Error converting \"{fooWord}\" to repeat lyrics   (line {currentLineIndex})")

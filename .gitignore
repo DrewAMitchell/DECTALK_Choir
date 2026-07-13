@@ -2,6 +2,11 @@
 outputs/*
 *.pyc
 
+# Choir Studio build artifacts
+choir_studio/node_modules/
+choir_studio/dist/
+choir_studio/src-tauri/target/
+
 # Extra folders
 zips/*
 klattclassic/*
@@ -15,3 +20,4 @@ songs/*
 !songs/CarolOfTheBells_Short*
 !songs/AuldLangSyne*
 !songs/DaisyBell*
+!songs/OctaveBoostReference*

@@ -15,24 +15,27 @@ def loadMidiData(midiFileName, printInfo=True):
 	notesByChannel = []
 	trackNames = []
 
-	active_notes = []
-	active_times = []
-
 	trackTempo = 300000
 	
 	for channel, track in enumerate(mid.tracks):
 		if printInfo: print('\nTrack {}: {}'.format(channel, track.name))
-		# channel = 0
+		# Match the inspector/import workflow's stable name for unnamed MIDI
+		# tracks. Without this fallback, every unnamed track became
+		# ``loremIpsum`` and could not be selected by Track NN settings.
+		default_title = f'Track {channel:02d}'
 		notesByChannel.append({
-			'title':'loremIpsum',
+			'title': default_title,
 			'tempo':trackTempo,
 			'ticks_per_beat':mid.ticks_per_beat,
 			'note':[],
 			'velocity':[],
 			'start':[],
 			'end':[],
-			})
+		})
 		ii = 0
+		active_notes = []
+		active_times = []
+		active_velocities = []
 
 		currTime = 0
 		for msg in track:
@@ -42,7 +45,8 @@ def loadMidiData(midiFileName, printInfo=True):
 				if printInfo: print(f'   name:{msg}      {ii}')
 				ii = 0
 				trackNames.append(msg.name)
-				notesByChannel[channel]['title'] = msg.name
+				if msg.name.strip():
+					notesByChannel[channel]['title'] = msg.name
 				# channel += 1
 				continue
 			# print(f'   {msg}')
@@ -69,24 +73,30 @@ def loadMidiData(midiFileName, printInfo=True):
 
 			# print(msg)
 
-			if msg.type == 'note_on':
-				active_notes.append( msg.note  )
-				active_times.append( currTime )
-			elif msg.note in active_notes:
+			is_note_on = msg.type == 'note_on' and msg.velocity > 0
+			is_note_off = msg.type == 'note_off' or (
+				msg.type == 'note_on' and msg.velocity == 0
+			)
+			if is_note_on:
+				active_notes.append(msg.note)
+				active_times.append(currTime)
+				active_velocities.append(msg.velocity)
+			elif is_note_off and msg.note in active_notes:
 				noteInd = active_notes.index(msg.note)
 
 				# if notesByChannel[channel]['title'] == 'Alto':print(f"    {msg.type}     {msg.note}     {active_times[noteInd]} -> {currTime}")
 				
 				notesByChannel[channel]['note'].append( msg.note )
-				notesByChannel[channel]['velocity'].append( msg.velocity )
+				notesByChannel[channel]['velocity'].append(active_velocities[noteInd])
 				notesByChannel[channel]['start'].append( active_times[noteInd] )
 				notesByChannel[channel]['end'].append( currTime )
 				
 
 				del active_notes[noteInd]
 				del active_times[noteInd]
+				del active_velocities[noteInd]
 				# notesByChannel[channel]['note'].append( 255 )
-			else:
+			elif is_note_off:
 				print(f"ERROR: {msg}")
 				
 	return(notesByChannel)

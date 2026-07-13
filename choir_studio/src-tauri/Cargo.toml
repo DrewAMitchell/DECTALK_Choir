@@ -1,0 +1,16 @@
+[package]
+name = "dectalk-choir-studio"
+version = "0.1.0"
+description = "CSS-capable local workspace for the DECTALK choir compiler"
+authors = ["DECTALK Choir contributors"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+windows-sys = { version = "0.59", features = ["Win32_Media_Multimedia"] }

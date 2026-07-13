@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a choir-ready MIDI whose note tracks are all monophonic.
+"""Create a choir-ready MIDI whose selected note tracks are monophonic.
 
 The source file is never modified.  A polyphonic source track is expanded into
 the smallest number of voice tracks required to prevent note overlap.  Notes
@@ -12,6 +12,9 @@ Examples:
 
     .\.venv\Scripts\python.exe tools\split_polyphonic_midi.py input.mid ^
         --output output_monophonic.mid
+
+    .\.venv\Scripts\python.exe tools\split_polyphonic_midi.py input.mid ^
+        --track-index 4 --output output_monophonic.mid
 """
 
 from __future__ import annotations
@@ -287,17 +290,27 @@ def note_signature(analysis: TrackAnalysis) -> Counter[tuple[int, int, int, int,
     )
 
 
-def split_midi(source: Path, output: Path) -> list[tuple[TrackAnalysis, list[VoiceLane]]]:
-    """Write a monophonic-track MIDI and return the source-to-lane mapping."""
+def split_midi(
+    source: Path,
+    output: Path,
+    target_track_indices: Sequence[int] | None = None,
+) -> list[tuple[TrackAnalysis, list[VoiceLane]]]:
+    """Write a MIDI with selected source tracks split into monophonic lanes."""
 
     source_midi = mido.MidiFile(source)
     analyses = [parse_track(track, index) for index, track in enumerate(source_midi.tracks)]
     result_type = source_midi.type
     output_midi = mido.MidiFile(type=result_type, ticks_per_beat=source_midi.ticks_per_beat)
     mappings: list[tuple[TrackAnalysis, list[VoiceLane]]] = []
+    target_output_indices: list[int] = []
+    target_indices = set(target_track_indices) if target_track_indices is not None else None
+    if target_indices is not None:
+        invalid_indices = sorted(index for index in target_indices if index < 0 or index >= len(analyses))
+        if invalid_indices:
+            raise MidiSplitError(f"MIDI track index(es) not present: {invalid_indices}.")
 
     for source_track, analysis in zip(source_midi.tracks, analyses):
-        if not analysis.notes:
+        if not analysis.notes or (target_indices is not None and analysis.source_index not in target_indices):
             output_midi.tracks.append(clone_non_note_track(source_track))
             continue
 
@@ -308,19 +321,33 @@ def split_midi(source: Path, output: Path) -> list[tuple[TrackAnalysis, list[Voi
                 f"lanes but received {len(lanes)}."
             )
         mappings.append((analysis, lanes))
+        first_output_index = len(output_midi.tracks)
         for lane_number, lane in enumerate(lanes, start=1):
             output_midi.tracks.append(
                 build_lane_track(analysis, lane, lane_number, len(lanes))
             )
+        target_output_indices.extend(
+            range(first_output_index, len(output_midi.tracks))
+        )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output_midi.save(output)
-    verify_split(source, output)
+    verify_split(
+        source,
+        output,
+        target_track_indices=target_track_indices,
+        target_output_indices=target_output_indices if target_indices is not None else None,
+    )
     return mappings
 
 
-def verify_split(source: Path, output: Path) -> None:
-    """Ensure no note was lost and every output note track is monophonic."""
+def verify_split(
+    source: Path,
+    output: Path,
+    target_track_indices: Sequence[int] | None = None,
+    target_output_indices: Sequence[int] | None = None,
+) -> None:
+    """Ensure no note was lost and targeted output note tracks are monophonic."""
 
     source_midi = mido.MidiFile(source)
     output_midi = mido.MidiFile(output)
@@ -337,11 +364,37 @@ def verify_split(source: Path, output: Path) -> None:
     if source_notes != output_notes:
         raise MidiSplitError("Verification failed: output MIDI does not preserve the source notes.")
 
-    polyphonic_tracks = [
-        analysis.source_index
-        for analysis in output_analyses
-        if max_polyphony(analysis.notes) > 1
-    ]
+    if target_output_indices is not None:
+        polyphonic_tracks = [
+            index
+            for index in target_output_indices
+            if 0 <= index < len(output_analyses)
+            and max_polyphony(output_analyses[index].notes) > 1
+        ]
+    elif target_track_indices is None:
+        polyphonic_tracks = [
+            analysis.source_index
+            for analysis in output_analyses
+            if max_polyphony(analysis.notes) > 1
+        ]
+    else:
+        target_names = {
+            source_analyses[index].source_name
+            for index in target_track_indices
+            if 0 <= index < len(source_analyses)
+        }
+        polyphonic_tracks = [
+            analysis.source_index
+            for analysis in output_analyses
+            if (
+                analysis.source_name in target_names
+                or any(
+                    analysis.source_name.startswith(f"{name} - Voice ")
+                    for name in target_names
+                )
+            )
+            and max_polyphony(analysis.notes) > 1
+        ]
     if polyphonic_tracks:
         raise MidiSplitError(
             f"Verification failed: output tracks still overlap: {polyphonic_tracks}."
@@ -360,7 +413,7 @@ def write_summary(
         "DECTALK Choir MIDI split summary",
         f"Source: {source}",
         f"Output: {output}",
-        "Verification: all note-bearing output tracks are monophonic; note spans preserved.",
+        "Verification: targeted output lanes are monophonic; note spans preserved.",
         "",
     ]
     for analysis, lanes in mappings:
@@ -394,6 +447,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Text report path (default: beside the output MIDI).",
     )
+    parser.add_argument(
+        "--track-index",
+        type=int,
+        help="Only split this zero-based source track index; all other tracks pass through unchanged.",
+    )
     return parser.parse_args()
 
 
@@ -414,7 +472,12 @@ def main() -> int:
     ).expanduser().resolve()
 
     try:
-        mappings = split_midi(source, output)
+        target_track_indices = (
+            [args.track_index]
+            if args.track_index is not None
+            else None
+        )
+        mappings = split_midi(source, output, target_track_indices=target_track_indices)
     except (OSError, ValueError, MidiSplitError) as error:
         raise SystemExit(f"MIDI split failed: {error}") from error
 

@@ -10,6 +10,13 @@
       "python": "${workspaceFolder}/.venv/Scripts/python.exe",
       "console": "integratedTerminal",
       "justMyCode": true
+    },
+    {
+      "name": "DECTALK Choir Studio (Tauri)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm.cmd exec tauri dev",
+      "cwd": "${workspaceFolder}/choir_studio"
     }
   ]
 }

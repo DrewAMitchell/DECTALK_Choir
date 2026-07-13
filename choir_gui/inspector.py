@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict, deque
+import contextlib
 from dataclasses import dataclass, field
+import io
 from pathlib import Path
 from statistics import fmean, median
 from typing import Iterable
@@ -12,6 +14,8 @@ import math
 import mido
 from pydub import AudioSegment
 import yaml
+
+import pyFuncs.PhonemeProcessing as phoneme_processing
 
 from pyFuncs.PitchMapping import (
     DEFAULT_MAX_DECTALK_PITCH,
@@ -44,6 +48,10 @@ class MidiTrackInfo:
     name: str
     notes: tuple[MidiNote, ...]
     max_polyphony: int
+    overlap_regions: int
+    total_overlap_ms: float
+    longest_overlap_ms: float
+    duplicate_note_spans: int
     warnings: tuple[str, ...]
 
     @property
@@ -165,11 +173,88 @@ def _max_polyphony(notes: Iterable[MidiNote]) -> int:
     return maximum
 
 
+def _tick_to_milliseconds(midi: mido.MidiFile):
+    """Build a tempo-aware converter for overlap diagnostics and timeline labels."""
+
+    tempo_events: list[tuple[int, int, int]] = [(0, 0, 500000)]
+    for track_index, track in enumerate(midi.tracks):
+        absolute_tick = 0
+        for event_index, message in enumerate(track):
+            absolute_tick += message.time
+            if message.type == "set_tempo":
+                tempo_events.append((absolute_tick, track_index * 100000 + event_index, message.tempo))
+    tempo_events.sort()
+
+    segments: list[tuple[int, int]] = []
+    for tick, _, tempo in tempo_events:
+        if segments and segments[-1][0] == tick:
+            segments[-1] = (tick, tempo)
+        else:
+            segments.append((tick, tempo))
+
+    def convert(tick: int) -> float:
+        elapsed_ms = 0.0
+        previous_tick = 0
+        tempo = 500000
+        for segment_tick, segment_tempo in segments:
+            if segment_tick > tick:
+                break
+            elapsed_ms += (segment_tick - previous_tick) * tempo / midi.ticks_per_beat / 1000
+            previous_tick = segment_tick
+            tempo = segment_tempo
+        elapsed_ms += (tick - previous_tick) * tempo / midi.ticks_per_beat / 1000
+        return elapsed_ms
+
+    return convert
+
+
+def _overlap_metrics(notes: Iterable[MidiNote], tick_to_ms) -> tuple[int, float, float]:
+    """Report actual simultaneous-note time, ignoring zero-length event boundaries."""
+
+    events: list[tuple[int, int]] = []
+    for note in notes:
+        if note.end_tick > note.start_tick:
+            events.extend(((note.start_tick, 1), (note.end_tick, -1)))
+    events.sort(key=lambda event: (event[0], event[1]))
+
+    active = 0
+    overlap_start_tick: int | None = None
+    durations_ms: list[float] = []
+    for tick, change in events:
+        before = active
+        active += change
+        if before <= 1 and active > 1:
+            overlap_start_tick = tick
+        elif before > 1 and active <= 1 and overlap_start_tick is not None:
+            duration_ms = tick_to_ms(tick) - tick_to_ms(overlap_start_tick)
+            if duration_ms > 0:
+                durations_ms.append(duration_ms)
+            overlap_start_tick = None
+
+    return len(durations_ms), sum(durations_ms), max(durations_ms, default=0.0)
+
+
+def _unique_note_spans(notes: Iterable[MidiNote]) -> tuple[tuple[MidiNote, ...], int]:
+    """Ignore exact duplicate spans when deciding whether a track has a second voice."""
+
+    unique: list[MidiNote] = []
+    seen: set[tuple[int, int, int, int]] = set()
+    duplicates = 0
+    for note in notes:
+        identity = (note.start_tick, note.end_tick, note.pitch, note.channel)
+        if identity in seen:
+            duplicates += 1
+            continue
+        seen.add(identity)
+        unique.append(note)
+    return tuple(unique), duplicates
+
+
 def inspect_midi(path: Path) -> MidiSummary:
     """Parse MIDI note spans without relying on the renderer's mutable state."""
 
     midi = mido.MidiFile(path)
-    tracks: list[MidiTrackInfo] = []
+    parsed_tracks: list[tuple[int, str, tuple[MidiNote, ...], tuple[str, ...]]] = []
     warnings: list[str] = []
 
     for index, track in enumerate(midi.tracks):
@@ -209,16 +294,30 @@ def inspect_midi(path: Path) -> MidiSummary:
         dangling = sum(len(values) for values in active.values())
         if dangling:
             track_warnings.append(f"{dangling} unmatched note-on event(s)")
+        name = _track_name(track, index)
+        parsed_tracks.append((index, name, tuple(notes), tuple(track_warnings)))
+        warnings.extend(f"{name}: {warning}" for warning in track_warnings)
+
+    tick_to_ms = _tick_to_milliseconds(midi)
+    tracks = []
+    for index, name, notes, track_warnings in parsed_tracks:
+        overlap_notes, duplicate_note_spans = _unique_note_spans(notes)
+        overlap_regions, total_overlap_ms, longest_overlap_ms = _overlap_metrics(
+            overlap_notes, tick_to_ms
+        )
         tracks.append(
             MidiTrackInfo(
                 index=index,
-                name=_track_name(track, index),
-                notes=tuple(notes),
-                max_polyphony=_max_polyphony(notes),
-                warnings=tuple(track_warnings),
+                name=name,
+                notes=notes,
+                max_polyphony=_max_polyphony(overlap_notes),
+                overlap_regions=overlap_regions,
+                total_overlap_ms=total_overlap_ms,
+                longest_overlap_ms=longest_overlap_ms,
+                duplicate_note_spans=duplicate_note_spans,
+                warnings=track_warnings,
             )
         )
-        warnings.extend(f"{_track_name(track, index)}: {warning}" for warning in track_warnings)
 
     return MidiSummary(
         path=path,
@@ -283,6 +382,13 @@ def _as_int(value: object, default: int) -> int:
         return default
 
 
+def _as_float(value: object, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _get_wrap_shift(pitches: list[int], minimum: int, maximum: int) -> int:
     candidates = range(-10 * SEMITONES_PER_OCTAVE, 10 * SEMITONES_PER_OCTAVE + 1, SEMITONES_PER_OCTAVE)
     fitting = [
@@ -316,6 +422,46 @@ def _dectalk_range(pitches: list[int]) -> str:
 
 def _audio_path(output_dir: Path, role: str) -> Path:
     return output_dir / "_tracks" / f"{role}.wav"
+
+
+def _has_lyric_content(path: Path) -> bool:
+    """Return whether a lyric file has at least one non-comment line."""
+    try:
+        return any(
+            line.strip() and not line.lstrip().startswith("#")
+            for line in path.read_text(encoding="utf-8").splitlines()
+        )
+    except OSError:
+        return False
+
+
+def _lyric_conversion_issue(path: Path) -> str | None:
+    """Return a concise conversion error without allowing choir.py's exit() to escape."""
+    if not _has_lyric_content(path):
+        return "lyric input is empty or comment-only"
+    output = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(output):
+            phonemes = phoneme_processing.lyricsToPhonemes(
+                str(path),
+                printInfo=False,
+                DECTALK_check=False,
+            )
+    except SystemExit:
+        message = next(
+            (
+                line.strip()
+                for line in reversed(output.getvalue().splitlines())
+                if line.strip()
+            ),
+            "lyric input could not be converted to phonemes",
+        )
+        return message
+    except (OSError, ValueError, KeyError) as error:
+        return f"lyric input could not be converted: {error}"
+    if not any(item != ["\n"] for item in phonemes):
+        return "lyric input produced no phonemes"
+    return None
 
 
 def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) -> SongInspection:
@@ -378,6 +524,10 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
     except ValueError as error:
         errors.append(str(error))
         minimum, maximum = DEFAULT_MIN_DECTALK_PITCH, DEFAULT_MAX_DECTALK_PITCH
+    overlap_tolerance_ms = max(
+        0.0,
+        _as_float(settings.get("monophonicOverlapToleranceMs"), 120.0),
+    )
 
     tracks_by_name: dict[str, list[MidiTrackInfo]] = defaultdict(list)
     if midi:
@@ -401,14 +551,38 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
         elif source_track is None:
             status = "Missing MIDI source"
             details.append(f"No MIDI track is named {source_name!r}.")
-        elif source_track.max_polyphony > 1:
+        elif source_track.max_polyphony > 2 or source_track.longest_overlap_ms > overlap_tolerance_ms:
             status = "Polyphonic source"
             details.append(
-                f"Source overlaps up to {source_track.max_polyphony} notes; split it before rendering."
+                f"Source overlaps up to {source_track.max_polyphony} notes; longest overlap is "
+                f"{source_track.longest_overlap_ms:.1f} ms (tolerance {overlap_tolerance_ms:.1f} ms). "
+                "Split it before rendering."
+            )
+        elif source_track.max_polyphony > 1:
+            details.append(
+                f"Transition overlap accepted: {source_track.overlap_regions} handoff region(s), "
+                f"longest {source_track.longest_overlap_ms:.1f} ms, total "
+                f"{source_track.total_overlap_ms:.1f} ms (tolerance {overlap_tolerance_ms:.1f} ms)."
+            )
+        if source_track and source_track.duplicate_note_spans:
+            details.append(
+                f"Ignored {source_track.duplicate_note_spans} exact duplicate MIDI note span(s) for polyphony assessment."
             )
         if not lyric_path.is_file():
             status = "Missing lyric input" if status == "Ready" else status
             details.append(f"Lyric file not found: lyrics/{lyric_stem}.txt")
+        elif not _has_lyric_content(lyric_path):
+            if status in {"Ready", "Polyphonic source"}:
+                status = "Missing lyric content"
+            details.append(
+                f"Lyric file is empty or comment-only: lyrics/{lyric_stem}.txt"
+            )
+        else:
+            lyric_issue = _lyric_conversion_issue(lyric_path)
+            if lyric_issue:
+                if status in {"Ready", "Polyphonic source"}:
+                    status = "Invalid lyric content"
+                details.append(lyric_issue)
         if source_track and source_track.warnings:
             details.extend(source_track.warnings)
 
