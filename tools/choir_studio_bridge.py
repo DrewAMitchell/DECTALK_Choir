@@ -370,7 +370,8 @@ def _replace_role_setting(path: Path, role: str, key: str, value: str) -> None:
     """Update one known per-role YAML setting without reformatting unrelated settings."""
 
     try:
-        text = path.read_text(encoding="utf-8")
+        with path.open("r", encoding="utf-8", newline="") as settings_file:
+            text = settings_file.read()
     except OSError as error:
         raise BridgeError(f"Could not read settings.yaml: {error}") from error
     newline = "\r\n" if "\r\n" in text else "\n"
@@ -397,7 +398,8 @@ def _replace_role_setting(path: Path, role: str, key: str, value: str) -> None:
     updated = "".join(lines)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
-        temporary.write_text(updated, encoding="utf-8")
+        with temporary.open("w", encoding="utf-8", newline="") as settings_file:
+            settings_file.write(updated)
         temporary.replace(path)
     except OSError as error:
         with contextlib.suppress(OSError):
@@ -405,7 +407,80 @@ def _replace_role_setting(path: Path, role: str, key: str, value: str) -> None:
         raise BridgeError(f"Could not save visualizer settings: {error}") from error
 
 
-def _save_visual_layout(song: str, role: str, position: object, hsb: object) -> dict[str, Any]:
+def _replace_role_mapping(
+    path: Path,
+    role: str,
+    key: str,
+    values: dict[str, object],
+    remove_keys: set[str] | None = None,
+) -> None:
+    """Replace one nested role mapping while preserving unrelated YAML text."""
+
+    try:
+        with path.open("r", encoding="utf-8", newline="") as settings_file:
+            text = settings_file.read()
+    except OSError as error:
+        raise BridgeError(f"Could not read settings.yaml: {error}") from error
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(keepends=True)
+    role_pattern = re.compile(rf"^  {re.escape(role)}:\s*(?:#.*)?(?:\r?\n)?$")
+    role_index = next((index for index, line in enumerate(lines) if role_pattern.match(line)), None)
+    if role_index is None:
+        raise BridgeError(f"Could not locate role {role!r} in settings.yaml without rewriting it.")
+    section_end = next(
+        (index for index in range(role_index + 1, len(lines)) if re.match(r"^  \S", lines[index])),
+        len(lines),
+    )
+    if remove_keys:
+        remove_pattern = re.compile(rf"^    (?:{'|'.join(re.escape(item) for item in sorted(remove_keys))}):\s*")
+        lines = [line for index, line in enumerate(lines) if not (role_index < index < section_end and remove_pattern.match(line))]
+        section_end = next(
+            (index for index in range(role_index + 1, len(lines)) if re.match(r"^  \S", lines[index])),
+            len(lines),
+        )
+    mapping_pattern = re.compile(rf"^    {re.escape(key)}:\s*(?:#.*)?(?:\r?\n)?$")
+    mapping_index = next(
+        (index for index in range(role_index + 1, section_end) if mapping_pattern.match(lines[index])),
+        None,
+    )
+    rendered = [f"    {key}:{newline}"] + [
+        f"      {child_key}: {_format_setting_value(value)}{newline}"
+        for child_key, value in values.items()
+    ] + [newline]
+    if mapping_index is None:
+        lines[section_end:section_end] = rendered
+    else:
+        mapping_end = next(
+            (index for index in range(mapping_index + 1, section_end) if re.match(r"^    \S", lines[index])),
+            section_end,
+        )
+        lines[mapping_index:mapping_end] = rendered
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="") as settings_file:
+            settings_file.write("".join(lines))
+        temporary.replace(path)
+    except OSError as error:
+        with contextlib.suppress(OSError):
+            temporary.unlink()
+        raise BridgeError(f"Could not save visualizer settings: {error}") from error
+
+
+VISUAL_TEXT_POSITIONS = frozenset({
+    "top-left", "top-center", "top-right",
+    "center-left", "center", "center-right",
+    "bottom-left", "bottom-center", "bottom-right",
+})
+
+
+def _visual_text_position(value: object, label: str, default: str) -> str:
+    position = str(value or default).strip().lower()
+    if position not in VISUAL_TEXT_POSITIONS:
+        raise BridgeError(f"{label} must be a supported position anchor.")
+    return position
+
+
+def _save_visual_layout(song: str, role: str, position: object, hsb: object, options: object = None) -> dict[str, Any]:
     size, left, top = _visual_triplet(position, "Visualizer position", 0.0, 1.0)
     if size <= 0.0:
         raise BridgeError("Visualizer size must be greater than zero.")
@@ -414,11 +489,39 @@ def _save_visual_layout(song: str, role: str, position: object, hsb: object) -> 
     hue, saturation, brightness = _visual_triplet(hsb, "Visualizer color", 0.0, 360.0)
     if saturation > 100.0 or brightness > 100.0:
         raise BridgeError("Visualizer saturation and brightness must be between 0 and 100.")
+    if options is None:
+        options = {}
+    if not isinstance(options, dict):
+        raise BridgeError("Visualizer text options must be an object.")
+    label = str(options.get("label", role)).strip() or role
+    if len(label) > 80 or "\n" in label or "\r" in label:
+        raise BridgeError("Visualizer label must be one line and no more than 80 characters.")
+    spectrogram = {
+        "COLOR_HSB": [hue, saturation, brightness],
+        "POSITION": [size, left, top],
+        "LABEL": label,
+        "LABEL_ENABLED": bool(options.get("label_enabled", False)),
+        "LABEL_POSITION": _visual_text_position(options.get("label_position"), "Label position", "top-left"),
+        "LABEL_SHOW_VOICE": bool(options.get("label_show_voice", False)),
+        "LABEL_SHOW_HEAD_SIZE": bool(options.get("label_show_head_size", False)),
+        "CURRENT_WORD_ENABLED": bool(options.get("current_word_enabled", False)),
+        "CURRENT_WORD_POSITION": _visual_text_position(options.get("current_word_position"), "Current-word position", "bottom-center"),
+    }
     song_dir, _ = load_settings(song)
     settings_path = song_dir / "settings.yaml"
-    _replace_role_setting(settings_path, role, "VID_HSB", _format_triplet([hue, saturation, brightness]))
-    _replace_role_setting(settings_path, role, "VID_Position", _format_triplet([size, left, top]))
-    return {"settings_path": str(settings_path), "position": [size, left, top], "hsb": [hue, saturation, brightness]}
+    _replace_role_mapping(
+        settings_path,
+        role,
+        "SPECTROGRAM",
+        spectrogram,
+        remove_keys={
+            "VID_HSB", "VID_Position", "VID_Label", "VID_LabelEnabled",
+            "VID_LabelPosition", "VID_LabelShowVoice", "VID_LabelShowHeadSize",
+            "VID_CurrentWordEnabled", "VID_CurrentWordPosition",
+            "VID_LabelTime", "VID_LabelDur", "VID_LabelFade",
+        },
+    )
+    return {"settings_path": str(settings_path), "position": [size, left, top], "hsb": [hue, saturation, brightness], "options": spectrogram}
 
 
 TRACK_TUNING_DEFAULTS = {
@@ -597,7 +700,11 @@ def _format_setting_value(value: object) -> str:
     if value is None:
         return "null"
     if isinstance(value, str):
-        return f'"{value}"'
+        return json.dumps(value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_format_setting_value(item) for item in value) + "]"
     if isinstance(value, float):
         return f"{value:.3f}".rstrip("0").rstrip(".")
     return str(value)
@@ -828,6 +935,33 @@ def _copy_alignment_template(song: str, role: str, source_role: object) -> dict[
     return result
 
 
+def _word_cues_from_report(report: dict[str, Any]) -> list[dict[str, int | str]]:
+    token_words = {
+        (item.get("line"), item.get("word_index")): str(item.get("word", "")).strip()
+        for item in report.get("token_counts", [])
+        if isinstance(item, dict)
+    }
+    grouped: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for entry in report.get("notes", []):
+        if not isinstance(entry, dict):
+            continue
+        line = entry.get("line")
+        word_index = entry.get("word_index")
+        if isinstance(line, int) and isinstance(word_index, int):
+            grouped.setdefault((line, word_index), []).append(entry)
+    cues: list[dict[str, int | str]] = []
+    for key, entries in sorted(grouped.items(), key=lambda item: min(float(entry.get("start_ms", 0)) for entry in item[1])):
+        word = token_words.get(key) or str(entries[0].get("lyric") or "").strip()
+        if not word:
+            continue
+        cues.append({
+            "word": word,
+            "start_ms": round(min(float(entry.get("start_ms", 0)) for entry in entries)),
+            "end_ms": round(max(float(entry.get("end_ms", 0)) for entry in entries)),
+        })
+    return cues
+
+
 def _apply_alignment(song: str, role: str, text: object) -> dict[str, str | None]:
     """Validate and apply a saved alignment to the compiler's configured input."""
 
@@ -883,7 +1017,10 @@ def _apply_alignment(song: str, role: str, text: object) -> dict[str, str | None
     try:
         sidecar.parent.mkdir(parents=True, exist_ok=True)
         sidecar.write_text(
-            json.dumps({"virtual_splits": report.get("virtual_splits", [])}, indent=2) + "\n",
+            json.dumps({
+                "virtual_splits": report.get("virtual_splits", []),
+                "word_cues": _word_cues_from_report(report),
+            }, indent=2) + "\n",
             encoding="utf-8",
         )
     except OSError as error:
@@ -949,7 +1086,7 @@ def handle(request: dict[str, Any]) -> Any:
 
     role = _role(song, request.get("role"))
     if command == "save_visual_layout":
-        return _save_visual_layout(song, role, request.get("position"), request.get("hsb"))
+        return _save_visual_layout(song, role, request.get("position"), request.get("hsb"), request.get("options"))
     if command == "get_track_tuning":
         return _track_tuning(song, role)
     if command == "get_auto_normalize_tuning":

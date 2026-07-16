@@ -1,7 +1,7 @@
 # Different voice options [:np] [:nb] [:nh] [:nd] [:nf] [:nu] [:nr] [:nw] [:nk]
 
 # How much to shift pitches by (DECTALK Pitches not the same as midi, should be 48 off or so)
-noteOffset: -60 
+noteOffset: -60
 
 # Words are broken up into phonemes, the playback lengths of which must be specified in code
 # This is calculated by setting a standard fraction of each word to dedicate to consonants
@@ -16,14 +16,10 @@ Tracks:
   Soprano:
     DEC_SETUP: "[:nf][:dv hs 90]"
     VOLUME_ADJUST_DB: 5
-    VID_HSB: [328, 70, 97]
-    VID_Position: [0.5, 0.0, 0.0]
-    # VID_LabelDur: 4.0
-    # VID_LabelFade: 1.0
     OCTAVE_BOOST: 2
     SEGMENT_NORMALIZE_TARGET_DBFS: -10.0
     SEGMENT_NORMALIZE_MAX_BOOST_DB: 15.0
-    
+
     PITCH_SHIFT: 0
     PITCH_WRAP_SHIFT: null
     IGNORE_MIDI_VELOCITY: True
@@ -36,15 +32,21 @@ Tracks:
     NOTE_NORMALIZE_PEAK_CEILING_DBFS: -1
     STEM_PEAK_CEILING_DBFS: -1
     GAP_MEND_MS: 0
+    SPECTROGRAM:
+      COLOR_HSB: [328, 70, 97]
+      POSITION: [0.5, 0, 0]
+      LABEL: "Soprano"
+      LABEL_ENABLED: false
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: false
+      LABEL_SHOW_HEAD_SIZE: false
+      CURRENT_WORD_ENABLED: false
+      CURRENT_WORD_POSITION: "bottom-center"
+
   Alto:
     DEC_SETUP: "[:nk][:dv hs 100]"
     VOLUME_ADJUST_DB: -2
-    VID_HSB: [154, 27, 79]
-    VID_Position: [0.5, 0.5, 0.0]
-    VID_LabelTime: 6.2
-    # VID_LabelDur: 4.0
-    # VID_LabelFade: 1.0
-    
+
     PITCH_SHIFT: 0
     OCTAVE_BOOST: 0
     PITCH_WRAP_SHIFT: null
@@ -58,15 +60,21 @@ Tracks:
     NOTE_NORMALIZE_PEAK_CEILING_DBFS: -4
     STEM_PEAK_CEILING_DBFS: -4
     GAP_MEND_MS: 0
+    SPECTROGRAM:
+      COLOR_HSB: [154, 27, 79]
+      POSITION: [0.5, 0.5, 0]
+      LABEL: "Alto"
+      LABEL_ENABLED: false
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: false
+      LABEL_SHOW_HEAD_SIZE: false
+      CURRENT_WORD_ENABLED: false
+      CURRENT_WORD_POSITION: "bottom-center"
+
   Tenor:
     DEC_SETUP: "[:np][:dv hs 110]"
     VOLUME_ADJUST_DB: -8
-    VID_HSB: [210, 49, 160]
-    VID_Position: [0.5, 0.0, 0.5]
-    VID_LabelTime: 11.4
-    # VID_LabelDur: 4.0
-    # VID_LabelFade: 1.0
-    
+
     PITCH_SHIFT: 0
     OCTAVE_BOOST: 0
     PITCH_WRAP_SHIFT: null
@@ -80,14 +88,20 @@ Tracks:
     NOTE_NORMALIZE_PEAK_CEILING_DBFS: -1
     STEM_PEAK_CEILING_DBFS: -1
     GAP_MEND_MS: 0
+    SPECTROGRAM:
+      COLOR_HSB: [210, 49, 100]
+      POSITION: [0.5, 0, 0.5]
+      LABEL: "Tenor"
+      LABEL_ENABLED: false
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: false
+      LABEL_SHOW_HEAD_SIZE: false
+      CURRENT_WORD_ENABLED: false
+      CURRENT_WORD_POSITION: "bottom-center"
+
   Bass:
     DEC_SETUP: "[:np][:dv hs 130]"
     VOLUME_ADJUST_DB: -8
-    VID_HSB: [258, 33, 47]
-    VID_Position: [0.5, 0.5, 0.5]
-    VID_LabelTime: 16.6
-    # VID_LabelDur: 4.0
-    # VID_LabelFade: 1.0
     OCTAVE_BOOST: 0
     PITCH_SHIFT: 0
     PITCH_WRAP_SHIFT: null
@@ -101,3 +115,13 @@ Tracks:
     NOTE_NORMALIZE_PEAK_CEILING_DBFS: -1
     STEM_PEAK_CEILING_DBFS: -1
     GAP_MEND_MS: 0
+    SPECTROGRAM:
+      COLOR_HSB: [258, 33, 47]
+      POSITION: [0.5, 0.5, 0.5]
+      LABEL: "Bass"
+      LABEL_ENABLED: false
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: false
+      LABEL_SHOW_HEAD_SIZE: false
+      CURRENT_WORD_ENABLED: false
+      CURRENT_WORD_POSITION: "bottom-center"

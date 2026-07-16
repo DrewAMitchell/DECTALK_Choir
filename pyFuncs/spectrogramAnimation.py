@@ -1,78 +1,72 @@
+import colorsys
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import json
 import math as m
 import os
-import scipy
-import numpy as np
-from copy import deepcopy
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import re
 import subprocess as sp
 
-import scipy.io.wavfile as wavfile
-from scipy import signal
-from matplotlib import pyplot as plt
-
 import cv2
-from cv2 import VideoWriter, VideoWriter_fourcc
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-import colorsys
+from scipy import signal
+import scipy.io.wavfile as wavfile
 
 
 FONT_PATH = Path(__file__).resolve().parent / "fonts" / "NexaText-Trial-Light.ttf"
+TEXT_ANCHORS = {
+    "top-left", "top-center", "top-right",
+    "center-left", "center", "center-right",
+    "bottom-left", "bottom-center", "bottom-right",
+}
 
 
-def _output_song_dir(songTitle):
-    return Path("songs") / songTitle / "outputs"
+def _output_song_dir(song_title):
+    return Path("songs") / song_title / "outputs"
 
 
 def _newest_file(paths):
     existing = [path for path in paths if path.exists()]
-    if not existing:
-        return None
-    return max(existing, key=lambda path: path.stat().st_mtime)
+    return max(existing, key=lambda path: path.stat().st_mtime) if existing else None
 
 
-def _find_output_audio(songTitle, songOutputDir):
-    finishedDir = songOutputDir / "_finished"
-    exact_mp3_paths = [
-        finishedDir / f"{songTitle}.mp3",
-        songOutputDir / f"{songTitle}.mp3",
-    ]
-    audioFile = _newest_file(exact_mp3_paths)
-    if audioFile:
-        return audioFile
-
-    mp3_paths = []
-    for searchDir in (finishedDir, songOutputDir):
-        if searchDir.exists():
-            mp3_paths.extend(searchDir.glob("*.mp3"))
-    audioFile = _newest_file(mp3_paths)
-    if audioFile:
-        return audioFile
-
-    exact_wav_paths = [
-        finishedDir / f"{songTitle}.wav",
-        songOutputDir / f"{songTitle}.wav",
-    ]
-    audioFile = _newest_file(exact_wav_paths)
-    if audioFile:
-        return audioFile
-
-    wav_paths = []
-    for searchDir in (finishedDir, songOutputDir):
-        if searchDir.exists():
-            wav_paths.extend(searchDir.glob("*.wav"))
-    return _newest_file(wav_paths)
+def _find_output_audio(song_title, song_output_dir):
+    finished_dir = song_output_dir / "_finished"
+    audio_file = _newest_file([
+        finished_dir / f"{song_title}.mp3",
+        song_output_dir / f"{song_title}.mp3",
+    ])
+    if audio_file:
+        return audio_file
+    audio_file = _newest_file(
+        path
+        for search_dir in (finished_dir, song_output_dir)
+        if search_dir.exists()
+        for path in search_dir.glob("*.mp3")
+    )
+    if audio_file:
+        return audio_file
+    audio_file = _newest_file([
+        finished_dir / f"{song_title}.wav",
+        song_output_dir / f"{song_title}.wav",
+    ])
+    if audio_file:
+        return audio_file
+    return _newest_file(
+        path
+        for search_dir in (finished_dir, song_output_dir)
+        if search_dir.exists()
+        for path in search_dir.glob("*.wav")
+    )
 
 
-def _media_duration_seconds(mediaFile):
+def _media_duration_seconds(media_file):
     try:
         result = sp.run(
             [
-                "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                str(mediaFile),
+                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", str(media_file),
             ],
             capture_output=True,
             text=True,
@@ -80,38 +74,37 @@ def _media_duration_seconds(mediaFile):
         )
         return float(result.stdout.strip())
     except Exception:
-        if mediaFile.suffix.lower() == ".wav":
+        if media_file.suffix.lower() == ".wav":
             try:
-                samplingRate, data = wavfile.read(str(mediaFile))
-                return len(data) / samplingRate
+                sampling_rate, data = wavfile.read(str(media_file), mmap=True)
+                return len(data) / sampling_rate
             except Exception:
                 pass
     return None
 
 
-def _bar_dimensions(videoDims, trackPosition, barCount, barGapFrac):
-    sizeFrac = max(0.01, min(1.0, float(trackPosition[0])))
-    xFrac = max(0.0, min(1.0 - sizeFrac, float(trackPosition[1])))
-    yFrac = max(0.0, min(1.0 - sizeFrac, float(trackPosition[2])))
+def _even_dimension(value):
+    return max(2, int(value) // 2 * 2)
 
-    pixelWidth = videoDims[0] * sizeFrac
-    pixelHeight = videoDims[1] * sizeFrac
-    barSpacing = pixelWidth / (barCount + 1)
-    barWidth = barSpacing * barGapFrac
-    maxHeight = pixelHeight / 2
-    xLeftEdge = videoDims[0] * xFrac
-    yCenter = videoDims[1] * (yFrac + sizeFrac/2)
-    return (barSpacing, barWidth, maxHeight, xLeftEdge, yCenter)
+
+def _region_geometry(video_dims, position):
+    size = max(0.01, min(1.0, float(position[0])))
+    left = max(0.0, min(1.0 - size, float(position[1])))
+    top = max(0.0, min(1.0 - size, float(position[2])))
+    width = _even_dimension(video_dims[0] * size)
+    height = _even_dimension(video_dims[1] * size)
+    return width, height, round(video_dims[0] * left), round(video_dims[1] * top)
 
 
 def _prepare_track_spectrogram(track_name, wav_path, frames_per_second, freq_range, bar_count):
-    """Build one track's normalized FFT frame data; safe to run alongside other tracks."""
     sampling_rate, wave_data = wavfile.read(str(wav_path))
+    if np.ndim(wave_data) > 1:
+        wave_data = np.mean(wave_data.astype(np.float32), axis=1)
     proc_spec = signal.spectrogram(
         wave_data,
         sampling_rate,
-        window=("hamming"),
-        nperseg=int(sampling_rate / frames_per_second),
+        window="hamming",
+        nperseg=max(8, int(sampling_rate / frames_per_second)),
     )
     time_range = len(wave_data) / sampling_rate
     frame_count = max(1, m.ceil(time_range * frames_per_second))
@@ -125,22 +118,22 @@ def _prepare_track_spectrogram(track_name, wav_path, frames_per_second, freq_ran
     fps_adjusted = np.transpose(fps_adjusted)
 
     freq_domain = proc_spec[0]
-    freq_min_index = (np.abs(freq_domain - freq_range[0])).argmin()
-    freq_max_index = (np.abs(freq_domain - freq_range[1])).argmin()
-    bar_adjusted = np.zeros((len(fps_adjusted), bar_count), dtype=np.float32)
-    frequency_targets = np.arange(bar_count)
-    frequency_source = np.arange(
-        freq_min_index,
-        freq_max_index,
-        (freq_max_index - freq_min_index) / len(fps_adjusted[0]),
-    )
-    for index in range(len(fps_adjusted)):
-        bar_adjusted[index] = np.interp(frequency_targets, frequency_source, fps_adjusted[index])
+    freq_min_index = int((np.abs(freq_domain - freq_range[0])).argmin())
+    freq_max_index = int((np.abs(freq_domain - freq_range[1])).argmin())
+    if freq_max_index <= freq_min_index:
+        freq_max_index = min(len(freq_domain) - 1, freq_min_index + 1)
+    selected = fps_adjusted[:, freq_min_index:freq_max_index + 1]
+    source_bins = np.linspace(0, bar_count - 1, selected.shape[1])
+    target_bins = np.arange(bar_count)
+    bar_adjusted = np.zeros((len(selected), bar_count), dtype=np.float32)
+    for index, frame in enumerate(selected):
+        bar_adjusted[index] = np.interp(target_bins, source_bins, frame)
 
     np.sqrt(np.abs(bar_adjusted), out=bar_adjusted)
-    spec_max = np.max(bar_adjusted, axis=1)
-    spec_max = np.sort(spec_max[spec_max > 0.0])
+    spec_max = np.sort(np.max(bar_adjusted, axis=1)[np.max(bar_adjusted, axis=1) > 0.0])
     normalization = spec_max[m.floor(len(spec_max) * 0.9)] if len(spec_max) else 1.0
+    if normalization <= 0:
+        normalization = 1.0
     bar_adjusted /= normalization
     np.minimum(bar_adjusted, 1.0, out=bar_adjusted)
     return {
@@ -148,183 +141,289 @@ def _prepare_track_spectrogram(track_name, wav_path, frames_per_second, freq_ran
         "data": bar_adjusted,
         "frame_count": frame_count,
         "time_range": time_range,
-        "freq_min_index": freq_min_index,
-        "freq_max_index": freq_max_index,
-        "freq_bin_count": len(fps_adjusted[0]),
-        "normalization": normalization,
+        "normalization": float(normalization),
     }
 
 
-
-
-def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 1440), freqRange=(100, 5000), divisionFactor = 500, framesPerSecond=30, barCount=100, back_color=[0, 0, 0], barGapFrac = 0.5):
-    songOutputDir = _output_song_dir(songTitle)
-    tracksDir = songOutputDir / "_tracks"
-    finishedDir = songOutputDir / "_finished"
-    finishedDir.mkdir(parents=True, exist_ok=True)
-
-    back_color = colorsys.hsv_to_rgb(back_color[0]/360, back_color[1]/100, back_color[2]/100)
-    back_color = tuple([int(255*foo) for foo in back_color] )
-    print(f"   back_color:{back_color}")
-    
-    labelFont = ImageFont.truetype(str(FONT_PATH), 80)
-    
-    spectDict = {}
-    animationFrameCount = 0
-    worker_count = min(len(trackNames), max(1, min(4, os.cpu_count() or 1)))
-    print(f"Preparing {len(trackNames)} spectrograms across {worker_count} CPU workers")
-    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="choir-spectrogram") as executor:
-        prepared = {
-            fooTrack: executor.submit(
-                _prepare_track_spectrogram,
-                fooTrack,
-                tracksDir / f"{fooTrack}.wav",
-                framesPerSecond,
-                freqRange,
-                barCount,
-            )
-            for fooTrack in trackNames
-        }
-        for fooTrack in trackNames:
-            track_data = prepared[fooTrack].result()
-            print(f"\n{fooTrack}:")
-            fooTrackDict = settings_yaml['Tracks'][fooTrack]
-            bar_color = fooTrackDict['VID_HSB']
-            bar_color = colorsys.hsv_to_rgb(bar_color[0]/360, bar_color[1]/100, bar_color[2]/100)
-            bar_color = tuple([int(255*foo) for foo in bar_color])
-            print(f"   bar_color:{bar_color}")
-            print(f"   timeRange:{track_data['time_range']}")
-            print(f"   frameCount:{track_data['frame_count']}")
-            print(f"   freq range: {track_data['freq_min_index']}->{track_data['freq_max_index']} out of {track_data['freq_bin_count']}")
-            print(f"   divisionFactor:{track_data['normalization']}")
-
-            animationFrameCount = max(animationFrameCount, track_data['frame_count'])
-            fooPos = fooTrackDict['VID_Position']
-            spectDict[fooTrack] = {
-                'data': track_data['data'],
-                'color': bar_color,
-                'label': fooTrackDict['VID_Label'],
-                'position': fooPos,
-                'currFFT': deepcopy(track_data['data'][0]),
-                'frameCount': track_data['frame_count'],
-                'barDims': _bar_dimensions(videoDims, fooPos, barCount, barGapFrac),
+def _word_cues_from_payload(payload):
+    direct = payload.get("word_cues") if isinstance(payload, dict) else None
+    if isinstance(direct, list):
+        return [
+            {
+                "word": str(item.get("word", "")).strip(),
+                "start_ms": int(item.get("start_ms", 0)),
+                "end_ms": int(item.get("end_ms", 0)),
             }
-
-    audioFileName = _find_output_audio(songTitle, songOutputDir)
-    if audioFileName:
-        audioDuration = _media_duration_seconds(audioFileName)
-        if audioDuration:
-            audioFrameCount = max(1, m.ceil(audioDuration*framesPerSecond))
-            animationFrameCount = max(animationFrameCount, audioFrameCount)
-            print(f"\nAudio for final output: {audioFileName}")
-            print(f"   audioDuration:{audioDuration}")
-            print(f"   audioFrameCount:{audioFrameCount}")
-    else:
-        print(f"\nNo final audio found under {songOutputDir}; animation will be exported without muxing.")
-
-    # Setup video output
-    vidWidth = videoDims[0]
-    vidHeight = videoDims[1]
-
-    # Setup video output
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')    
-    outputFileName = finishedDir / "animation.mp4"
-    video = cv2.VideoWriter(str(outputFileName), fourcc, framesPerSecond, videoDims)
-
-    # Setup Pillow Image
-    # Each frame is written to this image and then saved to video
-    imtemp = Image.new("RGB", videoDims, (255, 255, 255))
-    draw = ImageDraw.Draw(imtemp)
-
-
-    # # Calculate variables for bar plot
-    # maxHeight = vidHeight/2
-    # barWidth = (vidWidth -edgeMargin*2)/barCount
-    # barHalfGap = barWidth*barGapFrac/2
-
-    # currFFT = None
-    # Iterate over data
-    # for yy in range(int(frameCount/10)):
-    for yy in range(animationFrameCount):
-        print(f"Frame: {yy}\033[F") # Print current iteration to same line
-        draw.rectangle((0, 0, vidWidth, vidHeight), fill=back_color) # Reset image
-
-        for fooTrack in spectDict:
-            fooDict = spectDict[fooTrack]
-
-            if len(fooDict['data']) <= yy: continue
-            currFFT = fooDict['currFFT']
-            barSpace, barWidth, maxHeight, xLeftEdge, yCenter = fooDict['barDims']
-            fooFFt = fooDict['data'][yy]
-
-            # Process each bar
-            for xx in range(barCount):
-                # Smooths data in time domain, preventing sharp drop offs
-                currFFT[xx] /= 1.4
-                if currFFT[xx] < fooFFt[xx]: currFFT[xx] = fooFFt[xx]
-                
-                # Load value for bar and clamp
-                ptValue = currFFT[xx]
-                if ptValue > 1.0: ptValue = 1.0
-                if ptValue < 0.001: ptValue = 0.001 
+            for item in direct
+            if isinstance(item, dict) and str(item.get("word", "")).strip()
+        ]
+    token_words = {
+        (item.get("line"), item.get("word_index")): str(item.get("word", "")).strip()
+        for item in payload.get("token_counts", [])
+        if isinstance(item, dict)
+    }
+    grouped = {}
+    for entry in payload.get("notes", []):
+        if not isinstance(entry, dict):
+            continue
+        key = (entry.get("line"), entry.get("word_index"))
+        if all(isinstance(value, int) for value in key):
+            grouped.setdefault(key, []).append(entry)
+    cues = []
+    for key, entries in grouped.items():
+        word = token_words.get(key) or str(entries[0].get("lyric") or "").strip()
+        if word:
+            cues.append({
+                "word": word,
+                "start_ms": round(min(float(item.get("start_ms", 0)) for item in entries)),
+                "end_ms": round(max(float(item.get("end_ms", 0)) for item in entries)),
+            })
+    return sorted(cues, key=lambda item: (item["start_ms"], item["end_ms"]))
 
 
-                # Actually draw bar
-                draw.ellipse(
-                    (((xx)*barSpace +xLeftEdge, yCenter-currFFT[xx]*maxHeight, (xx)*barSpace+barWidth +xLeftEdge, yCenter+currFFT[xx]*maxHeight)), 
-                    fill=fooDict['color'])
-                
-                # if(currFFT[xx] > 0.5): print(((xx)*barSpace +xLeftEdge, currFFT[xx]*maxHeight+yCenter, (xx)*barSpace+barWidth +xLeftEdge, -currFFT[xx]*maxHeight+yCenter))
-                
-
-                # draw.ellipse(
-                #     (xx*barWidth +barHalfGap+edgeMargin, maxHeight-maxHeight*ptValue, 
-                #         (xx+1)*barWidth -barHalfGap+edgeMargin, maxHeight+maxHeight*ptValue), 
-                #     fill=bar_color)
-            
-            fooDict['currFFT'] = currFFT
-
-            # if max(currFFT) > 0.9: 
-            #     imtemp.show()
-                # input('PAUSED')
-            
-            # print(max(currFFT)*maxHeight)
-            # currentTime = yy/framesPerSecond
-            # if currentTime > trackSettingDict['VID_LabelTime'] and currentTime < trackSettingDict['VID_LabelTime'] +trackSettingDict["VID_LabelDur"] +trackSettingDict['VID_LabelFade']:
-            #     textOpacity = 1.0
-            #     if currentTime > trackSettingDict['VID_LabelTime'] +trackSettingDict["VID_LabelDur"]:
-            #         # print("!!!!!!!!   ", end='')
-            #         textOpacity =  ( 1 - (currentTime -trackSettingDict['VID_LabelTime'] -trackSettingDict["VID_LabelDur"])/trackSettingDict['VID_LabelFade'] )
-
-            #         # print((currentTime -trackSettingDict['VID_LabelTime'] -trackSettingDict["VID_LabelDur"])/trackSettingDict['VID_LabelFade'])
-
-            #     draw.text(labelPosition, labelText, (m.floor(bar_color[0] * textOpacity), m.floor(bar_color[1] * textOpacity), m.floor(bar_color[2] * textOpacity)), labelFont)
-
-        video.write(cv2.cvtColor(np.array(imtemp), cv2.COLOR_RGB2BGR)) # Save frame
-
-    video.release() # Output final video
+def _load_word_cues(song_title, track_name):
+    song_dir = Path("songs") / song_title
+    paths = [
+        song_dir / "inputs" / "lyrics" / ".alignment" / f"{track_name}.json",
+        song_dir / "outputs" / "lyrics_drafts" / f"{track_name}.json",
+    ]
+    for path in paths:
+        if not path.is_file():
+            continue
+        try:
+            cues = _word_cues_from_payload(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError):
+            continue
+        if cues:
+            return cues, str(path)
+    return [], None
 
 
-    # Use ffmpeg to mix output audio and video to single, synced file
-    if not audioFileName:
+def _setup_metadata(track_settings):
+    setup = str(track_settings.get("DEC_SETUP", ""))
+    voice_match = re.search(r"\[:n([a-z])\]", setup, flags=re.IGNORECASE)
+    head_match = re.search(r"\[:dv\s+hs\s+(\d+)\]", setup, flags=re.IGNORECASE)
+    voice = f"n{voice_match.group(1).lower()}" if voice_match else None
+    head_size = int(head_match.group(1)) if head_match else None
+    return voice, head_size
+
+
+def _track_label(track_name, track_settings, spectrogram):
+    pieces = [str(spectrogram.get("LABEL") or track_name)]
+    voice, head_size = _setup_metadata(track_settings)
+    if spectrogram.get("LABEL_SHOW_VOICE"):
+        pieces.append("Perfect Paul [:np]" if voice == "np" else f"[:{voice}]" if voice else "default voice")
+    if spectrogram.get("LABEL_SHOW_HEAD_SIZE"):
+        pieces.append(f"hs {head_size}" if head_size is not None else "head size default")
+    return " | ".join(pieces)
+
+
+def _draw_anchored_text(draw, text, anchor, dimensions, font, fill, stroke_width):
+    if not text:
         return
+    anchor = anchor if anchor in TEXT_ANCHORS else "top-left"
+    margin = max(6, round(min(dimensions) * 0.035))
+    bounds = draw.textbbox((0, 0), text, font=font, stroke_width=stroke_width)
+    width = bounds[2] - bounds[0]
+    height = bounds[3] - bounds[1]
+    vertical, horizontal = anchor.split("-") if "-" in anchor else ("center", "center")
+    x = margin if horizontal == "left" else dimensions[0] - margin - width if horizontal == "right" else (dimensions[0] - width) / 2
+    y = margin if vertical == "top" else dimensions[1] - margin - height if vertical == "bottom" else (dimensions[1] - height) / 2
+    draw.text((x, y), text, font=font, fill=fill, stroke_width=stroke_width, stroke_fill=(0, 0, 0))
 
-    print(f"Adding audio for final output")
-    finalFileName = finishedDir / f"{songTitle}.mp4"
-    audioArgs = ["-c:a", "copy", "-strict", "-1"] if audioFileName.suffix.lower() == ".mp3" else ["-c:a", "aac"]
-    sp.run(
-        [
-            "ffmpeg", "-y",
-            "-i", str(outputFileName),
-            "-i", str(audioFileName),
-            "-c:v", "copy",
-            *audioArgs,
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            str(finalFileName),
-        ],
-        check=True,
+
+def _render_track_clip(payload):
+    track_name = payload["track_name"]
+    prepared = _prepare_track_spectrogram(
+        track_name,
+        Path(payload["wav_path"]),
+        payload["frames_per_second"],
+        tuple(payload["freq_range"]),
+        payload["bar_count"],
     )
-    if finalFileName.is_file() and finalFileName.stat().st_size > 0:
-        outputFileName.unlink(missing_ok=True)
-        print(f"Removed intermediate animation: {outputFileName}")
+    width, height, left, top = _region_geometry(tuple(payload["video_dims"]), payload["position"])
+    spectrogram = payload["spectrogram"]
+    rgb = colorsys.hsv_to_rgb(
+        float(spectrogram["COLOR_HSB"][0]) / 360,
+        float(spectrogram["COLOR_HSB"][1]) / 100,
+        float(spectrogram["COLOR_HSB"][2]) / 100,
+    )
+    bar_color = tuple(round(255 * value) for value in rgb)
+    output_path = Path(payload["output_path"])
+    writer = cv2.VideoWriter(
+        str(output_path),
+        cv2.VideoWriter_fourcc(*"FFV1"),
+        payload["frames_per_second"],
+        (width, height),
+    )
+    if not writer.isOpened():
+        raise RuntimeError(f"Could not create lossless spectrogram clip for {track_name}.")
+
+    label_font = ImageFont.truetype(str(FONT_PATH), max(14, round(height * 0.07)))
+    word_font = ImageFont.truetype(str(FONT_PATH), max(16, round(height * 0.1)))
+    image = Image.new("RGB", (width, height), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    bar_spacing = width / (payload["bar_count"] + 1)
+    bar_width = max(1.0, bar_spacing * payload["bar_gap_fraction"])
+    max_height = height / 2
+    current_fft = np.array(prepared["data"][0], copy=True)
+    cues = payload["word_cues"]
+    cue_index = 0
+    label = _track_label(track_name, payload["track_settings"], spectrogram)
+    try:
+        for frame_index in range(payload["animation_frame_count"]):
+            draw.rectangle((0, 0, width, height), fill=(0, 0, 0))
+            if frame_index < len(prepared["data"]):
+                frame_fft = prepared["data"][frame_index]
+                for bar_index in range(payload["bar_count"]):
+                    current_fft[bar_index] = max(current_fft[bar_index] / 1.4, frame_fft[bar_index])
+                    value = min(1.0, max(0.001, float(current_fft[bar_index])))
+                    x = bar_index * bar_spacing
+                    draw.ellipse(
+                        (x, height / 2 - value * max_height, x + bar_width, height / 2 + value * max_height),
+                        fill=bar_color,
+                    )
+            if spectrogram.get("LABEL_ENABLED"):
+                _draw_anchored_text(draw, label, spectrogram.get("LABEL_POSITION"), (width, height), label_font, bar_color, 2)
+            if spectrogram.get("CURRENT_WORD_ENABLED") and cues:
+                current_ms = frame_index * 1000 / payload["frames_per_second"]
+                while cue_index < len(cues) and current_ms >= cues[cue_index]["end_ms"]:
+                    cue_index += 1
+                if cue_index < len(cues) and cues[cue_index]["start_ms"] <= current_ms < cues[cue_index]["end_ms"]:
+                    _draw_anchored_text(
+                        draw,
+                        cues[cue_index]["word"],
+                        spectrogram.get("CURRENT_WORD_POSITION"),
+                        (width, height),
+                        word_font,
+                        (245, 248, 247),
+                        2,
+                    )
+            writer.write(cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR))
+    finally:
+        writer.release()
+    return {
+        "track": track_name,
+        "path": str(output_path),
+        "left": left,
+        "top": top,
+        "frames": prepared["frame_count"],
+        "duration": prepared["time_range"],
+        "normalization": prepared["normalization"],
+        "word_cues": len(cues),
+        "word_source": payload.get("word_source"),
+    }
+
+
+def _compose_clips(clips, output_path, audio_path, video_dims, frames_per_second, duration, background):
+    background_hex = "0x{:02x}{:02x}{:02x}".format(*background)
+    args = [
+        "ffmpeg", "-y", "-f", "lavfi", "-i",
+        f"color=c={background_hex}:s={video_dims[0]}x{video_dims[1]}:r={frames_per_second}:d={duration:.6f}",
+    ]
+    for clip in clips:
+        args.extend(["-i", clip["path"]])
+    audio_index = None
+    if audio_path:
+        audio_index = len(clips) + 1
+        args.extend(["-i", str(audio_path)])
+
+    filters = []
+    prior = "[0:v]"
+    for index, clip in enumerate(clips):
+        keyed = f"keyed{index}"
+        composed = f"composed{index}"
+        filters.append(f"[{index + 1}:v]colorkey=0x000000:0.01:0.0[{keyed}]")
+        filters.append(
+            f"{prior}[{keyed}]overlay=x={clip['left']}:y={clip['top']}:eof_action=pass:shortest=0[{composed}]"
+        )
+        prior = f"[{composed}]"
+
+    temporary = output_path.with_name(f"{output_path.stem}.building{output_path.suffix}")
+    temporary.unlink(missing_ok=True)
+    args.extend([
+        "-filter_complex", ";".join(filters),
+        "-map", prior,
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+    ])
+    if audio_index is not None:
+        args.extend(["-map", f"{audio_index}:a:0", "-c:a", "aac", "-b:a", "192k"])
+    args.extend(["-t", f"{duration:.6f}", "-movflags", "+faststart", str(temporary)])
+    sp.run(args, check=True)
+    if not temporary.is_file() or temporary.stat().st_size <= 0:
+        raise RuntimeError("FFmpeg did not produce the composite spectrogram video.")
+    temporary.replace(output_path)
+
+
+def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 1440), freqRange=(100, 5000), divisionFactor=500, framesPerSecond=30, barCount=100, back_color=(0, 0, 0), barGapFrac=0.5):
+    del divisionFactor
+    song_output_dir = _output_song_dir(songTitle)
+    tracks_dir = song_output_dir / "_tracks"
+    animation_dir = song_output_dir / "_animation"
+    finished_dir = song_output_dir / "_finished"
+    animation_dir.mkdir(parents=True, exist_ok=True)
+    finished_dir.mkdir(parents=True, exist_ok=True)
+
+    background_rgb = colorsys.hsv_to_rgb(back_color[0] / 360, back_color[1] / 100, back_color[2] / 100)
+    background = tuple(round(255 * value) for value in background_rgb)
+    audio_path = _find_output_audio(songTitle, song_output_dir)
+    durations = [
+        duration
+        for duration in (_media_duration_seconds(tracks_dir / f"{track}.wav") for track in trackNames)
+        if duration
+    ]
+    audio_duration = _media_duration_seconds(audio_path) if audio_path else None
+    if audio_duration:
+        durations.append(audio_duration)
+    if not durations:
+        raise RuntimeError("No usable audio duration was found for spectrogram generation.")
+    duration = max(durations)
+    animation_frame_count = max(1, m.ceil(duration * framesPerSecond))
+
+    payloads = []
+    for index, track_name in enumerate(trackNames):
+        track_settings = settings_yaml["Tracks"][track_name]
+        spectrogram = dict(track_settings.get("SPECTROGRAM") or {})
+        cues, cue_source = _load_word_cues(songTitle, track_name)
+        if spectrogram.get("CURRENT_WORD_ENABLED") and not cues:
+            print(f"{track_name}: current-word overlay skipped because no alignment timing is available")
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", track_name).strip("_") or f"track_{index + 1}"
+        payloads.append({
+            "track_name": track_name,
+            "track_settings": track_settings,
+            "spectrogram": spectrogram,
+            "wav_path": str(tracks_dir / f"{track_name}.wav"),
+            "output_path": str(animation_dir / f"{index:02d}_{safe_name}.mkv"),
+            "video_dims": list(videoDims),
+            "position": spectrogram["POSITION"],
+            "frames_per_second": framesPerSecond,
+            "animation_frame_count": animation_frame_count,
+            "freq_range": list(freqRange),
+            "bar_count": barCount,
+            "bar_gap_fraction": barGapFrac,
+            "word_cues": cues,
+            "word_source": cue_source,
+        })
+
+    worker_count = min(len(payloads), max(1, min(4, os.cpu_count() or 1)))
+    print(f"Rendering {len(payloads)} lossless track clips across {worker_count} workers")
+    clips_by_track = {}
+    with ProcessPoolExecutor(max_workers=worker_count) as executor:
+        futures = {executor.submit(_render_track_clip, payload): payload["track_name"] for payload in payloads}
+        for future in as_completed(futures):
+            track_name = futures[future]
+            clip = future.result()
+            clips_by_track[track_name] = clip
+            print(
+                f"Rendered {track_name}: {clip['frames']} source frames, "
+                f"{clip['word_cues']} word cues, normalization {clip['normalization']:.4f}"
+            )
+
+    clips = [clips_by_track[track_name] for track_name in trackNames]
+    output_path = finished_dir / f"{songTitle}.mp4"
+    print(f"Compositing {len(clips)} track clips and final audio")
+    _compose_clips(clips, output_path, audio_path, videoDims, framesPerSecond, duration, background)
+    for clip in clips:
+        Path(clip["path"]).unlink(missing_ok=True)
+    print(f"Removed {len(clips)} intermediate track clips")
+    print(f"DONE: {output_path}")

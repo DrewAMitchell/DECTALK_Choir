@@ -81,5 +81,7 @@ before publishing an installer.
   configured input, then updates the `LYRICS_FILENAME` consumed by `choir.py`.
 - Render view: invokes the established `choir.py <Song>` contract and returns
   its compiler log and failure status.
-- Review view: enables renderable roles, opens per-role tuning, and exposes
+- Render Audio view: enables renderable roles, opens per-role tuning, and exposes
   spectrogram layout directly beneath the render control once a finished mix exists.
+  Per-track visual controls persist under `Tracks.<Role>.SPECTROGRAM`; track clips
+  render concurrently before one ordered composition and audio mux.

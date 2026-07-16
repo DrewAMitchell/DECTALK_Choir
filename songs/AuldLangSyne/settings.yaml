@@ -25,24 +25,59 @@ Tracks:
     PITCH_VOLUME_BOOST_MAX_DB: 6.0
     NOTE_NORMALIZE_TARGET_DBFS: auto
     NOTE_NORMALIZE_MAX_BOOST_DB: 8.0
-    VID_HSB: [328, 70, 97]
-    VID_Position: [0.5, 0.0, 0.0]
+
+    SPECTROGRAM:
+      COLOR_HSB: [328, 70, 97]
+      POSITION: [0.5, 0, 0]
+      LABEL: "Soprano"
+      LABEL_ENABLED: false
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: false
+      LABEL_SHOW_HEAD_SIZE: false
+      CURRENT_WORD_ENABLED: false
+      CURRENT_WORD_POSITION: "bottom-center"
 
   Alto:
     DEC_SETUP: "[:nk][:dv hs 100]"
     VOLUME_ADJUST_DB: 0.0
-    VID_HSB: [347, 79, 100]
-    VID_Position: [0.5, 0.5, 0.0]
+
+    SPECTROGRAM:
+      COLOR_HSB: [347, 79, 100]
+      POSITION: [0.5, 0.5, 0]
+      LABEL: "Alto"
+      LABEL_ENABLED: false
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: false
+      LABEL_SHOW_HEAD_SIZE: false
+      CURRENT_WORD_ENABLED: false
+      CURRENT_WORD_POSITION: "bottom-center"
 
   Tenor:
     DEC_SETUP: "[:np][:dv hs 110]"
     VOLUME_ADJUST_DB: -5.0
-    VID_HSB: [322, 59, 65]
-    VID_Position: [0.5, 0.0, 0.5]
+
+    SPECTROGRAM:
+      COLOR_HSB: [322, 59, 65]
+      POSITION: [0.5, 0, 0.5]
+      LABEL: "Tenor"
+      LABEL_ENABLED: false
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: false
+      LABEL_SHOW_HEAD_SIZE: false
+      CURRENT_WORD_ENABLED: false
+      CURRENT_WORD_POSITION: "bottom-center"
 
   Bass:
     DEC_SETUP: "[:np][:dv hs 120]"
     VOLUME_ADJUST_DB: -10.0
-    VID_HSB: [301, 49, 41]
-    VID_Position: [0.5, 0.5, 0.5]
 
+    SPECTROGRAM:
+      COLOR_HSB: [301, 49, 41]
+      POSITION: [0.5, 0.5, 0.5]
+      LABEL: "Bass"
+      LABEL_ENABLED: false
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: false
+      LABEL_SHOW_HEAD_SIZE: false
+      CURRENT_WORD_ENABLED: false
+      CURRENT_WORD_POSITION: "bottom-center"

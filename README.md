@@ -41,6 +41,15 @@ lyrics, pitch rules, DECtalk commands, audio processing, and output layout.
 Dectalk is a text to speech synthesizer released in 1983. It was famously used by Steven Hawking, and was included in the game Moonbase Alpha to read chat messages aloud. The system allows pronunciation phonemes, even inputting specific pitches and durations. Players of Moonbase Alpha quickly realized that these could be used to sing songs. I think this is absolutely delightful, and really wanted to play with this myself. Rather than copy-paste lines of text into the game, I tracked down a standard version of DECTalk and compiled it line by line.
 
 ## Choir Renderer
+For a source checkout, create a Python virtual environment and install the runtime dependencies:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Contributors can install `requirements-dev.txt` instead to include the test runner. FFmpeg and Rubber Band are external executables and are not installed by pip.
+
 Each song is saved in a folder under /songs. Before compilation, specify source MIDI in `inputs/`, lyrics in `inputs/lyrics/*.txt`, and settings in `settings.yaml`. Run choir.py to compile.
 choir.py Usage: python3 choir.py \[options\] \[songFolder\]
 Example:
@@ -157,10 +166,26 @@ There are a ton of other settings to play with that I haven't taken the time to 
 
 
 
-**TODO**
+### Per-track spectrogram settings
 
-### Per Track Animation Settings
-**VID_HSB**
-**VID_Position**
-**VID_LabelDur**
-**VID_LabelFade**
+Spectrogram layout and text overlays belong to a nested `SPECTROGRAM` mapping under each track. Choir Studio edits this mapping directly:
+
+```yaml
+Tracks:
+  Soprano:
+    DEC_SETUP: "[:nf][:dv hs 90]"
+    SPECTROGRAM:
+      COLOR_HSB: [328, 70, 97]
+      POSITION: [0.5, 0, 0]
+      LABEL: "Soprano"
+      LABEL_ENABLED: true
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      CURRENT_WORD_ENABLED: true
+      CURRENT_WORD_POSITION: "bottom-center"
+```
+
+`POSITION` is `[size, left, top]`, expressed as fractions of the final video frame. Text positions support the nine combinations of `top`, `center`, or `bottom` with `left`, `center`, or `right`. Current-word overlays use timing saved by Studio's applied lyric alignment.
+
+The generator renders enabled track clips concurrently, then composites them in configured order and muxes the final audio once. Lossless intermediate clips are deleted only after the final video succeeds.

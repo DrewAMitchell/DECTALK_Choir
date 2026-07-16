@@ -10,6 +10,7 @@ This repo is the DECTALK choir/song compiler.
   .\.venv\Scripts\python.exe choir.py DaisyBell
   .\.venv\Scripts\python.exe -m py_compile choir.py pyFuncs\PhonemeProcessing.py pyFuncs\MidiProcessing.py
   ```
+- Runtime Python packages are pinned in `requirements.txt`; contributor-only packages such as `pytest` belong in `requirements-dev.txt`. Keep both synchronized with imports and the release runtime before adding dependencies.
 - `choir.py` expects `say.exe` in the repo root and renders by launching many `say.exe` processes in parallel.
 - `choir_studio/` is the Tauri/React application. It is the only supported GUI. Run its frontend checks with `npm.cmd run check` and `npm.cmd run build` from that folder; run the native check from `choir_studio/src-tauri/` with `cargo check`. Its native bridge owns long-running subprocesses so the web view must not call render scripts directly.
 - Generated files go under `songs/<Song>/outputs/`. Do not edit generated outputs as source of truth.
@@ -54,6 +55,7 @@ Top-level settings include:
 - `consonantFractionTarget`, `consonantMinMs`, `consonantMaxMs`: control consonant timing.
 - `gapMendMs`: folds tiny MIDI gaps into the previous note instead of emitting a rest. Tracks can override with `GAP_MEND_MS`.
 - `RENDER_ENABLED`: persisted render participation. Defaults to `true`; Studio disables it for roles excluded from rendering and uses the same set for spectrogram video generation.
+- `SPECTROGRAM`: per-track visual ownership boundary. Its children contain `COLOR_HSB`, fractional `[size, left, top]` `POSITION`, optional label/voice/head-size fields, and current-word display settings. Do not add new flat `VID_*` settings; legacy flat values are read only for migration.
 
 Under `Tracks:`, the YAML key is the output part name. It controls output folders, partial text files, stems, and final mix labels.
 
@@ -167,8 +169,8 @@ Studio keeps lyric editing inside the application. Its primary stages flow from 
 - High soprano or octave-boosted parts may need both fixed gain and segment normalization because DECTALK can get quiet at peak notes.
 - Before tuning high-note gain by pitch alone, use `tools/create_head_size_pitch_reference.py` to generate `HeadSizePitchReference`. It renders the same C3-C6 chromatic line at head sizes 80, 95, 110, 125, and 140 with all loudness correction disabled; after rendering, run it with `--analyze` to write `outputs/analysis/head_size_pitch_levels.csv` for an empirical head-size/pitch comparison.
 - When changing duration, note matching, or phoneme splitting logic, compare output lengths and inspect generated partial `.txt` files before assuming the audio backend is the cause.
-- `generateSpectrograms.py` prepares independent stem FFT data with up to four CPU workers, then composes and writes one ordered final video. Choir Studio starts that generator as a native background job and polls its status, keeping the UI responsive.
-- `outputs/_finished/animation.mp4` is an intermediate video. It is removed only after ffmpeg successfully muxes a non-empty final `<Song>.mp4`; retain it when muxing fails or no final audio is available.
+- `generateSpectrograms.py` renders independent, lossless region-sized track clips with up to four CPU workers, then serially overlays those clips in configured order and muxes one final video. Choir Studio starts that generator as a native background job and polls its status, keeping the UI responsive.
+- Per-track clips under `outputs/_animation/` are removed only after ffmpeg successfully creates a non-empty final `<Song>.mp4`; retain them when composition fails. Current-word overlays read word cues from the applied alignment sidecar, with the active draft report as fallback.
 
 ## Validation Checklist
 

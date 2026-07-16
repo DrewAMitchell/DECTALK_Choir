@@ -28,6 +28,15 @@ export type Role = {
   visual_hsb: [number, number, number];
   visual_position: [number, number, number];
   visual_configured: boolean;
+  visual_label: string;
+  visual_label_enabled: boolean;
+  visual_label_position: string;
+  visual_label_show_voice: boolean;
+  visual_label_show_head_size: boolean;
+  visual_current_word_enabled: boolean;
+  visual_current_word_position: string;
+  dectalk_voice: string | null;
+  head_size: number | null;
   render_enabled: boolean;
   render_eligible: boolean;
   midi_track: MidiTrack | null;

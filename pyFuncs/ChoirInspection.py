@@ -7,6 +7,7 @@ import contextlib
 from dataclasses import dataclass, field
 import io
 from pathlib import Path
+import re
 from statistics import fmean, median
 from typing import Iterable
 import math
@@ -130,6 +131,15 @@ class RoleInspection:
     visual_hsb: tuple[float, float, float]
     visual_position: tuple[float, float, float]
     visual_configured: bool
+    visual_label: str
+    visual_label_enabled: bool
+    visual_label_position: str
+    visual_label_show_voice: bool
+    visual_label_show_head_size: bool
+    visual_current_word_enabled: bool
+    visual_current_word_position: str
+    dectalk_voice: str | None
+    head_size: int | None
     render_enabled: bool
     render_eligible: bool
     status: str
@@ -616,8 +626,9 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
 
         stem_path = _audio_path(output_dir, role_name)
         loudness = measure_audio(stem_path) if include_audio and stem_path.is_file() else None
-        raw_hsb = config.get("VID_HSB", [0, 100, 100])
-        raw_position = config.get("VID_Position", [0.5, 0.25, 0.25])
+        spectrogram = config.get("SPECTROGRAM") if isinstance(config.get("SPECTROGRAM"), dict) else {}
+        raw_hsb = spectrogram.get("COLOR_HSB", config.get("VID_HSB", [0, 100, 100]))
+        raw_position = spectrogram.get("POSITION", config.get("VID_Position", [0.5, 0.25, 0.25]))
         visual_hsb = tuple(
             _as_float(value, default)
             for value, default in zip(
@@ -632,7 +643,14 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
                 [0.5, 0.25, 0.25],
             )
         )
-        visual_configured = "VID_HSB" in config and "VID_Position" in config
+        visual_configured = (
+            "COLOR_HSB" in spectrogram and "POSITION" in spectrogram
+        ) or ("VID_HSB" in config and "VID_Position" in config)
+        setup = str(config.get("DEC_SETUP", ""))
+        voice_match = re.search(r"\[:n([a-z])\]", setup, flags=re.IGNORECASE)
+        head_size_match = re.search(r"\[:dv\s+hs\s+(\d+)\]", setup, flags=re.IGNORECASE)
+        label_position = str(spectrogram.get("LABEL_POSITION", config.get("VID_LabelPosition", "top-left")))
+        word_position = str(spectrogram.get("CURRENT_WORD_POSITION", config.get("VID_CurrentWordPosition", "bottom-center")))
         render_enabled = bool(config.get("RENDER_ENABLED", True))
         # choir.py deterministically truncates a note at the next note start. A
         # polyphonic source is therefore a fidelity warning, not a hard render block.
@@ -654,6 +672,15 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
                 visual_hsb=visual_hsb,
                 visual_position=visual_position,
                 visual_configured=visual_configured,
+                visual_label=str(spectrogram.get("LABEL", config.get("VID_Label", role_name))),
+                visual_label_enabled=bool(spectrogram.get("LABEL_ENABLED", config.get("VID_LabelEnabled", False))),
+                visual_label_position=label_position,
+                visual_label_show_voice=bool(spectrogram.get("LABEL_SHOW_VOICE", config.get("VID_LabelShowVoice", False))),
+                visual_label_show_head_size=bool(spectrogram.get("LABEL_SHOW_HEAD_SIZE", config.get("VID_LabelShowHeadSize", False))),
+                visual_current_word_enabled=bool(spectrogram.get("CURRENT_WORD_ENABLED", config.get("VID_CurrentWordEnabled", False))),
+                visual_current_word_position=word_position,
+                dectalk_voice=f"n{voice_match.group(1).lower()}" if voice_match else None,
+                head_size=int(head_size_match.group(1)) if head_size_match else None,
                 render_enabled=render_enabled,
                 render_eligible=render_eligible,
                 status=status,
