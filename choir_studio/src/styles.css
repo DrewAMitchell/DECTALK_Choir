@@ -301,7 +301,7 @@ button:disabled { cursor: wait; opacity: .55; }
 .align-surface { min-width: 0; padding-inline: 0; }
 .align-workspace { width: 100%; min-width: 0; min-height: 0; overflow: hidden; }
 .align-workspace > .midi-transport { flex: 0 0 auto; min-width: 0; border-right: 0; border-left: 0; }
-.align-roll-shell { position: relative; display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+.align-roll-shell { position: relative; display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; min-width: 0; min-height: 0; overflow: hidden; padding-inline: 2%; }
 .align-phrase-toolbar { flex: 0 0 clamp(46px, 9vh, 52px); min-width: 0; overflow: hidden; border: 1px solid #2d383a; border-bottom: 0; background: #192223; }
 .align-phrase-toolbar .phrase-workbench { height: 100%; min-height: 0; flex-wrap: nowrap; gap: 8px; overflow: hidden; padding: 4px 10px; }
 .align-phrase-toolbar .phrase-workbench-heading { flex: 0 0 clamp(104px, 13vw, 150px); min-width: 0; }
