@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { BarChart3, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, FileAudio, FolderOpen, LoaderCircle, Minus, Moon, Music2, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
 import { bridge, deleteSong, media, openFfmpegDownload, openMedia, openSongFolder, renderJobStatus, spectrogramJobStatus, startRenderJob, startSpectrogramJob, type MediaStatus, type RenderJobStatus, type SpectrogramJobStatus } from "./bridge";
 import { PianoRoll } from "./PianoRoll";
@@ -282,12 +282,12 @@ export default function App() {
     <header className="app-header">
       <div className="brand"><span className="brand-mark" aria-hidden="true"><i className="visual-bar bar-low" /><i className="visual-bar bar-mid" /><i className="visual-bar bar-high" /><b className="sharp">#</b><b className="flat">♭</b></span><span>DECTALK Choir</span><strong>Studio</strong></div>
       <label className="song-select"><span>Song</span><select value={song} onChange={(event) => void loadSong(event.target.value)}>{songs.map((item) => <option key={item}>{item}</option>)}</select></label>
+      <div className="selection-actions"><button className="header-command" type="button" onClick={() => void playRender()} disabled={!inspection?.final_mix} title="Open the completed song mix in your default media player" aria-label="Open render in default media player"><Play size={15} /></button><button className="header-command" type="button" onClick={() => void openOutputs()} disabled={!song} title="Open this song's generated output folder" aria-label="Open output folder"><FolderOpen size={16} /></button><button className="header-command destructive-command" type="button" onClick={() => setDeleteSongArmed(true)} disabled={!song} title="Delete this song and all of its outputs" aria-label="Delete selected song"><Trash2 size={15} /></button></div>
       <nav className="lifecycle" aria-label="Track design phases">
         {stages.map(([id, label, Icon], index) => <button key={id} className={stage === id ? "active" : ""} onClick={() => selectStage(id)}><span className="stage-index">{index + 1}</span><Icon size={16} />{label}</button>)}
       </nav>
-      <div className="selection-actions"><button className="header-command" type="button" onClick={() => void playRender()} disabled={!inspection?.final_mix} title="Open the completed song mix in your default media player" aria-label="Open render in default media player"><Play size={15} /></button><button className="header-command" type="button" onClick={() => void openOutputs()} disabled={!song} title="Open this song's generated output folder" aria-label="Open output folder"><FolderOpen size={16} /></button><button className="header-command destructive-command" type="button" onClick={() => setDeleteSongArmed(true)} disabled={!song} title="Delete this song and all of its outputs" aria-label="Delete selected song"><Trash2 size={15} /></button></div>
-      <div className="theme-switch" role="group" aria-label="Color theme"><button className={theme === "dark" ? "active" : ""} type="button" title="Use dark theme" aria-label="Use dark theme" aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}><Moon size={15} /></button><button className={theme === "light" ? "active" : ""} type="button" title="Use light theme" aria-label="Use light theme" aria-pressed={theme === "light"} onClick={() => setTheme("light")}><Sun size={16} /></button></div>
       <div className="header-state">{busy}</div>
+      <div className="theme-switch" role="group" aria-label="Color theme"><button className={theme === "dark" ? "active" : ""} type="button" title="Use dark theme" aria-label="Use dark theme" aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}><Moon size={15} /></button><button className={theme === "light" ? "active" : ""} type="button" title="Use light theme" aria-label="Use light theme" aria-pressed={theme === "light"} onClick={() => setTheme("light")}><Sun size={16} /></button></div>
     </header>
     {deleteSongArmed && <section className="song-delete-confirm" role="alertdialog" aria-label={`Delete ${song}`}><div><strong>Delete {song}?</strong><span>Its inputs, settings, and generated outputs will be removed.</span></div><button className="secondary" type="button" onClick={() => setDeleteSongArmed(false)} disabled={!!busy}>Cancel</button><button className="danger" type="button" onClick={() => void removeSong()} disabled={!!busy}>Delete song</button></section>}
     {error && <div className="error-toast" role="alert" aria-live="assertive"><CircleAlert size={17} /><span>{error}</span><div className="error-actions">{/ffmpeg/i.test(error) && <><button type="button" className="error-action" onClick={() => void openFfmpegDownload().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Open FFmpeg's official Windows download guidance">Get FFmpeg</button><button type="button" className="error-action" onClick={() => void navigator.clipboard.writeText(FFMPEG_WINGET_COMMAND).then(() => setError(`Copied: ${FFMPEG_WINGET_COMMAND}`)).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Copy the Windows Package Manager install command">Copy winget</button></>}<button type="button" onClick={() => setError("")} title="Dismiss error" aria-label="Dismiss error"><X size={16} /></button></div></div>}
@@ -295,7 +295,7 @@ export default function App() {
       <aside className="track-rail"><h2 className="rail-song-title" title={song}>{song || "Song"}</h2><div className="rail-heading"><PanelLeft size={16} /> Tracks</div><div className="track-list">{inspection?.roles.map((item) => <button key={item.role} className={item.role === roleName ? "track active" : "track"} onClick={() => selectRole(item.role)}><strong title={item.role}>{item.role}</strong><span>{item.midi_source_name}</span><div className="track-range"><PitchRange value={item.midi_range} /><small>{item.note_count} notes</small></div>{item.polyphony && item.polyphony > 1 && <i>Needs split</i>}</button>)}</div></aside>
       <section className={`surface${stage === "align" ? " align-surface" : ""}`}>
         {stage === "align" && <AlignStage role={role} inspection={inspection} song={song} alignment={activeAlignment} loading={alignmentLoading || alignmentTransitionPending} templateSources={templateSources} onAdoptTemplate={adoptTemplate} onOpenLyrics={() => setLyricsModalOpen(true)} setAlignment={setAlignment} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} busy={busy} setBusy={setBusy} setError={setError} />}
-        {stage === "review" && <ReviewStage song={song} role={role} inspection={inspection} enabledRoles={reviewEnabledRoles} onEnabledRolesChange={(roles) => void updateRenderRoles(roles)} onSelectRole={selectRole} onSelectVisualRole={selectRole} setInspection={setInspection} busy={busy} setBusy={setBusy} setError={setError} />}
+        {stage === "review" && <ReviewStage song={song} role={role} inspection={inspection} enabledRoles={reviewEnabledRoles} onEnabledRolesChange={(roles) => void updateRenderRoles(roles)} onSelectRole={selectRole} setInspection={setInspection} busy={busy} setBusy={setBusy} setError={setError} />}
       </section>
     </section>
     {lyricsModalOpen && <section className="lyrics-modal-backdrop" role="presentation" onMouseDown={() => setLyricsModalOpen(false)}><section className="lyrics-modal" role="dialog" aria-modal="true" aria-label={`Edit ${roleName} lyrics`} onMouseDown={(event) => event.stopPropagation()}><button className="lyrics-modal-close" type="button" title="Close lyric editor" aria-label="Close lyric editor" onClick={() => setLyricsModalOpen(false)}><X size={17} /></button><LyricsStage transcript={transcript} transcriptLoaded={transcriptLoadedKey === transcriptKey} setTranscript={setTranscript} validation={validation} onDraft={runDraft} onNoteSkeleton={runNoteSkeleton} onSave={saveTranscript} busy={busy} draftState={hasDraft ? draftState : null} dirty={transcript !== savedTranscript} prompt={lyricsPrompt} /></section></section>}
@@ -529,23 +529,36 @@ function ReviewTrackTable({ roles, selectedRole, enabledRoles, onToggleRole, onS
   })}</tbody></table><div className="mix-loudness"><strong>Final mix</strong><span>{final ? final.error ?? `${formatDb(final.minimum_dbfs)} min / ${formatDb(final.median_dbfs)} median / ${formatDb(final.average_dbfs)} average / ${formatDb(final.maximum_dbfs)} max / ${formatDb(final.peak_dbfs)} peak` : "No completed mix available"}</span></div></section>;
 }
 
-function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChange, onSelectRole, onSelectVisualRole, setInspection, busy, setBusy, setError }: { song: string; role: Role | null; inspection: SongInspection | null; enabledRoles: string[]; onEnabledRolesChange(roles: string[]): void; onSelectRole(role: string): void; onSelectVisualRole(role: string): void; setInspection(value: SongInspection | null): void; busy: string; setBusy(value: string): void; setError(value: string): void }) {
+function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChange, onSelectRole, setInspection, busy, setBusy, setError }: { song: string; role: Role | null; inspection: SongInspection | null; enabledRoles: string[]; onEnabledRolesChange(roles: string[]): void; onSelectRole(role: string): void; setInspection(value: SongInspection | null): void; busy: string; setBusy(value: string): void; setError(value: string): void }) {
   const [panel, setPanel] = useState<"overview" | "tune" | "visuals">("overview");
+  const [visualRoleName, setVisualRoleName] = useState("");
   const [position, setPosition] = useState<[number, number, number]>([0.5, 0.25, 0.25]);
   const [hsb, setHsb] = useState<[number, number, number]>([0, 100, 100]);
+  const [visualDrafts, setVisualDrafts] = useState<Record<string, { position: [number, number, number]; hsb: [number, number, number] }>>({});
+  const visualDraftsRef = useRef(visualDrafts);
   const [job, setJob] = useState<SpectrogramJobStatus | null>(null);
   const [renderJob, setRenderJob] = useState<RenderJobStatus | null>(null);
   const [tuning, setTuning] = useState<TrackTuning | null>(null);
   const [autoNormalize, setAutoNormalize] = useState<AutoNormalizeTuning | null>(null);
   const tuningCache = useRef(new Map<string, TrackTuning>());
-  useEffect(() => { setPanel("overview"); }, [song]);
+  const visualDrag = useRef<{ pointerId: number; role: string; mode: "move" | "resize"; startX: number; startY: number; bounds: DOMRect; position: [number, number, number] } | null>(null);
+  const [visualDragging, setVisualDragging] = useState(false);
+  const enabledVisualRoles = inspection?.roles.filter((item) => enabledRoles.includes(item.role)) ?? [];
+  const visualRole = enabledVisualRoles.find((item) => item.role === visualRoleName) ?? null;
+  useEffect(() => {
+    setPanel("overview");
+    setVisualRoleName("");
+    setVisualDrafts({});
+    visualDraftsRef.current = {};
+  }, [song]);
   useEffect(() => { setRenderJob(null); }, [inspection?.song_name]);
   useEffect(() => {
-    if (!role) return;
-    setPosition(role.visual_position);
-    setHsb(role.visual_hsb);
+    if (!visualRole) return;
+    const draft = visualDraftsRef.current[visualRole.role];
+    setPosition(draft?.position ?? visualRole.visual_position);
+    setHsb(draft?.hsb ?? visualRole.visual_hsb);
     setJob((current) => current?.state === "running" ? current : null);
-  }, [role?.role, role?.visual_position, role?.visual_hsb]);
+  }, [visualRoleName, visualRole?.visual_position, visualRole?.visual_hsb]);
   useEffect(() => {
     if (!song || !role) {
       setTuning(null);
@@ -584,16 +597,74 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     next[index] = Number(value);
     setValue(next);
   };
+  const updateVisualPosition = (next: [number, number, number], targetRole = visualRoleName) => {
+    if (targetRole === visualRoleName) setPosition(next);
+    if (!targetRole) return;
+    setVisualDrafts((current) => {
+      const updated = { ...current, [targetRole]: { position: next, hsb: current[targetRole]?.hsb ?? (inspection?.roles.find((item) => item.role === targetRole)?.visual_hsb ?? hsb) } };
+      visualDraftsRef.current = updated;
+      return updated;
+    });
+  };
+  const updateVisualHsb = (next: [number, number, number], targetRole = visualRoleName) => {
+    if (targetRole === visualRoleName) setHsb(next);
+    if (!targetRole) return;
+    setVisualDrafts((current) => {
+      const updated = { ...current, [targetRole]: { position: current[targetRole]?.position ?? (inspection?.roles.find((item) => item.role === targetRole)?.visual_position ?? position), hsb: next } };
+      visualDraftsRef.current = updated;
+      return updated;
+    });
+  };
+  const beginVisualDrag = (event: ReactPointerEvent<HTMLButtonElement | HTMLSpanElement>, item: Role, mode: "move" | "resize") => {
+    const preview = event.currentTarget.closest(".visual-layout-preview");
+    if (!(preview instanceof HTMLElement)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setVisualRoleName(item.role);
+    const draft = visualDraftsRef.current[item.role];
+    const startPosition = draft?.position ?? item.visual_position;
+    const startHsb = draft?.hsb ?? item.visual_hsb;
+    setPosition(startPosition);
+    setHsb(startHsb);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    visualDrag.current = { pointerId: event.pointerId, role: item.role, mode, startX: event.clientX, startY: event.clientY, bounds: preview.getBoundingClientRect(), position: startPosition };
+    setVisualDragging(true);
+  };
+  const updateVisualDrag = (event: ReactPointerEvent<HTMLButtonElement | HTMLSpanElement>) => {
+    const drag = visualDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const dx = (event.clientX - drag.startX) / Math.max(1, drag.bounds.width);
+    const dy = (event.clientY - drag.startY) / Math.max(1, drag.bounds.height);
+    const [size, left, top] = drag.position;
+    if (drag.mode === "move") {
+      updateVisualPosition([size, Math.max(0, Math.min(1 - size, left + dx)), Math.max(0, Math.min(1 - size, top + dy))], drag.role);
+      return;
+    }
+    const delta = Math.abs(dx) >= Math.abs(dy) ? dx : dy;
+    updateVisualPosition([Math.max(0.05, Math.min(1 - left, 1 - top, size + delta)), left, top], drag.role);
+  };
+  const finishVisualDrag = (event: ReactPointerEvent<HTMLButtonElement | HTMLSpanElement>) => {
+    if (visualDrag.current?.pointerId !== event.pointerId) return;
+    visualDrag.current = null;
+    setVisualDragging(false);
+  };
   const refresh = async () => {
     const next = await bridge<SongInspection>({ command: "inspect_song", song });
     setInspection(next);
   };
   const saveLayout = async () => {
-    if (!role) return;
+    if (!visualRole) return;
     setBusy("Saving visualizer layout"); setError("");
     try {
-      await bridge({ command: "save_visual_layout", song, role: role.role, position, hsb });
+      await bridge({ command: "save_visual_layout", song, role: visualRole.role, position, hsb });
       await refresh();
+      setVisualDrafts((current) => {
+        const next = { ...current };
+        delete next[visualRole.role];
+        visualDraftsRef.current = next;
+        return next;
+      });
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
   useEffect(() => {
@@ -677,10 +748,13 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   };
   const final = inspection?.final_loudness;
-  const enabledVisualRoles = inspection?.roles.filter((item) => enabledRoles.includes(item.role)) ?? [];
   const hasFinishedRender = Boolean(final);
+  const renderState = renderJob?.state ?? "idle";
+  const renderStatusLabel = renderState === "completed" ? "Render complete" : renderState === "running" ? "Rendering" : renderState === "failed" ? "Render failed" : "Ready to render";
+  const renderStatusMessage = renderJob?.message ?? "Settings are saved in settings.yaml";
+  const renderStatusIcon = renderState === "completed" ? <CircleCheck size={17} /> : renderState === "failed" ? <CircleAlert size={17} /> : renderState === "running" ? <LoaderCircle size={17} /> : <FileAudio size={17} />;
   return <section className={`review-stage ${panel}-panel`}>
-    <header className="surface-header review-header"><div className="review-identity"><p className="eyebrow">Output review</p><h1>{song || "Select a song"}<span>{role?.role ?? "Select a role"}</span></h1><p>Enable renderable tracks in the table; tune an individual role from its cog.</p></div><section className={renderJob?.state === "completed" ? "review-render completed" : "review-render"} aria-label="Render selected tracks">{renderJob?.state === "completed" ? <div className="render-complete"><CircleCheck size={19} /><div><strong>Render complete</strong><span>{renderJob.message}</span></div></div> : <div><p className="eyebrow">Render set</p><strong>{enabledRoles.length} tracks enabled</strong><span>{renderJob?.state === "running" ? renderJob.message : "Saved in settings.yaml"}</span></div>}<div className="review-render-actions"><button className="primary" type="button" onClick={() => void render()} disabled={renderJob?.state === "running" || !enabledRoles.length}>{renderJob?.state === "running" ? "Rendering in background..." : <><FileAudio size={16} /> Render enabled tracks <span className="render-duration">{formatDuration(inspection?.midi?.duration_seconds)}</span></>}</button>{hasFinishedRender && <button className="secondary spectrogram-layout-command" type="button" onClick={() => { const firstEnabledRole = enabledVisualRoles[0]?.role; if (firstEnabledRole) onSelectVisualRole(firstEnabledRole); setPanel("visuals"); }} disabled={!enabledVisualRoles.length}><BarChart3 size={15} /> Spectrogram layout</button>}</div></section></header>
+    <header className="surface-header review-header"><div className="review-identity"><p className="eyebrow">Output review</p><h1>{song || "Select a song"}<span>{role?.role ?? "Select a role"}</span></h1><p>Enable renderable tracks in the table; tune an individual role from its cog.</p></div><section className={`review-render ${renderState}`} aria-label="Render selected tracks"><div className="render-status"><div className="render-status-state">{renderStatusIcon}<span>{renderStatusLabel}</span></div><strong>{enabledRoles.length} tracks enabled</strong><span className="render-status-message" title={renderStatusMessage}>{renderStatusMessage}</span></div><div className="review-render-actions"><button className="primary" type="button" onClick={() => void render()} disabled={renderState === "running" || !enabledRoles.length}>{renderState === "running" ? "Rendering in background..." : <><FileAudio size={16} /> Render enabled tracks <span className="render-duration">{formatDuration(inspection?.midi?.duration_seconds)}</span></>}</button><button className="secondary spectrogram-layout-command" type="button" onClick={() => { const initialRole = enabledVisualRoles.some((item) => item.role === visualRoleName) ? visualRoleName : enabledVisualRoles[0]?.role ?? ""; setVisualRoleName(initialRole); setPanel("visuals"); }} disabled={!hasFinishedRender || !enabledVisualRoles.length}><BarChart3 size={15} /> Spectrogram layout</button></div></section></header>
     {panel !== "overview" && <nav className="review-panel-nav" aria-label="Review workspace">
       <button className="secondary" type="button" onClick={() => setPanel("overview")}><BarChart3 size={15} /> Review overview</button>
       {panel === "tune" && <span>Editing {role?.role ?? "the selected role"} tuning profile</span>}
@@ -723,8 +797,9 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
       </div>}
     </details>
     <section className="review-visualizer">
-      <div className="visual-layout-preview" aria-label="Enabled spectrogram render regions">{enabledVisualRoles.map((item) => <button key={item.role} type="button" className={item.role === role?.role ? "visual-region selected" : "visual-region"} title={`Select ${item.role} for layout editing`} onClick={() => onSelectVisualRole(item.role)} style={{ left: `${item.visual_position[1] * 100}%`, top: `${item.visual_position[2] * 100}%`, width: `${item.visual_position[0] * 100}%`, height: `${item.visual_position[0] * 100}%`, background: `hsl(${item.visual_hsb[0]} ${item.visual_hsb[1]}% ${Math.max(18, item.visual_hsb[2] / 2)}%)`, borderColor: `hsl(${item.visual_hsb[0]} ${item.visual_hsb[1]}% ${item.visual_hsb[2]}%)` }}><span>{item.role}</span></button>)}</div>
-      <div className="visual-layout-controls"><div><p className="eyebrow">Spectrogram render layout</p><strong>{enabledVisualRoles.some((item) => item.role === role?.role) ? role?.role : "Select an enabled region"}</strong><p>The preview and video use only enabled stems. Position and color remain per-region settings.</p></div><div className="visual-fields"><label>Color<input type="color" value={hsbToHex(hsb)} onChange={(event) => setHsb(hexToHsb(event.target.value))} disabled={!enabledVisualRoles.some((item) => item.role === role?.role)} /></label><label>Size<input type="number" min="0.05" max="1" step="0.01" value={position[0]} onChange={(event) => changeTriplet(setPosition, position, 0, event.target.value)} disabled={!enabledVisualRoles.some((item) => item.role === role?.role)} /></label><label>Left<input type="number" min="0" max="1" step="0.01" value={position[1]} onChange={(event) => changeTriplet(setPosition, position, 1, event.target.value)} disabled={!enabledVisualRoles.some((item) => item.role === role?.role)} /></label><label>Top<input type="number" min="0" max="1" step="0.01" value={position[2]} onChange={(event) => changeTriplet(setPosition, position, 2, event.target.value)} disabled={!enabledVisualRoles.some((item) => item.role === role?.role)} /></label><label>Hue<input type="number" min="0" max="360" step="1" value={hsb[0]} onChange={(event) => changeTriplet(setHsb, hsb, 0, event.target.value)} disabled={!enabledVisualRoles.some((item) => item.role === role?.role)} /></label><label>Sat<input type="number" min="0" max="100" step="1" value={hsb[1]} onChange={(event) => changeTriplet(setHsb, hsb, 1, event.target.value)} disabled={!enabledVisualRoles.some((item) => item.role === role?.role)} /></label><label>Bright<input type="number" min="0" max="100" step="1" value={hsb[2]} onChange={(event) => changeTriplet(setHsb, hsb, 2, event.target.value)} disabled={!enabledVisualRoles.some((item) => item.role === role?.role)} /></label></div><div className="review-actions"><button className="secondary" type="button" onClick={() => void saveLayout()} disabled={!enabledVisualRoles.some((item) => item.role === role?.role) || !!busy}>Save region</button><button className="primary" type="button" onClick={() => void generate()} disabled={!enabledRoles.length || job?.state === "running"}>{job?.state === "running" ? "Generating video..." : <><BarChart3 size={16} /> Generate enabled spectrograms</>}</button>{inspection?.animation_exists && inspection.animation_path && <button className="secondary" type="button" onClick={() => void openMedia(inspection.animation_path!)} disabled={!!busy}><Play size={15} /> Open video</button>}</div></div>
+      <div className="visual-region-picker" role="listbox" aria-label="Spectrogram regions">{enabledVisualRoles.map((item) => { const draft = visualDrafts[item.role]; const visualHsb = draft?.hsb ?? item.visual_hsb; return <button key={item.role} type="button" role="option" aria-selected={item.role === visualRoleName} className={item.role === visualRoleName ? "selected" : ""} onClick={() => setVisualRoleName(item.role)}><i style={{ background: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${visualHsb[2]}%)` }} />{item.role}</button>; })}</div>
+      <div className={visualDragging ? "visual-layout-preview dragging" : "visual-layout-preview"} aria-label="Enabled spectrogram render regions">{enabledVisualRoles.map((item) => { const selected = item.role === visualRoleName; const draft = visualDrafts[item.role]; const visualPosition = draft?.position ?? item.visual_position; const visualHsb = draft?.hsb ?? item.visual_hsb; return <button key={item.role} type="button" className={selected ? "visual-region selected" : "visual-region"} title={`Drag ${item.role} to position it`} onPointerDown={(event) => beginVisualDrag(event, item, "move")} onPointerMove={updateVisualDrag} onPointerUp={finishVisualDrag} onPointerCancel={finishVisualDrag} onClick={() => setVisualRoleName(item.role)} style={{ left: `${visualPosition[1] * 100}%`, top: `${visualPosition[2] * 100}%`, width: `${visualPosition[0] * 100}%`, height: `${visualPosition[0] * 100}%`, background: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${Math.max(18, visualHsb[2] / 2)}%)`, borderColor: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${visualHsb[2]}%)` }}><span>{item.role}</span>{selected && <span className="visual-resize-handle" title={`Drag to resize ${item.role}`} onPointerDown={(event) => beginVisualDrag(event, item, "resize")} onPointerMove={updateVisualDrag} onPointerUp={finishVisualDrag} onPointerCancel={finishVisualDrag} />}</button>; })}</div>
+      <div className="visual-layout-controls"><div><p className="eyebrow">Spectrogram render layout</p><strong>{visualRole?.role ?? "Select an enabled region"}</strong><p>Drag a region to move it; drag its lower-right handle to resize. Numeric fields provide precise positioning.</p></div><div className="visual-fields"><label>Color<input type="color" value={hsbToHex(hsb)} onChange={(event) => updateVisualHsb(hexToHsb(event.target.value))} disabled={!visualRole} /></label><label>Size<input type="number" min="0.05" max={Math.min(1 - position[1], 1 - position[2])} step="0.01" value={position[0]} onChange={(event) => changeTriplet(updateVisualPosition, position, 0, event.target.value)} disabled={!visualRole} /></label><label>Left<input type="number" min="0" max={1 - position[0]} step="0.01" value={position[1]} onChange={(event) => changeTriplet(updateVisualPosition, position, 1, event.target.value)} disabled={!visualRole} /></label><label>Top<input type="number" min="0" max={1 - position[0]} step="0.01" value={position[2]} onChange={(event) => changeTriplet(updateVisualPosition, position, 2, event.target.value)} disabled={!visualRole} /></label><label>Hue<input type="number" min="0" max="360" step="1" value={hsb[0]} onChange={(event) => changeTriplet(updateVisualHsb, hsb, 0, event.target.value)} disabled={!visualRole} /></label><label>Sat<input type="number" min="0" max="100" step="1" value={hsb[1]} onChange={(event) => changeTriplet(updateVisualHsb, hsb, 1, event.target.value)} disabled={!visualRole} /></label><label>Bright<input type="number" min="0" max="100" step="1" value={hsb[2]} onChange={(event) => changeTriplet(updateVisualHsb, hsb, 2, event.target.value)} disabled={!visualRole} /></label></div><div className="review-actions"><button className="secondary" type="button" onClick={() => void saveLayout()} disabled={!visualRole || !!busy}>Save region</button><button className="primary" type="button" onClick={() => void generate()} disabled={!enabledRoles.length || job?.state === "running"}>{job?.state === "running" ? "Generating video..." : <><BarChart3 size={16} /> Generate enabled spectrograms</>}</button>{inspection?.animation_exists && inspection.animation_path && <button className="secondary" type="button" onClick={() => void openMedia(inspection.animation_path!)} disabled={!!busy}><Play size={15} /> Open video</button>}</div></div>
     </section>
     {job && job.state !== "idle" && <details className="generated review-log" open={job.state !== "completed"}><summary>{job.message} <span>{job.state === "running" ? "background job" : `exit ${job.returncode ?? "--"}`}</span></summary><pre>{job.log || "The generator is still running; its completed log will appear here."}</pre></details>}
   </section>;
