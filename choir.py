@@ -20,6 +20,7 @@ from pyFuncs.PitchMapping import (
 	wrap_dectalk_pitch,
 )
 from pyFuncs.AudioSafety import DEFAULT_PEAK_CEILING_DBFS, apply_peak_ceiling
+from pyFuncs.AudioTiming import OUTPUT_LEAD_IN_MS
 from pyFuncs.SongPaths import has_lyric_content, render_lyrics_path
 
 # Make sure song is specified
@@ -1121,7 +1122,7 @@ for fooPartName in partNamesToOutput:
 
 	for fooLine, startTime, nextAudio in lineAudioSet:
 		nextAudio = applyNoteNormalize(nextAudio, fooLine, foo_OCTAVE_BOOST, noteNormalizeTargetDbfs, trackDict)
-		phraseAudio = AudioSegment.silent(startTime + 1000, frame_rate=nextAudio.frame_rate).set_channels(nextAudio.channels).set_sample_width(4) + nextAudio
+		phraseAudio = AudioSegment.silent(startTime + OUTPUT_LEAD_IN_MS, frame_rate=nextAudio.frame_rate).set_channels(nextAudio.channels).set_sample_width(4) + nextAudio
 		outputAudio = phraseAudio if outputAudio is None else phraseAudio.overlay(outputAudio)
 		# except:
 		#     print(f"ERROR READING {readWavFileName}, LINE NOT INCLUDED")
@@ -1142,7 +1143,7 @@ for fooPartName in partNamesToOutput:
 		#     print(f">")
 		#     outputAudio = outputAudio[:startTime] + outputAudio[startTime:].overlay(nextAudio)
 
-	outputAudioDict[fooPartName] = outputAudio if outputAudio is not None else AudioSegment.silent(firstNote + 1000).set_sample_width(4)
+	outputAudioDict[fooPartName] = outputAudio if outputAudio is not None else AudioSegment.silent(firstNote + OUTPUT_LEAD_IN_MS).set_sample_width(4)
 
 audioLenth = max( [outputAudioDict[fooPartName].duration_seconds for fooPartName in partNamesToOutput] )
 targetAudioLengthMs = round(audioLenth*1000)

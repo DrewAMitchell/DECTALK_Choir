@@ -471,6 +471,7 @@ VISUAL_TEXT_POSITIONS = frozenset({
     "center-left", "center", "center-right",
     "bottom-left", "bottom-center", "bottom-right",
 })
+VISUAL_FONTS = frozenset({"choir", "sans", "serif", "mono"})
 
 
 def _visual_text_position(value: object, label: str, default: str) -> str:
@@ -478,6 +479,23 @@ def _visual_text_position(value: object, label: str, default: str) -> str:
     if position not in VISUAL_TEXT_POSITIONS:
         raise BridgeError(f"{label} must be a supported position anchor.")
     return position
+
+
+def _visual_font(value: object, label: str) -> str:
+    font = str(value or "choir").strip().lower()
+    if font not in VISUAL_FONTS:
+        raise BridgeError(f"{label} must be one of: {', '.join(sorted(VISUAL_FONTS))}.")
+    return font
+
+
+def _visual_font_size(value: object, label: str, default: float) -> float:
+    try:
+        size = float(default if value is None else value)
+    except (TypeError, ValueError) as error:
+        raise BridgeError(f"{label} must be a number from 2 to 25 percent.") from error
+    if not 2 <= size <= 25:
+        raise BridgeError(f"{label} must be from 2 to 25 percent.")
+    return size
 
 
 def _save_visual_layout(song: str, role: str, position: object, hsb: object, options: object = None) -> dict[str, Any]:
@@ -504,8 +522,13 @@ def _save_visual_layout(song: str, role: str, position: object, hsb: object, opt
         "LABEL_POSITION": _visual_text_position(options.get("label_position"), "Label position", "top-left"),
         "LABEL_SHOW_VOICE": bool(options.get("label_show_voice", False)),
         "LABEL_SHOW_HEAD_SIZE": bool(options.get("label_show_head_size", False)),
+        "LABEL_FONT": _visual_font(options.get("label_font"), "Label font"),
+        "LABEL_FONT_SIZE_PERCENT": _visual_font_size(options.get("label_font_size_percent"), "Label font size", 7),
         "CURRENT_WORD_ENABLED": bool(options.get("current_word_enabled", False)),
         "CURRENT_WORD_POSITION": _visual_text_position(options.get("current_word_position"), "Current-word position", "bottom-center"),
+        "CURRENT_WORD_FONT": _visual_font(options.get("current_word_font"), "Current-word font"),
+        "CURRENT_WORD_FONT_SIZE_PERCENT": _visual_font_size(options.get("current_word_font_size_percent"), "Current-word font size", 10),
+        "CURRENT_WORD_USE_TRACK_COLOR": bool(options.get("current_word_use_track_color", False)),
     }
     song_dir, _ = load_settings(song)
     settings_path = song_dir / "settings.yaml"

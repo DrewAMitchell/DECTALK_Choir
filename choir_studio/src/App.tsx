@@ -68,8 +68,13 @@ type VisualTextOptions = {
   label_position: string;
   label_show_voice: boolean;
   label_show_head_size: boolean;
+  label_font: string;
+  label_font_size_percent: number;
   current_word_enabled: boolean;
   current_word_position: string;
+  current_word_font: string;
+  current_word_font_size_percent: number;
+  current_word_use_track_color: boolean;
 };
 type VisualDraft = { position: [number, number, number]; hsb: [number, number, number]; options: VisualTextOptions };
 const visualTextPositions = [
@@ -77,14 +82,21 @@ const visualTextPositions = [
   ["center-left", "Center left"], ["center", "Center"], ["center-right", "Center right"],
   ["bottom-left", "Bottom left"], ["bottom-center", "Bottom center"], ["bottom-right", "Bottom right"],
 ];
+const visualFonts = [["choir", "Choir"], ["sans", "Sans"], ["serif", "Serif"], ["mono", "Monospace"]];
+const visualFontFamily = (font: string) => font === "serif" ? "Georgia, serif" : font === "mono" ? "Consolas, monospace" : font === "sans" ? "Segoe UI, sans-serif" : "Segoe UI, sans-serif";
 const roleVisualOptions = (role: Role): VisualTextOptions => ({
   label: role.visual_label,
   label_enabled: role.visual_label_enabled,
   label_position: role.visual_label_position,
   label_show_voice: role.visual_label_show_voice,
   label_show_head_size: role.visual_label_show_head_size,
+  label_font: role.visual_label_font,
+  label_font_size_percent: role.visual_label_font_size_percent,
   current_word_enabled: role.visual_current_word_enabled,
   current_word_position: role.visual_current_word_position,
+  current_word_font: role.visual_current_word_font,
+  current_word_font_size_percent: role.visual_current_word_font_size_percent,
+  current_word_use_track_color: role.visual_current_word_use_track_color,
 });
 const wordColor = (line: number, wordIndex: number) => ["#f29a4b", "#70a8ff", "#e87098", "#a5c95d", "#c08ae8", "#52bfd6"][Math.abs(line * 7 + wordIndex) % 6];
 
@@ -626,7 +638,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const visualRole = enabledVisualRoles.find((item) => item.role === visualRoleName) ?? null;
   const visualOptions = visualRole
     ? visualDrafts[visualRole.role]?.options ?? roleVisualOptions(visualRole)
-    : { label: "", label_enabled: false, label_position: "top-left", label_show_voice: false, label_show_head_size: false, current_word_enabled: false, current_word_position: "bottom-center" };
+    : { label: "", label_enabled: false, label_position: "top-left", label_show_voice: false, label_show_head_size: false, label_font: "choir", label_font_size_percent: 7, current_word_enabled: false, current_word_position: "bottom-center", current_word_font: "choir", current_word_font_size_percent: 10, current_word_use_track_color: false };
   useEffect(() => {
     visualSaveTimers.current.forEach((timer) => window.clearTimeout(timer));
     visualSaveTimers.current.clear();
@@ -946,14 +958,15 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
         const visualPosition = draft?.position ?? item.visual_position;
         const visualHsb = draft?.hsb ?? item.visual_hsb;
         const options = draft?.options ?? roleVisualOptions(item);
+        const previewRegionHeight = (visualPreviewSize?.height ?? 360) * visualPosition[0];
         const labelParts = [options.label || item.role];
         if (options.label_show_voice) labelParts.push(item.dectalk_voice === "np" ? "Perfect Paul [:np]" : item.dectalk_voice ? `[:${item.dectalk_voice}]` : "default voice");
         if (options.label_show_head_size) labelParts.push(item.head_size ? `hs ${item.head_size}` : "head size default");
         const unsaved = visualDirtyRoles.includes(item.role) || (!item.visual_configured && !visualSavedRoles.includes(item.role));
         return <button key={item.role} type="button" className={`visual-region${selected ? " selected" : ""}${unsaved ? " unsaved" : ""}`} title={unsaved ? `Drag ${item.role} to position it; this layout is not saved yet` : `Drag ${item.role} to position it`} onPointerDown={(event) => beginVisualDrag(event, item, "move")} onPointerMove={updateVisualDrag} onPointerUp={finishVisualDrag} onPointerCancel={finishVisualDrag} onClick={() => setVisualRoleName(item.role)} style={{ left: `${visualPosition[1] * 100}%`, top: `${visualPosition[2] * 100}%`, width: `${visualPosition[0] * 100}%`, height: `${visualPosition[0] * 100}%`, background: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${Math.max(18, visualHsb[2] / 2)}%)`, borderColor: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${visualHsb[2]}%)` }}>
           <span className="visual-region-name">{item.role}</span>
-          {options.label_enabled && <span className={`visual-text-preview ${options.label_position}`}>{labelParts.join(" | ")}</span>}
-          {options.current_word_enabled && <span className={`visual-text-preview current-word ${options.current_word_position}`}>Current word</span>}
+          {options.label_enabled && <span className={`visual-text-preview ${options.label_position}`} style={{ fontFamily: visualFontFamily(options.label_font), fontSize: `${Math.max(7, previewRegionHeight * options.label_font_size_percent / 100)}px` }}>{labelParts.join(" | ")}</span>}
+          {options.current_word_enabled && <span className={`visual-text-preview current-word ${options.current_word_position}`} style={{ color: options.current_word_use_track_color ? `hsl(${visualHsb[0]} ${visualHsb[1]}% ${visualHsb[2]}%)` : "#ffffff", fontFamily: visualFontFamily(options.current_word_font), fontSize: `${Math.max(7, previewRegionHeight * options.current_word_font_size_percent / 100)}px` }}>Current word</span>}
           {unsaved && <small className="visual-unsaved-badge">Not saved</small>}
           {selected && <span className="visual-resize-handle" title={`Drag to resize ${item.role}`} onPointerDown={(event) => beginVisualDrag(event, item, "resize")} onPointerMove={updateVisualDrag} onPointerUp={finishVisualDrag} onPointerCancel={finishVisualDrag} />}
         </button>;
@@ -963,8 +976,10 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
         <div className="visual-fields"><label>Color<input type="color" value={hsbToHex(hsb)} onChange={(event) => updateVisualHsb(hexToHsb(event.target.value))} disabled={!visualRole} /></label><label>Size<input type="number" min="0.05" max={Math.min(1 - position[1], 1 - position[2])} step="0.01" value={position[0]} onChange={(event) => changeTriplet(updateVisualPosition, position, 0, event.target.value)} disabled={!visualRole} /></label><label>Left<input type="number" min="0" max={1 - position[0]} step="0.01" value={position[1]} onChange={(event) => changeTriplet(updateVisualPosition, position, 1, event.target.value)} disabled={!visualRole} /></label><label>Top<input type="number" min="0" max={1 - position[0]} step="0.01" value={position[2]} onChange={(event) => changeTriplet(updateVisualPosition, position, 2, event.target.value)} disabled={!visualRole} /></label><label>Hue<input type="number" min="0" max="360" step="1" value={hsb[0]} onChange={(event) => changeTriplet(updateVisualHsb, hsb, 0, event.target.value)} disabled={!visualRole} /></label><label>Sat<input type="number" min="0" max="100" step="1" value={hsb[1]} onChange={(event) => changeTriplet(updateVisualHsb, hsb, 1, event.target.value)} disabled={!visualRole} /></label><label>Bright<input type="number" min="0" max="100" step="1" value={hsb[2]} onChange={(event) => changeTriplet(updateVisualHsb, hsb, 2, event.target.value)} disabled={!visualRole} /></label></div>
         <section className="visual-overlay-controls" aria-label="Spectrogram text overlays">
           <div className="visual-overlay-row"><label className="visual-overlay-toggle"><input type="checkbox" checked={visualOptions.label_enabled} onChange={(event) => updateVisualOptions({ ...visualOptions, label_enabled: event.target.checked })} disabled={!visualRole} /><span>Track label</span></label><input className="visual-label-input" value={visualOptions.label} onChange={(event) => updateVisualOptions({ ...visualOptions, label: event.target.value })} disabled={!visualRole || !visualOptions.label_enabled} aria-label="Track label text" maxLength={80} /><select value={visualOptions.label_position} onChange={(event) => updateVisualOptions({ ...visualOptions, label_position: event.target.value })} disabled={!visualRole || !visualOptions.label_enabled} aria-label="Track label position">{visualTextPositions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+          <div className="visual-overlay-row text-style"><span>Label style</span><select value={visualOptions.label_font} onChange={(event) => updateVisualOptions({ ...visualOptions, label_font: event.target.value })} disabled={!visualRole || !visualOptions.label_enabled} aria-label="Track label font">{visualFonts.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label className="visual-percent-input"><input type="number" min="2" max="25" step="0.5" value={visualOptions.label_font_size_percent} onChange={(event) => updateVisualOptions({ ...visualOptions, label_font_size_percent: Number(event.target.value) })} disabled={!visualRole || !visualOptions.label_enabled} aria-label="Track label font size percentage" /><span>% height</span></label></div>
           <div className="visual-overlay-row metadata"><span>Include</span><label><input type="checkbox" checked={visualOptions.label_show_voice} onChange={(event) => updateVisualOptions({ ...visualOptions, label_show_voice: event.target.checked })} disabled={!visualRole || !visualOptions.label_enabled} /> Voice</label><label><input type="checkbox" checked={visualOptions.label_show_head_size} onChange={(event) => updateVisualOptions({ ...visualOptions, label_show_head_size: event.target.checked })} disabled={!visualRole || !visualOptions.label_enabled} /> Head size</label></div>
           <div className="visual-overlay-row"><label className="visual-overlay-toggle"><input type="checkbox" checked={visualOptions.current_word_enabled} onChange={(event) => updateVisualOptions({ ...visualOptions, current_word_enabled: event.target.checked })} disabled={!visualRole} /><span>Current word</span></label><span className="visual-overlay-note">Uses applied alignment timing</span><select value={visualOptions.current_word_position} onChange={(event) => updateVisualOptions({ ...visualOptions, current_word_position: event.target.value })} disabled={!visualRole || !visualOptions.current_word_enabled} aria-label="Current word position">{visualTextPositions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+          <div className="visual-overlay-row text-style"><label className="visual-overlay-toggle"><input type="checkbox" checked={visualOptions.current_word_use_track_color} onChange={(event) => updateVisualOptions({ ...visualOptions, current_word_use_track_color: event.target.checked })} disabled={!visualRole || !visualOptions.current_word_enabled} /><span>Track color</span></label><select value={visualOptions.current_word_font} onChange={(event) => updateVisualOptions({ ...visualOptions, current_word_font: event.target.value })} disabled={!visualRole || !visualOptions.current_word_enabled} aria-label="Current word font">{visualFonts.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label className="visual-percent-input"><input type="number" min="2" max="25" step="0.5" value={visualOptions.current_word_font_size_percent} onChange={(event) => updateVisualOptions({ ...visualOptions, current_word_font_size_percent: Number(event.target.value) })} disabled={!visualRole || !visualOptions.current_word_enabled} aria-label="Current word font size percentage" /><span>% height</span></label></div>
         </section>
         <div className="visual-save-state" role="status" aria-live="polite">{visualSaving || visualDirtyRoles.length ? <><LoaderCircle size={14} /> Saving layout...</> : <><CircleCheck size={14} /> Layout saved automatically</>}</div>
       </div>

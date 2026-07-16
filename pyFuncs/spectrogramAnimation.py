@@ -13,8 +13,16 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import signal
 import scipy.io.wavfile as wavfile
 
+from pyFuncs.AudioTiming import OUTPUT_LEAD_IN_MS
+
 
 FONT_PATH = Path(__file__).resolve().parent / "fonts" / "NexaText-Trial-Light.ttf"
+FONT_CHOICES = {
+    "choir": FONT_PATH,
+    "sans": "segoeui.ttf",
+    "serif": "georgia.ttf",
+    "mono": "consola.ttf",
+}
 TEXT_ANCHORS = {
     "top-left", "top-center", "top-right",
     "center-left", "center", "center-right",
@@ -195,7 +203,14 @@ def _load_word_cues(song_title, track_name):
         except (OSError, ValueError, TypeError):
             continue
         if cues:
-            return cues, str(path)
+            return [
+                {
+                    **cue,
+                    "start_ms": cue["start_ms"] + OUTPUT_LEAD_IN_MS,
+                    "end_ms": cue["end_ms"] + OUTPUT_LEAD_IN_MS,
+                }
+                for cue in cues
+            ], str(path)
     return [], None
 
 
@@ -218,6 +233,14 @@ def _track_label(track_name, track_settings, spectrogram):
     return " | ".join(pieces)
 
 
+def _load_font(choice, size):
+    candidate = FONT_CHOICES.get(str(choice).lower(), FONT_PATH)
+    try:
+        return ImageFont.truetype(str(candidate), size)
+    except OSError:
+        return ImageFont.truetype(str(FONT_PATH), size)
+
+
 def _draw_anchored_text(draw, text, anchor, dimensions, font, fill, stroke_width):
     if not text:
         return
@@ -226,10 +249,16 @@ def _draw_anchored_text(draw, text, anchor, dimensions, font, fill, stroke_width
     bounds = draw.textbbox((0, 0), text, font=font, stroke_width=stroke_width)
     width = bounds[2] - bounds[0]
     height = bounds[3] - bounds[1]
+    available_width = max(1, dimensions[0] - margin * 2)
+    if width > available_width and getattr(font, "size", 0) > 8:
+        font = font.font_variant(size=max(8, round(font.size * available_width / width)))
+        bounds = draw.textbbox((0, 0), text, font=font, stroke_width=stroke_width)
+        width = bounds[2] - bounds[0]
+        height = bounds[3] - bounds[1]
     vertical, horizontal = anchor.split("-") if "-" in anchor else ("center", "center")
-    x = margin if horizontal == "left" else dimensions[0] - margin - width if horizontal == "right" else (dimensions[0] - width) / 2
-    y = margin if vertical == "top" else dimensions[1] - margin - height if vertical == "bottom" else (dimensions[1] - height) / 2
-    draw.text((x, y), text, font=font, fill=fill, stroke_width=stroke_width, stroke_fill=(0, 0, 0))
+    box_x = margin if horizontal == "left" else dimensions[0] - margin - width if horizontal == "right" else (dimensions[0] - width) / 2
+    box_y = margin if vertical == "top" else dimensions[1] - margin - height if vertical == "bottom" else (dimensions[1] - height) / 2
+    draw.text((box_x - bounds[0], box_y - bounds[1]), text, font=font, fill=fill, stroke_width=stroke_width, stroke_fill=(0, 0, 0))
 
 
 def _render_track_clip(payload):
@@ -259,8 +288,14 @@ def _render_track_clip(payload):
     if not writer.isOpened():
         raise RuntimeError(f"Could not create lossless spectrogram clip for {track_name}.")
 
-    label_font = ImageFont.truetype(str(FONT_PATH), max(14, round(height * 0.07)))
-    word_font = ImageFont.truetype(str(FONT_PATH), max(16, round(height * 0.1)))
+    label_font = _load_font(
+        spectrogram.get("LABEL_FONT", "choir"),
+        max(10, round(height * float(spectrogram.get("LABEL_FONT_SIZE_PERCENT", 7)) / 100)),
+    )
+    word_font = _load_font(
+        spectrogram.get("CURRENT_WORD_FONT", "choir"),
+        max(10, round(height * float(spectrogram.get("CURRENT_WORD_FONT_SIZE_PERCENT", 10)) / 100)),
+    )
     image = Image.new("RGB", (width, height), (0, 0, 0))
     draw = ImageDraw.Draw(image)
     bar_spacing = width / (payload["bar_count"] + 1)
@@ -296,7 +331,7 @@ def _render_track_clip(payload):
                         spectrogram.get("CURRENT_WORD_POSITION"),
                         (width, height),
                         word_font,
-                        (245, 248, 247),
+                        bar_color if spectrogram.get("CURRENT_WORD_USE_TRACK_COLOR") else (245, 248, 247),
                         2,
                     )
             writer.write(cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR))

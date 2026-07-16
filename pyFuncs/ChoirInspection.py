@@ -136,8 +136,13 @@ class RoleInspection:
     visual_label_position: str
     visual_label_show_voice: bool
     visual_label_show_head_size: bool
+    visual_label_font: str
+    visual_label_font_size_percent: float
     visual_current_word_enabled: bool
     visual_current_word_position: str
+    visual_current_word_font: str
+    visual_current_word_font_size_percent: float
+    visual_current_word_use_track_color: bool
     dectalk_voice: str | None
     head_size: int | None
     render_enabled: bool
@@ -677,8 +682,13 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
                 visual_label_position=label_position,
                 visual_label_show_voice=bool(spectrogram.get("LABEL_SHOW_VOICE", config.get("VID_LabelShowVoice", False))),
                 visual_label_show_head_size=bool(spectrogram.get("LABEL_SHOW_HEAD_SIZE", config.get("VID_LabelShowHeadSize", False))),
+                visual_label_font=str(spectrogram.get("LABEL_FONT", "choir")),
+                visual_label_font_size_percent=_as_float(spectrogram.get("LABEL_FONT_SIZE_PERCENT"), 7.0),
                 visual_current_word_enabled=bool(spectrogram.get("CURRENT_WORD_ENABLED", config.get("VID_CurrentWordEnabled", False))),
                 visual_current_word_position=word_position,
+                visual_current_word_font=str(spectrogram.get("CURRENT_WORD_FONT", "choir")),
+                visual_current_word_font_size_percent=_as_float(spectrogram.get("CURRENT_WORD_FONT_SIZE_PERCENT"), 10.0),
+                visual_current_word_use_track_color=bool(spectrogram.get("CURRENT_WORD_USE_TRACK_COLOR", False)),
                 dectalk_voice=f"n{voice_match.group(1).lower()}" if voice_match else None,
                 head_size=int(head_size_match.group(1)) if head_size_match else None,
                 render_enabled=render_enabled,

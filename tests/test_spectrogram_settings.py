@@ -1,7 +1,10 @@
 from pathlib import Path
+import json
 
 import yaml
 
+from pyFuncs.AudioTiming import OUTPUT_LEAD_IN_MS
+from pyFuncs.spectrogramAnimation import _load_word_cues
 from tools.choir_studio_bridge import _replace_role_mapping, _word_cues_from_report
 
 
@@ -53,3 +56,22 @@ def test_word_cues_merge_all_notes_owned_by_one_word():
     assert _word_cues_from_report(report) == [
         {"word": "forever", "start_ms": 1250, "end_ms": 1900}
     ]
+
+
+def test_spectrogram_word_cues_include_renderer_lead_in(tmp_path: Path, monkeypatch):
+    report_path = tmp_path / "songs" / "TestSong" / "outputs" / "lyrics_drafts" / "Lead.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(
+        json.dumps({"word_cues": [{"word": "hello", "start_ms": 250, "end_ms": 700}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    cues, source = _load_word_cues("TestSong", "Lead")
+
+    assert source == str(report_path.relative_to(tmp_path))
+    assert cues == [{
+        "word": "hello",
+        "start_ms": 250 + OUTPUT_LEAD_IN_MS,
+        "end_ms": 700 + OUTPUT_LEAD_IN_MS,
+    }]

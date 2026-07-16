@@ -55,7 +55,7 @@ Top-level settings include:
 - `consonantFractionTarget`, `consonantMinMs`, `consonantMaxMs`: control consonant timing.
 - `gapMendMs`: folds tiny MIDI gaps into the previous note instead of emitting a rest. Tracks can override with `GAP_MEND_MS`.
 - `RENDER_ENABLED`: persisted render participation. Defaults to `true`; Studio disables it for roles excluded from rendering and uses the same set for spectrogram video generation.
-- `SPECTROGRAM`: per-track visual ownership boundary. Its children contain `COLOR_HSB`, fractional `[size, left, top]` `POSITION`, optional label/voice/head-size fields, and current-word display settings. Do not add new flat `VID_*` settings; legacy flat values are read only for migration.
+- `SPECTROGRAM`: per-track visual ownership boundary. Its children contain `COLOR_HSB`, fractional `[size, left, top]` `POSITION`, optional label/voice/head-size fields, independent label/current-word font and size controls, and current-word color/display settings. Do not add new flat `VID_*` settings; legacy flat values are read only for migration.
 
 Under `Tracks:`, the YAML key is the output part name. It controls output folders, partial text files, stems, and final mix labels.
 
@@ -171,6 +171,7 @@ Studio keeps lyric editing inside the application. Its primary stages flow from 
 - When changing duration, note matching, or phoneme splitting logic, compare output lengths and inspect generated partial `.txt` files before assuming the audio backend is the cause.
 - `generateSpectrograms.py` renders independent, lossless region-sized track clips with up to four CPU workers, then serially overlays those clips in configured order and muxes one final video. Choir Studio starts that generator as a native background job and polls its status, keeping the UI responsive.
 - Per-track clips under `outputs/_animation/` are removed only after ffmpeg successfully creates a non-empty final `<Song>.mp4`; retain them when composition fails. Current-word overlays read word cues from the applied alignment sidecar, with the active draft report as fallback.
+- Raw MIDI/alignment timestamps do not include the renderer's lead-in. Keep `pyFuncs.AudioTiming.OUTPUT_LEAD_IN_MS` as the single source for both stem placement and synchronized visual word cues.
 
 ## Validation Checklist
 

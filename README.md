@@ -182,10 +182,15 @@ Tracks:
       LABEL_POSITION: "top-left"
       LABEL_SHOW_VOICE: true
       LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "choir"
+      LABEL_FONT_SIZE_PERCENT: 7
       CURRENT_WORD_ENABLED: true
       CURRENT_WORD_POSITION: "bottom-center"
+      CURRENT_WORD_FONT: "choir"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: false
 ```
 
-`POSITION` is `[size, left, top]`, expressed as fractions of the final video frame. Text positions support the nine combinations of `top`, `center`, or `bottom` with `left`, `center`, or `right`. Current-word overlays use timing saved by Studio's applied lyric alignment.
+`POSITION` is `[size, left, top]`, expressed as fractions of the final video frame. Text positions support the nine combinations of `top`, `center`, or `bottom` with `left`, `center`, or `right`. Font choices are `choir`, `sans`, `serif`, and `mono`; sizes are percentages of the track region height. Current-word text is white unless `CURRENT_WORD_USE_TRACK_COLOR` is enabled. Its saved alignment timing automatically includes the renderer's one-second output lead-in.
 
 The generator renders enabled track clips concurrently, then composites them in configured order and muxes the final audio once. Lossless intermediate clips are deleted only after the final video succeeds.

@@ -33,8 +33,13 @@ export type Role = {
   visual_label_position: string;
   visual_label_show_voice: boolean;
   visual_label_show_head_size: boolean;
+  visual_label_font: string;
+  visual_label_font_size_percent: number;
   visual_current_word_enabled: boolean;
   visual_current_word_position: string;
+  visual_current_word_font: string;
+  visual_current_word_font_size_percent: number;
+  visual_current_word_use_track_color: boolean;
   dectalk_voice: string | null;
   head_size: number | null;
   render_enabled: boolean;

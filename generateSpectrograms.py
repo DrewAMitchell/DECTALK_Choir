@@ -86,8 +86,13 @@ def _spectrogram_settings(track_name, track):
     visual.setdefault("LABEL_POSITION", track.get("VID_LabelPosition", "top-left"))
     visual.setdefault("LABEL_SHOW_VOICE", track.get("VID_LabelShowVoice", False))
     visual.setdefault("LABEL_SHOW_HEAD_SIZE", track.get("VID_LabelShowHeadSize", False))
+    visual.setdefault("LABEL_FONT", "choir")
+    visual.setdefault("LABEL_FONT_SIZE_PERCENT", 7)
     visual.setdefault("CURRENT_WORD_ENABLED", track.get("VID_CurrentWordEnabled", False))
     visual.setdefault("CURRENT_WORD_POSITION", track.get("VID_CurrentWordPosition", "bottom-center"))
+    visual.setdefault("CURRENT_WORD_FONT", "choir")
+    visual.setdefault("CURRENT_WORD_FONT_SIZE_PERCENT", 10)
+    visual.setdefault("CURRENT_WORD_USE_TRACK_COLOR", False)
     return visual
 
 
