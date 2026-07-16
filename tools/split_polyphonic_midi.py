@@ -222,9 +222,11 @@ def build_lane_track(
     """Build one output MIDI track with copied controls and one note voice."""
 
     output = mido.MidiTrack()
+    # Keep lane one addressable by the role that already targeted this track.
+    # Additional voices receive stable names that can be configured as new roles.
     lane_name = (
         analysis.source_name
-        if lane_count == 1
+        if lane_count == 1 or lane_number == 1
         else f"{analysis.source_name} - Voice {lane_number}"
     )
     events: list[tuple[int, int, int, mido.Message]] = [

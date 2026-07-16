@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { ArrowLeft, BarChart3, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, FileAudio, FolderOpen, LoaderCircle, Minus, Moon, Music2, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
+import { ArrowLeft, BarChart3, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, FileAudio, FolderOpen, GitBranch, LoaderCircle, Minus, Moon, Music2, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
 import { bridge, deleteSong, media, openFfmpegDownload, openMedia, openSongFolder, renderJobStatus, spectrogramJobStatus, startRenderJob, startSpectrogramJob, type MediaStatus, type RenderJobStatus, type SpectrogramJobStatus } from "./bridge";
 import { PianoRoll } from "./PianoRoll";
 import type { AlignmentReport, Role, SongInspection } from "./types";
@@ -43,6 +43,9 @@ type CandidateState = { exists: boolean; text?: string; path?: string; report?: 
 type AlignmentWorkspace = { candidate: CandidateState; templates: AlignmentTemplate[] };
 type NoteSkeleton = { text: string; note_count: number };
 type AlignmentTemplate = { role: string; path: string };
+type SplitLane = { number: number; name: string; note_count: number; minimum_pitch: number | null; maximum_pitch: number | null };
+type SplitPreview = { source_path: string; source_name: string; track_index: number; note_count: number; max_polyphony: number; default_filename: string; lanes: SplitLane[]; splittable: boolean };
+type SplitResult = { path: string; summary_path: string; backup_path: string | null; replaced_source: boolean; lanes: SplitLane[]; warning: string | null };
 type TrackTuning = {
   VOICE: string | null;
   HEAD_SIZE: number | null;
@@ -137,6 +140,22 @@ function PitchRange({ value, label }: { value: string; label?: string }) {
   </span>;
 }
 
+function RailPitchRange({ value }: { value: string }) {
+  const notes = parseRangeNotes(value);
+  if (!notes) return <span className="track-pitch-endpoints">{value}</span>;
+  const [low, high] = notes;
+  return <span className="track-pitch-endpoints" title={`${value} · ${formatPitchSpan(Math.abs(high.midi - low.midi))}`}>
+    <b style={{ "--octave-color": octaveRangeColor(low.octave) } as CSSProperties}>{low.label}</b>
+    <b style={{ "--octave-color": octaveRangeColor(high.octave) } as CSSProperties}>{high.label}</b>
+  </span>;
+}
+
+function midiPitchLabel(value: number | null) {
+  if (value === null) return "--";
+  const pitchClasses = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  return `${pitchClasses[((value % 12) + 12) % 12]}${Math.floor(value / 12) - 1}`;
+}
+
 function firstPhraseLine(report: AlignmentReport): number | null {
   return report.notes.find((entry) => entry.line !== null && Boolean(entry.lyric))?.line ?? null;
 }
@@ -162,6 +181,7 @@ export default function App() {
   const [selectedPhrase, setSelectedPhrase] = useState<number | null>(null);
   const [deleteSongArmed, setDeleteSongArmed] = useState(false);
   const [lyricsModalOpen, setLyricsModalOpen] = useState(false);
+  const [splitRoleName, setSplitRoleName] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [alignmentLoading, setAlignmentLoading] = useState(false);
@@ -173,6 +193,7 @@ export default function App() {
   }, []);
 
   const role = useMemo(() => inspection?.roles.find((item) => item.role === roleName) ?? null, [inspection, roleName]);
+  const splitRole = useMemo(() => inspection?.roles.find((item) => item.role === splitRoleName) ?? null, [inspection, splitRoleName]);
   const transcriptKey = `${song}:${roleName}`;
   const loadSong = useCallback(async (nextSong: string, preferredRole = "") => {
     if (!nextSong) return;
@@ -332,6 +353,13 @@ export default function App() {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
+  const closeSplitModal = useCallback(() => setSplitRoleName(""), []);
+  const refreshAfterMidiSplit = useCallback(async () => {
+    if (!song) return;
+    invalidateAlignmentLoad();
+    const refreshed = await bridge<SongInspection>({ command: "inspect_song", song });
+    setInspection(refreshed); setAlignment(null); setAlignmentRole(""); setSelectedPhrase(null);
+  }, [song, invalidateAlignmentLoad]);
 
   return <main className="studio-shell">
     <header className="app-header">
@@ -346,14 +374,66 @@ export default function App() {
     {deleteSongArmed && <section className="song-delete-confirm" role="alertdialog" aria-label={`Delete ${song}`}><div><strong>Delete {song}?</strong><span>Its inputs, settings, and generated outputs will be removed.</span></div><button className="secondary" type="button" onClick={() => setDeleteSongArmed(false)} disabled={!!busy}>Cancel</button><button className="danger" type="button" onClick={() => void removeSong()} disabled={!!busy}>Delete song</button></section>}
     {error && <div className="error-toast" role="alert" aria-live="assertive"><CircleAlert size={17} /><span>{error}</span><div className="error-actions">{/ffmpeg/i.test(error) && <><button type="button" className="error-action" onClick={() => void openFfmpegDownload().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Open FFmpeg's official Windows download guidance">Get FFmpeg</button><button type="button" className="error-action" onClick={() => void navigator.clipboard.writeText(FFMPEG_WINGET_COMMAND).then(() => setError(`Copied: ${FFMPEG_WINGET_COMMAND}`)).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Copy the Windows Package Manager install command">Copy winget</button></>}<button type="button" onClick={() => setError("")} title="Dismiss error" aria-label="Dismiss error"><X size={16} /></button></div></div>}
     <section className={`workspace ${stage === "review" ? "review-workspace" : ""}`}>
-      <aside className="track-rail"><h2 className="rail-song-title" title={song}>{song || "Song"}</h2><div className="rail-heading"><PanelLeft size={16} /> Tracks</div><div className="track-list">{inspection?.roles.map((item) => <button key={item.role} className={item.role === roleName ? "track active" : "track"} onClick={() => selectRole(item.role)}><strong title={item.role}>{item.role}</strong><span>{item.midi_source_name}</span><div className="track-range"><PitchRange value={item.midi_range} /><span className="track-note-count">{item.note_count} notes</span></div>{item.polyphony && item.polyphony > 1 && <i>Needs split</i>}</button>)}</div></aside>
+      <aside className="track-rail"><h2 className="rail-song-title" title={song}>{song || "Song"}</h2><div className="rail-heading"><PanelLeft size={16} /> Tracks</div><div className="track-list">{inspection?.roles.map((item) => <div key={item.role} className={item.role === roleName ? "track-entry active" : "track-entry"}><button className="track" onClick={() => selectRole(item.role)} aria-pressed={item.role === roleName}><span className="track-copy"><strong title={item.role}>{item.role}</strong><span title={item.midi_source_name}>{item.midi_source_name}</span><RailPitchRange value={item.midi_range} /></span><span className="track-note-total" title={`${item.note_count} MIDI notes`}><b>{item.note_count}</b><small>notes</small></span>{item.role === roleName && <span className="track-selected-marker" title="Selected track" aria-label="Selected track"><CircleCheck size={15} /></span>}</button>{item.polyphony && item.polyphony > 1 ? <button type="button" className="track-split-control" onClick={() => { if (item.role !== roleName) selectRole(item.role); setSplitRoleName(item.role); }} title={`Split ${item.role} into monophonic voices (maximum ${item.polyphony} simultaneous notes)`} aria-label={`Split polyphonic MIDI track for ${item.role}`}><GitBranch size={14} /></button> : null}</div>)}</div></aside>
       <section className={`surface${stage === "align" ? " align-surface" : ""}`}>
         {stage === "align" && <AlignStage role={role} inspection={inspection} song={song} alignment={activeAlignment} loading={alignmentLoading || alignmentTransitionPending} templateSources={templateSources} onAdoptTemplate={adoptTemplate} onOpenLyrics={() => setLyricsModalOpen(true)} setAlignment={setAlignment} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} busy={busy} setBusy={setBusy} setError={setError} />}
         {stage === "review" && <ReviewStage song={song} role={role} inspection={inspection} enabledRoles={reviewEnabledRoles} onEnabledRolesChange={(roles) => void updateRenderRoles(roles)} onSelectRole={selectRole} setInspection={setInspection} busy={busy} setBusy={setBusy} setError={setError} />}
       </section>
     </section>
     {lyricsModalOpen && <section className="lyrics-modal-backdrop" role="presentation" onMouseDown={() => setLyricsModalOpen(false)}><section className="lyrics-modal" role="dialog" aria-modal="true" aria-label={`Edit ${roleName} lyrics`} onMouseDown={(event) => event.stopPropagation()}><button className="lyrics-modal-close" type="button" title="Close lyric editor" aria-label="Close lyric editor" onClick={() => setLyricsModalOpen(false)}><X size={17} /></button><LyricsStage transcript={transcript} transcriptLoaded={transcriptLoadedKey === transcriptKey} setTranscript={setTranscript} validation={validation} onDraft={runDraft} onNoteSkeleton={runNoteSkeleton} onSave={saveTranscript} busy={busy} draftState={hasDraft ? draftState : null} dirty={transcript !== savedTranscript} prompt={lyricsPrompt} /></section></section>}
+    {splitRole && <PolyphonicSplitModal song={song} role={splitRole} onClose={closeSplitModal} onSourceChanged={refreshAfterMidiSplit} setError={setError} />}
   </main>;
+}
+
+function PolyphonicSplitModal({ song, role, onClose, onSourceChanged, setError }: { song: string; role: Role; onClose(): void; onSourceChanged(): Promise<void>; setError(value: string): void }) {
+  const [preview, setPreview] = useState<SplitPreview | null>(null);
+  const [result, setResult] = useState<SplitResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
+  const [replaceSource, setReplaceSource] = useState(true);
+  const [filename, setFilename] = useState("");
+  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setPreview(null); setResult(null);
+    bridge<SplitPreview>({ command: "preview_polyphonic_split", song, role: role.role }).then((value) => {
+      if (cancelled) return;
+      setPreview(value); setFilename(value.default_filename); setLoading(false);
+    }).catch((cause) => { if (!cancelled) { setLoading(false); setError(cause instanceof Error ? cause.message : String(cause)); onClose(); } });
+    return () => { cancelled = true; };
+  }, [song, role.role, onClose, setError]);
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape" && !working) { event.preventDefault(); onClose(); } };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose, working]);
+
+  const runSplit = async () => {
+    if (!preview) return;
+    setWorking(true); setError("");
+    try {
+      const next = await bridge<SplitResult>({ command: "export_polyphonic_split", song, role: role.role, filename, replace_source: replaceSource, confirm_overwrite: confirmOverwrite });
+      setResult(next);
+      if (next.replaced_source) await onSourceChanged();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setWorking(false); }
+  };
+
+  return <section className="split-modal-backdrop" role="presentation" onMouseDown={() => { if (!working) onClose(); }}><section className="split-modal" role="dialog" aria-modal="true" aria-labelledby="split-modal-title" onMouseDown={(event) => event.stopPropagation()}><button className="split-modal-close" type="button" onClick={onClose} disabled={working} title="Close MIDI splitter" aria-label="Close MIDI splitter"><X size={17} /></button>
+    <header><p className="eyebrow">Selected MIDI track</p><h2 id="split-modal-title">Split {role.role} into voices</h2><p>{role.midi_source_name} · {role.note_count} notes</p></header>
+    {loading && <div className="split-loading"><LoaderCircle size={18} /> Analyzing note overlap...</div>}
+    {preview && !result && <>
+      <section className="split-analysis"><div><span>Maximum overlap</span><strong>{preview.max_polyphony}</strong></div><div><span>Output voices</span><strong>{preview.lanes.length}</strong></div><div><span>Preserved notes</span><strong>{preview.note_count}</strong></div></section>
+      <div className="split-lanes" aria-label="Tentative split voices">{preview.lanes.map((lane) => <div key={lane.number}><span className="split-lane-index">{lane.number}</span><strong title={lane.name}>{lane.name}</strong><span>{midiPitchLabel(lane.minimum_pitch)}-{midiPitchLabel(lane.maximum_pitch)}</span><b>{lane.note_count} notes</b></div>)}</div>
+      {!preview.splittable ? <div className="notice"><CircleCheck size={17} /><div><strong>Already monophonic.</strong> This track has no simultaneous notes to separate.</div></div> : <>
+        <fieldset className="split-destination"><legend>Output</legend><label className={replaceSource ? "selected" : ""}><input type="radio" name="split-output" checked={replaceSource} onChange={() => setReplaceSource(true)} /><span><strong>Replace working MIDI</strong><small>Recommended. Keeps a one-time <code>.bak</code> copy and preserves this role on voice one.</small></span></label><label className={!replaceSource ? "selected" : ""}><input type="radio" name="split-output" checked={!replaceSource} onChange={() => setReplaceSource(false)} /><span><strong>Export a new MIDI</strong><small>Writes a separate file beside the source without activating it.</small></span></label></fieldset>
+        {!replaceSource && <div className="split-filename"><label><span>Filename</span><input value={filename} onChange={(event) => setFilename(event.target.value)} /></label><label className="split-overwrite"><input type="checkbox" checked={confirmOverwrite} onChange={(event) => setConfirmOverwrite(event.target.checked)} /> Allow replacing an existing export</label></div>}
+        <footer><span>Only <strong>{preview.source_name}</strong> is split. Every other MIDI track passes through unchanged.</span><button type="button" className="primary" onClick={() => void runSplit()} disabled={working || (!replaceSource && !filename.trim())}>{working ? <LoaderCircle size={16} /> : <GitBranch size={16} />}{working ? "Splitting MIDI" : replaceSource ? "Replace working MIDI" : "Export split MIDI"}</button></footer>
+      </>}
+    </>}
+    {result && <section className="split-complete"><CircleCheck size={24} /><div><strong>MIDI split complete</strong><span>{result.path}</span>{result.backup_path && <small>Backup: {result.backup_path}</small>}{result.warning && <small className="split-warning">{result.warning}</small>}</div><button className="primary" type="button" onClick={onClose}>Done</button></section>}
+  </section></section>;
 }
 
 function LyricsStage({ transcript, transcriptLoaded, setTranscript, validation, onDraft, onNoteSkeleton, onSave, busy, draftState, dirty, prompt }: { transcript: string; transcriptLoaded: boolean; setTranscript(value: string): void; validation: { invalid_words: string[]; normalized_lines: string[]; ok: boolean } | null; onDraft(): void; onNoteSkeleton(placeholder: string): void; onSave(): void; busy: string; draftState: DraftState | null; dirty: boolean; prompt: string }) {

@@ -23,6 +23,8 @@ import tempfile
 from typing import Any
 import uuid
 
+import mido
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ASSISTANT_DIR = REPO_ROOT / "tools" / "lyric_sync_assistant"
@@ -55,6 +57,14 @@ from alignment import (
     reorder_alignment_token,
     resize_alignment_phrase,
     resize_alignment_token,
+)
+from tools.split_polyphonic_midi import (
+    MidiSplitError,
+    max_polyphony,
+    parse_track,
+    split_into_lanes,
+    split_midi,
+    write_summary,
 )
 
 
@@ -840,6 +850,120 @@ def _prepare_midi_preview(song: str, role: str) -> dict[str, Any]:
     }
 
 
+def _polyphonic_split_preview(song: str, role: str) -> dict[str, Any]:
+    """Analyze one configured MIDI track without writing any song artifacts."""
+
+    inspection = inspect_song(REPO_ROOT, song)
+    inspected_role = next((item for item in inspection.roles if item.role == role), None)
+    if not inspection.midi_path or not inspected_role or not inspected_role.midi_track:
+        raise BridgeError("The selected role has no MIDI track to split.")
+    try:
+        source_midi = mido.MidiFile(inspection.midi_path)
+        source_track = inspected_role.midi_track
+        analysis = parse_track(source_midi.tracks[source_track.index], source_track.index)
+        lanes = split_into_lanes(analysis.notes)
+    except (OSError, EOFError, ValueError, MidiSplitError) as error:
+        raise BridgeError(f"Could not analyze the selected MIDI track: {error}") from error
+
+    lane_count = len(lanes)
+    return {
+        "source_path": str(inspection.midi_path),
+        "source_name": analysis.source_name,
+        "track_index": analysis.source_index,
+        "note_count": len(analysis.notes),
+        "max_polyphony": max_polyphony(analysis.notes),
+        "default_filename": f"{inspection.midi_path.stem}_monophonic.mid",
+        "lanes": [
+            {
+                "number": lane_number,
+                "name": analysis.source_name if lane_number == 1 else f"{analysis.source_name} - Voice {lane_number}",
+                "note_count": len(lane.notes),
+                "minimum_pitch": min((note.note for note in lane.notes), default=None),
+                "maximum_pitch": max((note.note for note in lane.notes), default=None),
+            }
+            for lane_number, lane in enumerate(lanes, start=1)
+        ],
+        "splittable": lane_count > 1,
+    }
+
+
+def _safe_midi_filename(value: object) -> str:
+    filename = str(value or "").strip()
+    if not filename or Path(filename).name != filename:
+        raise BridgeError("Choose a MIDI filename, not a folder path.")
+    if Path(filename).suffix.lower() not in {".mid", ".midi"}:
+        raise BridgeError("The split output filename must end in .mid or .midi.")
+    if not re.fullmatch(r"[A-Za-z0-9_. -]+", filename):
+        raise BridgeError("The split output filename contains unsupported characters.")
+    return filename
+
+
+def _export_polyphonic_split(
+    song: str,
+    role: str,
+    filename: object,
+    replace_source: bool,
+    confirm_overwrite: bool,
+) -> dict[str, Any]:
+    """Split one configured track, preserving every other source MIDI track."""
+
+    preview = _polyphonic_split_preview(song, role)
+    if not preview["splittable"]:
+        raise BridgeError("This MIDI track is already monophonic and does not need splitting.")
+
+    source = Path(preview["source_path"])
+    if replace_source:
+        output = source.with_name(f".{source.stem}.split-{uuid.uuid4().hex}.mid")
+    else:
+        output = source.parent / _safe_midi_filename(filename)
+        if output.resolve() == source.resolve():
+            raise BridgeError("Use Replace working MIDI to update the active source safely.")
+        if output.exists() and not confirm_overwrite:
+            raise BridgeError(f"{output.name} already exists. Confirm overwrite or choose another filename.")
+
+    staging_output = output
+    summary = output.with_name(f"{output.stem}_split_summary.txt")
+    backup: Path | None = None
+    replaced = False
+    try:
+        mappings = split_midi(source, output, target_track_indices=[int(preview["track_index"])])
+        if replace_source:
+            backup = source.with_name(f"{source.name}.bak")
+            if not backup.exists():
+                shutil.copy2(source, backup)
+            os.replace(output, source)
+            output = source
+            replaced = True
+            summary = source.with_name(f"{source.stem}_split_summary.txt")
+            _, settings = load_settings(song)
+            for affected_role in (settings.get("Tracks") or {}):
+                if resolve_track(settings, str(affected_role))["track_filename"] != preview["source_name"]:
+                    continue
+                _, _, _, report_path = _role_paths(song, str(affected_role))
+                report_path.unlink(missing_ok=True)
+                source_sidecar = lyrics_directory(REPO_ROOT / "songs" / song) / ".alignment" / f"{affected_role}.json"
+                source_sidecar.unlink(missing_ok=True)
+    except (OSError, ValueError, MidiSplitError) as error:
+        if not replaced:
+            staging_output.unlink(missing_ok=True)
+        raise BridgeError(f"MIDI split failed: {error}") from error
+
+    summary_warning: str | None = None
+    try:
+        write_summary(source, output, mappings, summary)
+    except OSError as error:
+        summary_warning = f"The MIDI was split, but its text summary could not be written: {error}"
+
+    return {
+        "path": str(output),
+        "summary_path": str(summary),
+        "backup_path": str(backup) if backup else None,
+        "replaced_source": replace_source,
+        "lanes": preview["lanes"],
+        "warning": summary_warning,
+    }
+
+
 def _write_candidate_alignment(song: str, role: str, report: dict[str, Any], text: str) -> dict[str, Any]:
     _, _, candidate_path, report_path = _role_paths(song, role)
     candidate_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1142,6 +1266,16 @@ def handle(request: dict[str, Any]) -> Any:
         return _align(song, role)
     if command == "prepare_midi_preview":
         return _prepare_midi_preview(song, role)
+    if command == "preview_polyphonic_split":
+        return _polyphonic_split_preview(song, role)
+    if command == "export_polyphonic_split":
+        return _export_polyphonic_split(
+            song,
+            role,
+            request.get("filename"),
+            request.get("replace_source") is True,
+            request.get("confirm_overwrite") is True,
+        )
     if command == "apply_alignment":
         return _apply_alignment(song, role, request.get("text"))
     if command == "resize_alignment":
