@@ -20,7 +20,6 @@ type Props = {
   onResizePhrase?: (edge: "start" | "end", movement: number) => void;
   onAddVirtualSplit?: (noteIndex: number, fraction: number) => void;
   onCursorChange?: (milliseconds: number) => void;
-  children?: ReactNode;
 };
 
 type ErrorBoundaryProps = { children: ReactNode };
@@ -87,7 +86,6 @@ function PianoRollCanvas({
   onResizePhrase,
   onAddVirtualSplit,
   onCursorChange,
-  children,
 }: Props) {
   const sourceNotes = track?.notes ?? [];
   const notes = alignment.length > sourceNotes.length
@@ -428,9 +426,7 @@ function PianoRollCanvas({
   if (!notes.length) return <div className="empty-canvas">{track.name} has no paired MIDI notes to display.</div>;
 
   return (
-    <>
-      {children && <div className="roll-phrase-overlay">{children}</div>}
-      <div className="roll-wrap" onWheel={handleWheel}>
+    <div className="roll-wrap" onWheel={handleWheel}>
       <div className="roll-controls">
         <div className="roll-window" title="Drag empty MIDI space to pan. Ctrl + wheel changes horizontal zoom."><Crosshair size={14} /><strong>{cursorMs === null ? "No marker" : formatTime(cursorMs, true)}</strong><span>{formatTime(viewStartMs, true)} - {formatTime(viewEndMs, true)} · {formatTime(durationMs, true)} total</span><em>Drag canvas to pan</em></div>
         <div className="roll-zoom">
@@ -440,7 +436,7 @@ function PianoRollCanvas({
         </div>
       </div>
       <div className="roll-pan-controls" aria-label="Timeline pan controls"><button type="button" aria-label="Pan MIDI view earlier" title="Pan MIDI view earlier" onClick={() => pan(-1)}><ChevronLeft size={17} /></button><button type="button" aria-label="Pan MIDI view later" title="Pan MIDI view later" onClick={() => pan(1)}><ChevronRight size={17} /></button></div>
-      <svg className={canvasPanning ? "piano-roll panning" : "piano-roll"} viewBox="0 0 1000 500" role="img" aria-label={`${track.name} piano roll`} onPointerDown={beginCanvasPan} onPointerMove={updateCanvasPan} onPointerUp={finishCanvasPan} onPointerCancel={() => { canvasPanRef.current = null; setCanvasPanning(false); }}>
+      <svg className={canvasPanning ? "piano-roll panning" : "piano-roll"} viewBox="0 0 1000 500" preserveAspectRatio="none" overflow="hidden" role="img" aria-label={`${track.name} piano roll`} onPointerDown={beginCanvasPan} onPointerMove={updateCanvasPan} onPointerUp={finishCanvasPan} onPointerCancel={() => { canvasPanRef.current = null; setCanvasPanning(false); }}>
         <rect width="1000" height="500" className="roll-bg" />
         {Array.from({ length: span }, (_, index) => {
           const pitch = bounds.min + index;
@@ -520,8 +516,7 @@ function PianoRollCanvas({
         {playheadMs !== null && playheadMs !== undefined && playheadMs >= viewStartMs && playheadMs <= viewEndMs && <line className="playhead-cursor" x1={scaleX(playheadMs)} x2={scaleX(playheadMs)} y1="20" y2="470" />}
         {cursorMs !== null && cursorMs >= viewStartMs && cursorMs <= viewEndMs && <g className="timing-cursor"><line x1={scaleX(cursorMs)} x2={scaleX(cursorMs)} y1="20" y2="470" /><rect x={Math.min(872, Math.max(PLOT_LEFT, scaleX(cursorMs) - 30))} y="462" width="64" height="22" rx="4" /><text x={Math.min(876, Math.max(PLOT_LEFT + 4, scaleX(cursorMs) - 26))} y="477">{formatTime(cursorMs, true)}</text></g>}
       </svg>
-      </div>
-    </>
+    </div>
   );
 }
 

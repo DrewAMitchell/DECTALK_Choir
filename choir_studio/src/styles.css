@@ -14,13 +14,13 @@
 *::-webkit-scrollbar-thumb:hover { background: #6c978b; }
 *::-webkit-scrollbar-corner { background: #111718; }
 html, body, #root { width: 100%; height: 100%; overflow: hidden; }
-body { margin: 0; min-width: 1040px; background: #101416; }
+body { margin: 0; min-width: 0; background: #101416; }
 button, select, textarea { font: inherit; }
 button { color: inherit; cursor: pointer; }
 button:disabled { cursor: wait; opacity: .55; }
 
-.studio-shell { height: 100%; min-height: 0; display: grid; grid-template-rows: 58px auto minmax(0, 1fr); overflow: hidden; background: #101416; }
-.app-header { display: flex; align-items: center; gap: 14px; padding: 0 22px; border-bottom: 1px solid #2b3437; background: #151a1c; }
+.studio-shell { width: 100%; min-width: 0; height: 100%; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 58px auto minmax(0, 1fr); overflow: hidden; background: #101416; }
+.app-header { min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 14px; padding: 0 22px; border-bottom: 1px solid #2b3437; background: #151a1c; }
 .brand { display: flex; align-items: center; gap: 8px; color: #d7e2e0; font-size: 15px; letter-spacing: .02em; white-space: nowrap; }
 .brand strong { color: #60d4ae; font-weight: 650; }.brand-mark { position: relative; display: inline-flex; align-items: end; justify-content: center; gap: 2px; width: 22px; height: 21px; color: #60d4ae; }.visual-bar { display: block; width: 4px; border-radius: 2px 2px 1px 1px; background: currentColor; box-shadow: 0 0 6px #60d4ae66; }.visual-bar.bar-low { height: 8px; }.visual-bar.bar-mid { height: 14px; }.visual-bar.bar-high { height: 11px; }.brand-mark b { position: absolute; font-family: Georgia, serif; font-size: 10px; font-weight: 700; line-height: 1; }.brand-mark .sharp { top: 0; right: -2px; }.brand-mark .flat { bottom: -1px; left: -3px; }
 .song-select { display: flex; flex: 1 1 260px; min-width: 150px; max-width: 520px; align-items: center; gap: 9px; color: #9aa7aa; font-size: 12px; }
@@ -36,7 +36,7 @@ button:disabled { cursor: wait; opacity: .55; }
 .stage-index { display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid currentColor; border-radius: 50%; font-size: 11px; }
 .error-toast { position: fixed; z-index: 20; top: 122px; right: 22px; display: flex; align-items: center; gap: 9px; width: min(520px, calc(100vw - 44px)); padding: 10px 10px 10px 12px; border: 1px solid #9e5848; border-radius: 5px; background: #40251f; box-shadow: 0 12px 28px #00000045; color: #ffd3c5; font-size: 12px; line-height: 1.35; animation: error-toast-in 180ms ease-out; }.error-toast > svg { flex: 0 0 auto; }.error-toast > span { min-width: 0; overflow-wrap: anywhere; }.error-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 3px; margin-left: auto; }.error-toast button { display: grid; flex: 0 0 auto; place-items: center; width: 25px; height: 25px; border: 0; border-radius: 3px; background: transparent; color: #ffd3c5; }.error-toast .error-action { width: auto; min-height: 25px; padding: 0 7px; border: 1px solid #c6816f; color: #ffe1d8; font-size: 10px; font-weight: 700; white-space: nowrap; }.error-toast button:hover { background: #ffffff1c; color: #ffffff; }@keyframes error-toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
-.workspace { --track-rail-width: 220px; height: 100%; min-height: 0; overflow: hidden; display: grid; grid-template-columns: var(--track-rail-width) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; }.workspace.review-workspace { grid-template-columns: minmax(0, 1fr); }.review-workspace .track-rail { display: none; }
+.workspace { --track-rail-width: 220px; width: 100%; min-width: 0; height: 100%; min-height: 0; overflow: hidden; display: grid; grid-template-columns: var(--track-rail-width) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; }.workspace.review-workspace { grid-template-columns: minmax(0, 1fr); }.review-workspace .track-rail { display: none; }
 /* MIDI and Align share this fixed rail; Review uses its table as the role selector. */
 .workspace > .track-rail { grid-column: 1; grid-row: 1 / -1; align-self: stretch; block-size: auto; min-block-size: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; padding: 16px 10px; border-right: 1px solid #2b3437; background: #151a1c; }.workspace > .surface { grid-column: 2; grid-row: 1 / -1; }.track-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid #222b2d; }
 .rail-song-title { margin: 0; padding: 0 9px 4px; overflow: hidden; color: #edf5f2; font-size: 20px; font-weight: 700; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
@@ -271,36 +271,14 @@ button:disabled { cursor: wait; opacity: .55; }
 :root[data-theme="light"] .range-legend { color: #263d38; }:root[data-theme="light"] .range-legend strong { color: #1a2d29; }:root[data-theme="light"] .range-legend-blue { color: #1e579d; }:root[data-theme="light"] .range-legend-green { color: #1c7447; }:root[data-theme="light"] .range-legend-yellow { color: #7d6500; }:root[data-theme="light"] .range-legend-orange { color: #a44525; }:root[data-theme="light"] .range-legend-red { color: #982a38; }
 
 /* The role's existing MIDI remains usable while its phrase map is loading. */
-.align-roll-shell { position: relative; min-height: 0; }
-.align-workspace { overflow: hidden; }.align-workspace > .midi-transport { flex: 0 0 auto; min-width: 0; }
-.align-workspace > .align-roll-shell { width: 100%; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
-.align-workspace .align-roll-shell > .roll-wrap { width: 100%; max-width: none; height: 100%; min-width: 0; min-height: 0; margin: 0; display: flex; flex-direction: column; }
-.align-workspace .align-roll-shell .piano-roll { flex: 1 1 auto; min-width: 0; min-height: 0; max-width: 100%; }
 .align-loading { position: absolute; z-index: 9; top: 50%; left: 50%; display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 7px 10px; border: 1px solid #58736b; border-radius: 5px; background: #152421f2; box-shadow: 0 8px 24px #0000004d; color: #e3f2ec; font-size: 12px; font-weight: 700; pointer-events: none; transform: translate(-50%, -50%); }
 .align-loading svg { animation: alignment-spin .8s linear infinite; }
 @keyframes alignment-spin { to { transform: rotate(360deg); } }
 :root[data-theme="light"] .align-loading { border-color: #9cbeb3; background: #f7fcfaf2; box-shadow: 0 8px 24px #25413926; color: #24423a; }
 
-/* Compact stages share one rail width. Align keeps phrase controls in a single bounded row so a long skeleton cannot push its roll below the viewport. */
+/* Compact stages share one rail width. */
 .workspace { --track-rail-width: clamp(184px, 16vw, 200px); }
-.align-surface { padding-inline: clamp(10px, 1.2vw, 18px); }
 .review-stage.overview-panel .review-header { margin-bottom: 8px; }
-.align-workspace { min-height: 0; }
-.align-workspace > .align-roll-shell { display: block; }
-.align-workspace .align-roll-shell > .roll-wrap { overflow: hidden; }
-.align-workspace .align-roll-shell > .empty-canvas { width: 100%; height: 100%; min-height: 0; max-width: none; margin: 0; }
-.align-workspace .align-roll-shell .roll-phrase-overlay { flex: 0 0 auto; max-height: 64px; overflow: hidden; }
-.align-workspace .align-roll-shell .phrase-workbench { flex-wrap: nowrap; min-height: 56px; overflow: hidden; }
-.align-workspace .align-roll-shell .phrase-workbench-heading { flex: 0 0 174px; min-width: 0; }
-.align-workspace .align-roll-shell .phrase-workbench-heading strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.align-workspace .align-roll-shell .word-strip { flex: 1 1 auto; flex-wrap: nowrap; min-width: 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0 8px; }
-.align-workspace .align-roll-shell .word-strip > * { flex: 0 0 auto; }
-.align-workspace .align-roll-shell .roll-controls { flex: 0 0 auto; }
-.align-workspace .align-roll-shell .piano-roll { flex: 1 1 auto; min-height: clamp(96px, 25vh, 180px); }
-
-/* Phrase controls float over the roll instead of consuming its vertical budget. */
-.align-workspace .align-roll-shell .roll-phrase-overlay { position: absolute; z-index: 6; top: 42px; right: 0; left: 0; max-height: none; height: 64px; overflow: hidden; border-bottom-color: #2d383a; box-shadow: 0 5px 12px #0000002e; }
-.align-workspace .align-roll-shell .phrase-workbench { height: 64px; min-height: 0; }
 
 /* Align can open the same lyric editor as a focused overlay without reflowing the roll. */
 .align-transport .transport-group:first-child { flex: 1 1 auto; }
@@ -319,15 +297,24 @@ button:disabled { cursor: wait; opacity: .55; }
 :root[data-theme="light"] .lyrics-modal-close { border-color: #aac7be; background: #edf5f1; color: #315a4d; }
 :root[data-theme="light"] .lyrics-modal-close:hover { border-color: #6f9f90; background: #dcece6; color: #173e32; }
 
-/* Align owns the full right-hand width; phrase editing is a compact sibling of the canvas. */
-.align-surface { padding-inline: 0; }
-.align-workspace > .midi-transport { border-right: 0; border-left: 0; }
-.align-workspace > .align-roll-shell { display: flex; flex-direction: column; }
-.align-workspace .align-roll-shell > .roll-wrap { flex: 1 1 auto; width: 100%; height: auto; }
-.align-phrase-toolbar { flex: 0 0 52px; min-width: 0; overflow: hidden; border: 1px solid #2d383a; border-bottom: 0; background: #192223; }
-.align-phrase-toolbar .phrase-workbench { height: 52px; min-height: 0; padding: 5px 10px; }
-.align-phrase-toolbar .phrase-workbench-heading { flex-basis: 150px; }
-.align-phrase-toolbar .word-strip { padding-block: 0 5px; }
+/* Align uses one sizing contract: compact phrase tools above a canvas that fills its parent. */
+.align-surface { min-width: 0; padding-inline: 0; }
+.align-workspace { width: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+.align-workspace > .midi-transport { flex: 0 0 auto; min-width: 0; border-right: 0; border-left: 0; }
+.align-roll-shell { position: relative; display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+.align-phrase-toolbar { flex: 0 0 clamp(46px, 9vh, 52px); min-width: 0; overflow: hidden; border: 1px solid #2d383a; border-bottom: 0; background: #192223; }
+.align-phrase-toolbar .phrase-workbench { height: 100%; min-height: 0; flex-wrap: nowrap; gap: 8px; overflow: hidden; padding: 4px 10px; }
+.align-phrase-toolbar .phrase-workbench-heading { flex: 0 0 clamp(104px, 13vw, 150px); min-width: 0; }
+.align-phrase-toolbar .phrase-workbench-heading strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.align-phrase-toolbar .word-strip { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding: 1px 0 5px; }
+.align-phrase-toolbar .word-strip > * { flex: 0 0 auto; }
+.align-roll-shell > .roll-wrap { display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; max-width: 100%; min-width: 0; min-height: 0; height: auto; margin: 0; overflow: hidden; contain: layout paint; }
+.align-roll-shell .roll-controls { flex: 0 0 auto; width: 100%; min-width: 0; overflow: hidden; }
+.align-roll-shell .roll-zoom { min-width: 0; }
+.align-roll-shell .roll-zoom input { width: clamp(72px, 12vw, 126px); min-width: 0; }
+.align-roll-shell .piano-roll { display: block; flex: 1 1 auto; width: 100%; max-width: 100%; min-width: 0; min-height: clamp(96px, 25vh, 180px); height: 100%; overflow: hidden; }
+.align-roll-shell > .empty-canvas { width: 100%; max-width: none; min-height: 0; height: 100%; margin: 0; }
+.align-roll-shell .roll-pan-controls { z-index: 20; right: 4px; left: 4px; }
 .align-lyrics-command { width: auto; min-height: 30px; padding-inline: 9px; }
 
 /* Reuse Review's register colors in the track rail without repeating the long span label. */
@@ -352,9 +339,9 @@ button:disabled { cursor: wait; opacity: .55; }
 .review-track-table th, .review-track-table td { overflow-wrap: anywhere; }
 
 @media (max-height: 600px) {
-  .align-phrase-toolbar { flex-basis: 44px; }
-  .align-phrase-toolbar .phrase-workbench { height: 44px; padding-block: 3px; }
-  .align-phrase-toolbar .phrase-workbench-heading { flex-basis: 104px; }
+  .align-phrase-toolbar { flex-basis: 46px; }
+  .align-phrase-toolbar .phrase-workbench { padding-block: 3px; }
   .align-phrase-toolbar .phrase-workbench-heading strong { display: none; }
-  .align-phrase-toolbar .word-strip { padding-bottom: 2px; }
+  .align-phrase-toolbar .word-strip { padding-bottom: 3px; }
+  .align-phrase-toolbar .word-token > button:first-child { display: flex; align-items: baseline; gap: 5px; padding-block: 3px; }
 }
