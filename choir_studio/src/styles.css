@@ -324,7 +324,7 @@ button:disabled { cursor: wait; opacity: .55; }
 .track-range .pitch-range { min-width: 0; overflow: visible; font-size: 9px; }
 .track-range .pitch-range b { min-width: 21px; padding-inline: 3px; }
 .track-range .pitch-range em { display: none; }
-.track-range small { flex: 0 0 auto; }
+.track-range .track-note-count { flex: 0 0 auto; color: #728183; font-size: 10px; }
 
 /* Review starts at the same left edge and reserves one rail-width for row identity/actions. */
 .review-workspace .surface { padding-inline: 0; }
