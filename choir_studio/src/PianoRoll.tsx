@@ -105,10 +105,13 @@ function PianoRollCanvas({
   const [boundaryDrag, setBoundaryDrag] = useState<{ edge: "start" | "end"; pointerId: number; movement: number; targetX: number } | null>(null);
   const [phraseDrag, setPhraseDrag] = useState<{ edge: "start" | "end"; pointerId: number; movement: number; targetX: number; invalid: boolean; missingWords: number } | null>(null);
   const [virtualSplitDrag, setVirtualSplitDrag] = useState<{ pointerId: number; displayIndex: number; fraction: number } | null>(null);
-  const canvasPanRef = useRef<{ pointerId: number; startX: number; startCenterMs: number; dragging: boolean } | null>(null);
+  const canvasPanRef = useRef<{ pointerId: number; startX: number; startCenterMs: number; dragging: boolean; feedbackShown: boolean } | null>(null);
+  const panFeedbackNonceRef = useRef(0);
+  const panFeedbackTimerRef = useRef<number | null>(null);
   const suppressSelectionRef = useRef(false);
   const manualViewportRef = useRef(false);
   const [canvasPanning, setCanvasPanning] = useState(false);
+  const [panFeedback, setPanFeedback] = useState<{ direction: -1 | 1; nonce: number } | null>(null);
   const [followedPhrase, setFollowedPhrase] = useState<number | null>(null);
   const bounds = useMemo(() => {
     const pitches = notes.map((note) => note.pitch).filter((pitch) => Number.isFinite(pitch));
@@ -301,6 +304,9 @@ function PianoRollCanvas({
   useEffect(() => {
     if (playheadMs !== null && playheadMs !== undefined) setCursorMs(playheadMs);
   }, [playheadMs]);
+  useEffect(() => () => {
+    if (panFeedbackTimerRef.current !== null) window.clearTimeout(panFeedbackTimerRef.current);
+  }, []);
   useEffect(() => {
     if (playheadMs === null || playheadMs === undefined) {
       setFollowedPhrase(null);
@@ -327,9 +333,20 @@ function PianoRollCanvas({
   }, [playheadMs, playbackPaused, phrases, followedPhrase, viewStartMs, viewEndMs, onPlaybackPhraseChange]);
 
   const setZoom = (next: number) => setTimeZoom(Math.max(0, Math.min(90, next)));
+  const showPanLimit = (direction: -1 | 1) => {
+    panFeedbackNonceRef.current += 1;
+    setPanFeedback({ direction, nonce: panFeedbackNonceRef.current });
+    if (panFeedbackTimerRef.current !== null) window.clearTimeout(panFeedbackTimerRef.current);
+    panFeedbackTimerRef.current = window.setTimeout(() => setPanFeedback(null), 420);
+  };
   const pan = (direction: -1 | 1) => {
     manualViewportRef.current = true;
-    setTimeCenterMs((current) => Math.max(0, Math.min(durationMs, current + direction * visibleDurationMs * 0.55)));
+    const nextStart = Math.max(0, Math.min(lowerBound, viewStartMs + direction * visibleDurationMs * 0.55));
+    if (Math.abs(nextStart - viewStartMs) < 0.5) {
+      showPanLimit(direction);
+      return;
+    }
+    setTimeCenterMs(nextStart + visibleDurationMs / 2);
   };
   const consumeSuppressedSelection = () => {
     if (!suppressSelectionRef.current) return false;
@@ -341,7 +358,7 @@ function PianoRollCanvas({
     // Boundary handles and Ctrl-drag splits own their gestures. Other surfaces use a
     // drag threshold so a click selects a phrase/note while a drag always pans.
     if (event.button !== 0 || target.closest(".word-boundary-region, .phrase-boundary-region")) return;
-    canvasPanRef.current = { pointerId: event.pointerId, startX: event.clientX, startCenterMs: timeCenterMs, dragging: false };
+    canvasPanRef.current = { pointerId: event.pointerId, startX: event.clientX, startCenterMs: timeCenterMs, dragging: false, feedbackShown: false };
   };
   const updateCanvasPan = (event: PointerEvent<SVGSVGElement>) => {
     const canvasPan = canvasPanRef.current;
@@ -358,6 +375,10 @@ function PianoRollCanvas({
     }
     event.preventDefault();
     const deltaMs = -(deltaX / rect.width) * visibleDurationMs;
+    if (lowerBound <= 0.5 && !canvasPan.feedbackShown) {
+      canvasPan.feedbackShown = true;
+      showPanLimit(deltaX > 0 ? -1 : 1);
+    }
     setTimeCenterMs(Math.max(0, Math.min(durationMs, canvasPan.startCenterMs + deltaMs)));
   };
   const finishCanvasPan = (event: PointerEvent<SVGSVGElement>) => {
@@ -443,7 +464,7 @@ function PianoRollCanvas({
   if (!notes.length) return <div className="empty-canvas">{track.name} has no paired MIDI notes to display.</div>;
 
   return (
-    <div className="roll-wrap" onWheel={handleWheel}>
+    <div className={`roll-wrap${panFeedback ? ` pan-limit pan-limit-${panFeedback.direction < 0 ? "earlier" : "later"} pan-limit-${panFeedback.nonce % 2 ? "odd" : "even"}` : ""}`} onWheel={handleWheel}>
       <div className="roll-controls">
         <div className="roll-window" title="Drag empty MIDI space to pan. Ctrl + wheel changes horizontal zoom."><Crosshair size={14} /><strong>{cursorMs === null ? "No marker" : formatTime(cursorMs, true)}</strong><span>{formatTime(viewStartMs, true)} - {formatTime(viewEndMs, true)} · {formatTime(durationMs, true)} total</span><em>Drag canvas to pan</em></div>
         <div className="roll-zoom">
@@ -452,6 +473,7 @@ function PianoRollCanvas({
           <button type="button" aria-label="Zoom in horizontally" title="Zoom in horizontally" onClick={() => setZoom(timeZoom + 8)}><ZoomIn size={15} /></button>
         </div>
       </div>
+      <span className="sr-only" role="status" aria-live="polite">{panFeedback ? "The full song is already visible. Zoom in to pan the MIDI view." : ""}</span>
       <div className="roll-pan-controls" aria-label="Timeline pan controls"><button type="button" aria-label="Pan MIDI view earlier" title="Pan MIDI view earlier" onClick={() => pan(-1)}><ChevronLeft size={17} /></button><button type="button" aria-label="Pan MIDI view later" title="Pan MIDI view later" onClick={() => pan(1)}><ChevronRight size={17} /></button></div>
       <svg className={canvasPanning ? "piano-roll panning" : "piano-roll"} viewBox="0 0 1000 500" preserveAspectRatio="none" overflow="hidden" role="img" aria-label={`${track.name} piano roll`} onPointerDown={beginCanvasPan} onPointerMove={updateCanvasPan} onPointerUp={finishCanvasPan} onPointerCancel={() => { canvasPanRef.current = null; setCanvasPanning(false); }}>
         <rect width="1000" height="500" className="roll-bg" />
