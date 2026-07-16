@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties } from "react";
-import { BarChart3, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, FileAudio, FolderOpen, LoaderCircle, Minus, Moon, Music2, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, Volume2, WandSparkles, X } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, FileAudio, FolderOpen, LoaderCircle, Minus, Moon, Music2, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
 import { bridge, deleteSong, media, openFfmpegDownload, openMedia, openSongFolder, renderJobStatus, spectrogramJobStatus, startRenderJob, startSpectrogramJob, type MediaStatus, type RenderJobStatus, type SpectrogramJobStatus } from "./bridge";
 import { PianoRoll } from "./PianoRoll";
 import type { AlignmentReport, Role, SongInspection } from "./types";
 
-type Stage = "midi" | "lyrics" | "align" | "review";
-const stages: Array<[Stage, string, typeof Music2]> = [["midi", "MIDI", Music2], ["lyrics", "Lyrics", PenLine], ["align", "Align", WandSparkles], ["review", "Review", BarChart3]];
+type Stage = "lyrics" | "align" | "review";
+const stages: Array<[Stage, string, typeof Music2]> = [["lyrics", "Lyrics", PenLine], ["align", "Align", WandSparkles], ["review", "Review", BarChart3]];
 const FFMPEG_WINGET_COMMAND = "winget install --id Gyan.FFmpeg.Shared --exact";
 const UI_STATE_KEY = "dectalk-choir-studio.ui-state";
 type StoredUiState = { song?: string; role?: string; stage?: Stage; theme?: "dark" | "light"; render_roles?: Record<string, string[]> };
@@ -101,7 +101,7 @@ export default function App() {
   const [song, setSong] = useState(storedUiState.song ?? "");
   const [inspection, setInspection] = useState<SongInspection | null>(null);
   const [roleName, setRoleName] = useState(storedUiState.role ?? "");
-  const [stage, setStage] = useState<Stage>(storedUiState.stage ?? "midi");
+  const [stage, setStage] = useState<Stage>(storedUiState.stage ?? "lyrics");
   const [theme, setTheme] = useState<"dark" | "light">(storedUiState.theme ?? (window.localStorage.getItem("dectalk-choir-studio.theme") === "light" ? "light" : "dark"));
   const [renderRolesBySong, setRenderRolesBySong] = useState<Record<string, string[]>>(storedUiState.render_roles ?? {});
   const [transcript, setTranscript] = useState("");
@@ -282,7 +282,6 @@ export default function App() {
     <section className={`workspace ${stage === "review" ? "review-workspace" : ""}`}>
       <aside className="track-rail"><h2 className="rail-song-title" title={song}>{song || "Song"}</h2><div className="rail-heading"><PanelLeft size={16} /> Tracks</div><div className="track-list">{inspection?.roles.map((item) => <button key={item.role} className={item.role === roleName ? "track active" : "track"} onClick={() => selectRole(item.role)}><strong title={item.role}>{item.role}</strong><span>{item.midi_source_name}</span><small>{item.note_count} notes · {item.midi_range}</small>{item.polyphony && item.polyphony > 1 && <i>Needs split</i>}</button>)}</div></aside>
       <section className={`surface${stage === "lyrics" ? " lyrics-surface" : ""}`}>
-        {stage === "midi" && <MidiStage song={song} role={role} inspection={inspection} setError={setError} />}
         {stage === "lyrics" && lyricsPrompt && <div className="notice draft-route"><WandSparkles size={17} /><div>{lyricsPrompt}</div></div>}
         {stage === "lyrics" && <section className="lyrics-stage"><LyricsStage transcript={transcript} transcriptLoaded={transcriptLoadedKey === transcriptKey} setTranscript={setTranscript} validation={validation} onDraft={runDraft} onNoteSkeleton={runNoteSkeleton} onSave={saveTranscript} busy={busy} draftState={hasDraft ? draftState : null} dirty={transcript !== savedTranscript} prompt={lyricsPrompt} /></section>}
         {stage === "align" && <AlignStage role={role} inspection={inspection} song={song} alignment={activeAlignment} loading={alignmentLoading || alignmentTransitionPending} templateSources={templateSources} onAdoptTemplate={adoptTemplate} setAlignment={setAlignment} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} busy={busy} setBusy={setBusy} setError={setError} />}
@@ -290,41 +289,6 @@ export default function App() {
       </section>
     </section>
   </main>;
-}
-
-function MidiStage({ song, role, inspection, setError }: { song: string; role: Role | null; inspection: SongInspection | null; setError(value: string): void }) {
-  const track = role?.midi_track ?? null;
-  const [cursorMs, setCursorMs] = useState(0);
-  const [mediaState, setMediaState] = useState<MediaStatus | null>(null);
-  const [mediaLabel, setMediaLabel] = useState("Select Play MIDI to preview this source track.");
-  const active = Boolean(mediaState && !["stopped", "not ready"].includes(mediaState.mode));
-
-  useEffect(() => {
-    if (!active) return;
-    const poll = window.setInterval(() => {
-      media<MediaStatus>("media_status").then(setMediaState).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
-    }, 250);
-    return () => window.clearInterval(poll);
-  }, [active, setError]);
-  useEffect(() => {
-    setCursorMs(0); setMediaState(null); setMediaLabel("Select Play MIDI to preview this source track.");
-    return () => { void media<MediaStatus>("media_stop").catch(() => undefined); };
-  }, [role?.role]);
-  const playMidi = async () => {
-    if (!role || !song) return;
-    setError(""); setMediaLabel("Preparing selected MIDI track...");
-    try {
-      const preview = await bridge<{ path: string; duration_ms: number; track: string }>({ command: "prepare_midi_preview", song, role: role.role });
-      const next = await media<MediaStatus>("media_play", { path: preview.path, kind: "midi", fromMs: cursorMs });
-      setMediaState({ ...next, duration_ms: Math.max(next.duration_ms, preview.duration_ms) }); setMediaLabel(`Playing ${preview.track}.`);
-    } catch (cause) { const message = cause instanceof Error ? cause.message : String(cause); setError(message); setMediaLabel("MIDI preview unavailable."); }
-  };
-  const togglePause = async () => { try { const next = await media<MediaStatus>("media_toggle_pause"); setMediaState(next); setMediaLabel(next.paused ? "MIDI preview paused." : "MIDI preview resumed."); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
-  const stop = async () => { try { const next = await media<MediaStatus>("media_stop"); setMediaState(next); setMediaLabel("Playback stopped."); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
-  const playAudio = async (path: string, label: string) => { const followMidiCursor = label.endsWith(" stem"); try { const next = await media<MediaStatus>("media_play", { path, kind: "audio", fromMs: followMidiCursor ? cursorMs : 0 }); setMediaState(next); setMediaLabel(followMidiCursor ? `Following ${label} from ${formatDuration(cursorMs / 1000)}.` : `Playing ${label}.`); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
-  const seek = async (milliseconds: number) => { setCursorMs(milliseconds); if (!active || mediaState?.paused) return; try { setMediaState(await media<MediaStatus>("media_seek", { positionMs: Math.round(milliseconds) })); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
-
-  return <section className="midi-stage"><section className="surface-header"><div><p className="eyebrow">Source MIDI</p><h1>{track?.name ?? "Select a track"}</h1><p>{track ? `${track.note_count} notes · ${role?.midi_range} · read-only source preview` : "Choose a role to view and play its source MIDI."}</p></div></section><section className="midi-transport"><div className="transport-group"><button className="primary" onClick={() => void playMidi()} disabled={!track}><Play size={15} /> Play MIDI</button><button className="secondary icon-command" title={mediaState?.paused ? "Resume preview" : "Pause preview"} onClick={() => void togglePause()} disabled={!active}>{mediaState?.paused ? <Play size={15} /> : <Pause size={15} />}</button><button className="secondary icon-command" title="Stop playback" onClick={() => void stop()} disabled={!mediaState}><Square size={14} /></button><span>{mediaLabel}</span></div><div className="transport-group rendered"><Volume2 size={15} /><button className="secondary" onClick={() => role && void playAudio(role.stem_path, `${role.role} stem`)} disabled={!role}>Stem</button><button className="secondary" onClick={() => inspection && void playAudio(inspection.final_mix, "final mix")} disabled={!inspection}>Final mix</button></div></section><PianoRoll track={track} durationSeconds={inspection?.midi?.duration_seconds ?? 0} durationTicks={inspection?.midi?.duration_ticks} playheadMs={active ? mediaState?.position_ms : null} onCursorChange={(milliseconds) => void seek(milliseconds)} /></section>;
 }
 
 function LyricsStage({ transcript, transcriptLoaded, setTranscript, validation, onDraft, onNoteSkeleton, onSave, busy, draftState, dirty, prompt }: { transcript: string; transcriptLoaded: boolean; setTranscript(value: string): void; validation: { invalid_words: string[]; normalized_lines: string[]; ok: boolean } | null; onDraft(): void; onNoteSkeleton(placeholder: string): void; onSave(): void; busy: string; draftState: DraftState | null; dirty: boolean; prompt: string }) {
@@ -705,11 +669,11 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const hasFinishedRender = Boolean(final);
   return <section className={`review-stage ${panel}-panel`}>
     <header className="surface-header review-header"><div className="review-identity"><p className="eyebrow">Output review</p><h1>{song || "Select a song"}<span>{role?.role ?? "Select a role"}</span></h1><p>Enable renderable tracks in the table; tune an individual role from its cog.</p></div><section className={renderJob?.state === "completed" ? "review-render completed" : "review-render"} aria-label="Render selected tracks">{renderJob?.state === "completed" ? <div className="render-complete"><CircleCheck size={19} /><div><strong>Render complete</strong><span>{renderJob.message}</span></div></div> : <div><p className="eyebrow">Render set</p><strong>{enabledRoles.length} tracks enabled</strong><span>{renderJob?.state === "running" ? renderJob.message : "Saved in settings.yaml"}</span></div>}<div className="review-render-actions"><button className="primary" type="button" onClick={() => void render()} disabled={renderJob?.state === "running" || !enabledRoles.length}>{renderJob?.state === "running" ? "Rendering in background..." : <><FileAudio size={16} /> Render enabled tracks <span className="render-duration">{formatDuration(inspection?.midi?.duration_seconds)}</span></>}</button>{hasFinishedRender && <button className="secondary spectrogram-layout-command" type="button" onClick={() => { const firstEnabledRole = enabledVisualRoles[0]?.role; if (firstEnabledRole) onSelectVisualRole(firstEnabledRole); setPanel("visuals"); }} disabled={!enabledVisualRoles.length}><BarChart3 size={15} /> Spectrogram layout</button>}</div></section></header>
-    <nav className="review-panel-nav" aria-label="Review workspace">
-      {panel !== "overview" && <button className="secondary" type="button" onClick={() => setPanel("overview")}><BarChart3 size={15} /> Review overview</button>}
+    {panel !== "overview" && <nav className="review-panel-nav" aria-label="Review workspace">
+      <button className="secondary" type="button" onClick={() => setPanel("overview")}><BarChart3 size={15} /> Review overview</button>
       {panel === "tune" && <span>Editing {role?.role ?? "the selected role"} tuning profile</span>}
       {panel === "visuals" && <span>{enabledVisualRoles.length} enabled render region{enabledVisualRoles.length === 1 ? "" : "s"}. Select one to edit its color and position.</span>}
-    </nav>
+    </nav>}
     {panel === "tune" && <button className="tuning-modal-backdrop" type="button" onClick={() => setPanel("overview")} aria-label="Close track tuning" />}
     <section className="range-legend" aria-label="Register color legend"><strong>Register color</strong><span className="range-legend-blue">C2 low</span><span className="range-legend-green">C3 mid</span><span className="range-legend-yellow">C4 mid-high</span><span className="range-legend-orange">C5 weak</span><span className="range-legend-red">C6+ weakest</span></section>
     <ReviewTrackTable roles={inspection?.roles ?? []} selectedRole={role?.role} enabledRoles={enabledRoles} onToggleRole={toggleRenderRole} onSelectRole={onSelectRole} onTuneRole={(nextRole) => { onSelectRole(nextRole); setPanel("tune"); }} final={final} setError={setError} />

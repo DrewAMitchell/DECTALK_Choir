@@ -280,3 +280,19 @@ button:disabled { cursor: wait; opacity: .55; }
 .align-loading svg { animation: alignment-spin .8s linear infinite; }
 @keyframes alignment-spin { to { transform: rotate(360deg); } }
 :root[data-theme="light"] .align-loading { border-color: #9cbeb3; background: #f7fcfaf2; box-shadow: 0 8px 24px #25413926; color: #24423a; }
+
+/* Compact stages share one rail width. Align keeps phrase controls in a single bounded row so a long skeleton cannot push its roll below the viewport. */
+.workspace { --track-rail-width: clamp(184px, 16vw, 200px); }
+.review-stage.overview-panel .review-header { margin-bottom: 8px; }
+.align-workspace { min-height: 0; }
+.align-workspace > .align-roll-shell { display: block; }
+.align-workspace .align-roll-shell > .roll-wrap { overflow: hidden; }
+.align-workspace .align-roll-shell > .empty-canvas { width: 100%; height: 100%; min-height: 0; max-width: none; margin: 0; }
+.align-workspace .align-roll-shell .roll-phrase-overlay { flex: 0 0 auto; max-height: 64px; overflow: hidden; }
+.align-workspace .align-roll-shell .phrase-workbench { flex-wrap: nowrap; min-height: 56px; overflow: hidden; }
+.align-workspace .align-roll-shell .phrase-workbench-heading { flex: 0 0 174px; min-width: 0; }
+.align-workspace .align-roll-shell .phrase-workbench-heading strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.align-workspace .align-roll-shell .word-strip { flex: 1 1 auto; flex-wrap: nowrap; min-width: 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0 8px; }
+.align-workspace .align-roll-shell .word-strip > * { flex: 0 0 auto; }
+.align-workspace .align-roll-shell .roll-controls { flex: 0 0 auto; }
+.align-workspace .align-roll-shell .piano-roll { flex: 1 1 auto; min-height: clamp(96px, 25vh, 180px); }

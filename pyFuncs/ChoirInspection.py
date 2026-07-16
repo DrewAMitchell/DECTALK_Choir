@@ -561,7 +561,7 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
             details.append(
                 f"Source overlaps up to {source_track.max_polyphony} notes; longest overlap is "
                 f"{source_track.longest_overlap_ms:.1f} ms (tolerance {overlap_tolerance_ms:.1f} ms). "
-                "Split it before rendering."
+                "The renderer will sequentialize these overlaps; split it to preserve independent chord voices."
             )
         elif source_track.max_polyphony > 1:
             details.append(
@@ -632,7 +632,9 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
             )
         )
         render_enabled = bool(config.get("RENDER_ENABLED", True))
-        render_eligible = status == "Ready"
+        # choir.py deterministically truncates a note at the next note start. A
+        # polyphonic source is therefore a fidelity warning, not a hard render block.
+        render_eligible = status in {"Ready", "Polyphonic source"}
         roles.append(
             RoleInspection(
                 role=role_name,
