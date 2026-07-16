@@ -296,3 +296,23 @@ button:disabled { cursor: wait; opacity: .55; }
 .align-workspace .align-roll-shell .word-strip > * { flex: 0 0 auto; }
 .align-workspace .align-roll-shell .roll-controls { flex: 0 0 auto; }
 .align-workspace .align-roll-shell .piano-roll { flex: 1 1 auto; min-height: clamp(96px, 25vh, 180px); }
+
+/* Phrase controls float over the roll instead of consuming its vertical budget. */
+.align-workspace .align-roll-shell .roll-phrase-overlay { position: absolute; z-index: 6; top: 42px; right: 0; left: 0; max-height: none; height: 64px; overflow: hidden; border-bottom-color: #2d383a; box-shadow: 0 5px 12px #0000002e; }
+.align-workspace .align-roll-shell .phrase-workbench { height: 64px; min-height: 0; }
+
+/* Align can open the same lyric editor as a focused overlay without reflowing the roll. */
+.align-transport .transport-group:first-child { flex: 1 1 auto; }
+.align-transport .transport-group:first-child > span { flex: 1 1 auto; min-width: 0; }
+.align-lyrics-command { flex: 0 0 auto; }
+.lyrics-modal-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 24px; background: #07100f99; }
+.lyrics-modal { position: relative; display: flex; width: min(980px, calc(100vw - 48px)); max-height: calc(100vh - 48px); min-height: 0; padding: 18px; border: 1px solid #54746b; border-radius: 6px; background: #151e1d; box-shadow: 0 28px 80px #00000080; }
+.lyrics-modal .lyrics-stage { width: 100%; min-height: 0; max-height: calc(100vh - 84px); padding: 0 4px 0 0; }
+.lyrics-modal .lyrics-header { padding-right: 36px; }
+.lyrics-modal .transcript { min-height: 220px; }
+.lyrics-modal-close { position: absolute; z-index: 2; top: 10px; right: 10px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid #49635c; border-radius: 3px; background: #202b29; color: #b6c9c3; }
+.lyrics-modal-close:hover { border-color: #81b9a9; background: #2d3b38; color: #f0f8f5; }
+:root[data-theme="light"] .lyrics-modal-backdrop { background: #20312e66; }
+:root[data-theme="light"] .lyrics-modal { border-color: #9dc0b5; background: #f7fbf9; box-shadow: 0 28px 80px #263b364d; }
+:root[data-theme="light"] .lyrics-modal-close { border-color: #aac7be; background: #edf5f1; color: #315a4d; }
+:root[data-theme="light"] .lyrics-modal-close:hover { border-color: #6f9f90; background: #dcece6; color: #173e32; }

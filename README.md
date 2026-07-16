@@ -33,6 +33,10 @@ lyrics, pitch rules, DECtalk commands, audio processing, and output layout.
 
 **[Watch the short Choir Studio overview (MP4)](choir_studio/assets/studio-overview.mp4)** to see the MIDI source view and populated Review workspace with render readiness, pitch ranges, and loudness statistics.
 
+[![Watch the DECTALK Choir demonstration on YouTube](https://img.youtube.com/vi/oPg8LVGdd4I/maxresdefault.jpg)](https://www.youtube.com/watch?v=oPg8LVGdd4I)
+
+**[Watch the DECTALK Choir demonstration on YouTube](https://www.youtube.com/watch?v=oPg8LVGdd4I).**
+
 ## Background
 Dectalk is a text to speech synthesizer released in 1983. It was famously used by Steven Hawking, and was included in the game Moonbase Alpha to read chat messages aloud. The system allows pronunciation phonemes, even inputting specific pitches and durations. Players of Moonbase Alpha quickly realized that these could be used to sing songs. I think this is absolutely delightful, and really wanted to play with this myself. Rather than copy-paste lines of text into the game, I tracked down a standard version of DECTalk and compiled it line by line.
 

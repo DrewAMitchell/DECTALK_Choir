@@ -116,6 +116,7 @@ export default function App() {
   const [templateSources, setTemplateSources] = useState<AlignmentTemplate[]>([]);
   const [selectedPhrase, setSelectedPhrase] = useState<number | null>(null);
   const [deleteSongArmed, setDeleteSongArmed] = useState(false);
+  const [lyricsModalOpen, setLyricsModalOpen] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [alignmentLoading, setAlignmentLoading] = useState(false);
@@ -150,7 +151,7 @@ export default function App() {
     });
   }, [song, inspection]);
   useEffect(() => {
-    if (stage !== "lyrics" || !song || !roleName) {
+    if ((stage !== "lyrics" && !lyricsModalOpen) || !song || !roleName) {
       setTranscriptLoadedKey("");
       return;
     }
@@ -161,7 +162,7 @@ export default function App() {
       setTranscript(value.text); setSavedTranscript(value.text); setTranscriptLoadedKey(`${song}:${roleName}`); setValidation(null);
     }).catch((cause) => { if (!cancelled) setError(String(cause)); });
     return () => { cancelled = true; };
-  }, [song, roleName, stage]);
+  }, [song, roleName, stage, lyricsModalOpen]);
   useEffect(() => {
     if (stage !== "align" || !song || !roleName) {
       setAlignmentLoading(false);
@@ -188,10 +189,10 @@ export default function App() {
     return () => { cancelled = true; };
   }, [song, roleName, stage, startAlignmentTransition]);
   useEffect(() => {
-    if (stage !== "lyrics" || !song || !roleName) return;
+    if ((stage !== "lyrics" && !lyricsModalOpen) || !song || !roleName) return;
     const timer = window.setTimeout(() => bridge<typeof validation>({ command: "validate_transcript", song, role: roleName, text: transcript }).then(setValidation).catch(() => undefined), 350);
     return () => window.clearTimeout(timer);
-  }, [song, roleName, stage, transcript]);
+  }, [song, roleName, stage, transcript, lyricsModalOpen]);
   const runDraft = async () => {
     if (!song || !roleName) return;
     setBusy("Drafting and aligning lyrics"); setError("");
@@ -199,7 +200,7 @@ export default function App() {
       const draft = await bridge<DraftState>({ command: "draft", song, role: roleName, text: transcript, auto_lines: false });
       setDraftState(draft); setDraftRole(roleName); setTranscript(draft.text); setSavedTranscript(draft.text); setLyricsPrompt("");
       const pending = await bridge<{ report: AlignmentReport; text: string; path: string }>({ command: "align", song, role: roleName });
-      setDraftState({ ...draft, text: pending.text, path: pending.path }); setTranscript(pending.text); setSavedTranscript(pending.text); setAlignment(pending); setAlignmentRole(roleName); setSelectedPhrase(firstPhraseLine(pending.report)); setStage("align");
+      setDraftState({ ...draft, text: pending.text, path: pending.path }); setTranscript(pending.text); setSavedTranscript(pending.text); setAlignment(pending); setAlignmentRole(roleName); setSelectedPhrase(firstPhraseLine(pending.report)); setLyricsModalOpen(false); setStage("align");
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
   const runNoteSkeleton = async (placeholder: string) => {
@@ -222,6 +223,10 @@ export default function App() {
   };
   const selectStage = (nextStage: Stage) => {
     setLyricsPrompt("");
+    if (nextStage === "lyrics" && stage === "align") {
+      setLyricsModalOpen(true);
+      return;
+    }
     setStage(nextStage);
   };
   const openOutputs = async () => { try { await openSongFolder(song, "output"); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
@@ -284,10 +289,11 @@ export default function App() {
       <section className={`surface${stage === "lyrics" ? " lyrics-surface" : ""}`}>
         {stage === "lyrics" && lyricsPrompt && <div className="notice draft-route"><WandSparkles size={17} /><div>{lyricsPrompt}</div></div>}
         {stage === "lyrics" && <section className="lyrics-stage"><LyricsStage transcript={transcript} transcriptLoaded={transcriptLoadedKey === transcriptKey} setTranscript={setTranscript} validation={validation} onDraft={runDraft} onNoteSkeleton={runNoteSkeleton} onSave={saveTranscript} busy={busy} draftState={hasDraft ? draftState : null} dirty={transcript !== savedTranscript} prompt={lyricsPrompt} /></section>}
-        {stage === "align" && <AlignStage role={role} inspection={inspection} song={song} alignment={activeAlignment} loading={alignmentLoading || alignmentTransitionPending} templateSources={templateSources} onAdoptTemplate={adoptTemplate} setAlignment={setAlignment} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} busy={busy} setBusy={setBusy} setError={setError} />}
+        {stage === "align" && <AlignStage role={role} inspection={inspection} song={song} alignment={activeAlignment} loading={alignmentLoading || alignmentTransitionPending} templateSources={templateSources} onAdoptTemplate={adoptTemplate} onOpenLyrics={() => setLyricsModalOpen(true)} setAlignment={setAlignment} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} busy={busy} setBusy={setBusy} setError={setError} />}
         {stage === "review" && <ReviewStage song={song} role={role} inspection={inspection} enabledRoles={reviewEnabledRoles} onEnabledRolesChange={(roles) => void updateRenderRoles(roles)} onSelectRole={selectRole} onSelectVisualRole={selectRole} setInspection={setInspection} busy={busy} setBusy={setBusy} setError={setError} />}
       </section>
     </section>
+    {lyricsModalOpen && <section className="lyrics-modal-backdrop" role="presentation" onMouseDown={() => setLyricsModalOpen(false)}><section className="lyrics-modal" role="dialog" aria-modal="true" aria-label={`Edit ${roleName} lyrics`} onMouseDown={(event) => event.stopPropagation()}><button className="lyrics-modal-close" type="button" title="Close lyric editor" aria-label="Close lyric editor" onClick={() => setLyricsModalOpen(false)}><X size={17} /></button><LyricsStage transcript={transcript} transcriptLoaded={transcriptLoadedKey === transcriptKey} setTranscript={setTranscript} validation={validation} onDraft={runDraft} onNoteSkeleton={runNoteSkeleton} onSave={saveTranscript} busy={busy} draftState={hasDraft ? draftState : null} dirty={transcript !== savedTranscript} prompt={lyricsPrompt} /></section></section>}
   </main>;
 }
 
@@ -316,7 +322,7 @@ function LyricsStage({ transcript, transcriptLoaded, setTranscript, validation, 
   return <><section className="surface-header lyrics-header"><div className="lyrics-title"><p className="eyebrow">Working lyric draft</p><h1>Lyrics</h1><p>Paste lyrics or create a note skeleton here. Draft timing turns this same text into the editable aligned draft.</p></div><div className="header-actions lyrics-actions"><span className={dirty ? "save-state dirty" : "save-state"}>{replaceArmed ? "Click again to replace" : dirty ? "Unsaved changes" : "Saved"}</span><button className="secondary" onClick={onSave} disabled={!!busy || !dirty}>Save draft</button><label className="skeleton-control" title={skeletonTitle}><input value={skeletonPhoneme} onChange={(event) => setSkeletonPhoneme(event.target.value)} aria-label="Note skeleton phoneme" placeholder="duw" /><button className="secondary" onClick={createSkeleton} disabled={skeletonDisabled}><Music2 size={16} /> {replaceArmed ? "Replace lyrics" : "Note skeleton"}</button></label><button className="primary" onClick={onDraft} disabled={!!busy || !transcript.trim()}><WandSparkles size={16} /> Draft timing</button></div></section><textarea className="transcript" value={transcript} onChange={(event) => setTranscript(event.target.value)} placeholder="Paste plain lyrics, or create one direct phoneme per MIDI note. Line breaks are phrase hints; commas and unsupported punctuation are normalized." />{validation && (!validation.ok || validation.normalized_lines.length > 0) && <div className={validation.ok ? "notice" : "warning"}><CircleAlert size={17} /><div>{validation.invalid_words.length > 0 && <><strong>Check these words:</strong> {validation.invalid_words.join(", ")}</>}{validation.normalized_lines.length > 0 && <span> Punctuation will be normalized before drafting.</span>}</div></div>}{draftState?.review_segments.length ? <details className="draft-review" open><summary>{draftState.review_segments.length} rapid multi-note word {draftState.review_segments.length === 1 ? "span needs" : "spans need"} verification <span>gaps at or below {draftState.tight_gap_ms} ms</span></summary><div>{draftState.review_segments.map((segment) => <div key={`${segment.line}-${segment.word_index}`} style={{ "--word-color": wordColor(segment.line, segment.word_index) } as CSSProperties}><strong>{segment.word}</strong><span>{segment.note_count} notes · {Math.round(segment.start_ms / 1000)}s-{Math.round(segment.end_ms / 1000)}s</span></div>)}</div></details> : null}{draftState && <details className="generated"><summary>Generated draft ready for alignment <span>{draftState.path}</span></summary><pre>{draftState.text}</pre></details>}</>;
 }
 
-function AlignStage({ role, inspection, song, alignment, loading, templateSources, onAdoptTemplate, setAlignment, selectedPhrase, setSelectedPhrase, busy, setBusy, setError }: { role: Role | null; inspection: SongInspection | null; song: string; alignment: { report: AlignmentReport; text: string } | null; loading: boolean; templateSources: AlignmentTemplate[]; onAdoptTemplate(sourceRole: string): void; setAlignment(value: { report: AlignmentReport; text: string } | null): void; selectedPhrase: number | null; setSelectedPhrase(value: number): void; busy: string; setBusy(value: string): void; setError(value: string): void }) {
+function AlignStage({ role, inspection, song, alignment, loading, templateSources, onAdoptTemplate, onOpenLyrics, setAlignment, selectedPhrase, setSelectedPhrase, busy, setBusy, setError }: { role: Role | null; inspection: SongInspection | null; song: string; alignment: { report: AlignmentReport; text: string } | null; loading: boolean; templateSources: AlignmentTemplate[]; onAdoptTemplate(sourceRole: string): void; onOpenLyrics(): void; setAlignment(value: { report: AlignmentReport; text: string } | null): void; selectedPhrase: number | null; setSelectedPhrase(value: number): void; busy: string; setBusy(value: string): void; setError(value: string): void }) {
   const [selectedWord, setSelectedWord] = useState<{ line: number; wordIndex: number } | null>(null);
   const [insertWord, setInsertWord] = useState("");
   const [insertOpen, setInsertOpen] = useState(false);
@@ -464,7 +470,7 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
       {applyArmed && alignment && <section className="apply-confirm"><div><strong>Replace configured lyric input?</strong><span>`choir.py` will use this alignment on the next render. A backup is created beside the lyric file.</span></div><button className="secondary" onClick={() => setApplyArmed(false)} disabled={!!busy}>Cancel</button><button className="primary" onClick={() => void apply()} disabled={!!busy}>Apply alignment</button></section>}
       {applied && <div className="notice alignment-applied"><CircleAlert size={17} /><div><strong>Configured lyric input updated.</strong> {applied.path}{applied.backup_path && <> Backup: {applied.backup_path}</>}</div></div>}
       <section className="midi-transport align-transport">
-        <div className="transport-group"><button className="primary" onClick={() => void playMidi()} disabled={!role?.midi_track}><Play size={15} /> Play MIDI</button><button className="secondary icon-command" title={mediaState?.paused ? "Resume preview" : "Pause preview"} onClick={() => void togglePause()} disabled={!active}>{mediaState?.paused ? <Play size={15} /> : <Pause size={15} />}</button><button className="secondary icon-command" title="Stop playback" onClick={() => void stop()} disabled={!mediaState}><Square size={14} /></button><span>{mediaLabel}</span></div>
+        <div className="transport-group"><button className="primary" onClick={() => void playMidi()} disabled={!role?.midi_track}><Play size={15} /> Play MIDI</button><button className="secondary icon-command" title={mediaState?.paused ? "Resume preview" : "Pause preview"} onClick={() => void togglePause()} disabled={!active}>{mediaState?.paused ? <Play size={15} /> : <Pause size={15} />}</button><button className="secondary icon-command" title="Stop playback" onClick={() => void stop()} disabled={!mediaState}><Square size={14} /></button><button className="secondary icon-command align-lyrics-command" type="button" title="Edit the working lyric draft without leaving Align" aria-label="Edit the working lyric draft" onClick={onOpenLyrics}><PenLine size={15} /></button><span>{mediaLabel}</span></div>
         <div className="transport-group align-actions"><span className={missingNoteWords ? "save-state dirty" : "save-state"}>{alignment?.report.template?.source_role ? `Template: ${alignment.report.template.source_role}` : alignment ? missingNoteWords ? `${missingNoteWords} word${missingNoteWords === 1 ? "" : "s"} need a note` : "Pending source update" : "Not drafted"}</span>{templateSources.length > 0 && <label className="template-picker" title="Copy a saved same-lyrics alignment and remap it to this track by time"><select value={templateRole} onChange={(event) => setTemplateRole(event.target.value)}><option value="">Aligned template</option>{templateSources.map((source) => <option key={source.role} value={source.role}>{source.role}</option>)}</select><button type="button" className="secondary" onClick={() => onAdoptTemplate(templateRole)} disabled={!!busy || !templateRole}>Use</button></label>}{alignment && <button className="secondary" title={missingNoteWords ? "Resolve words without MIDI notes before applying" : "Validate and replace the configured lyric input used by choir.py"} onClick={() => setApplyArmed(true)} disabled={!!busy || missingNoteWords > 0}>Apply to source</button>}</div>
       </section>
       <div className="align-roll-shell"><PianoRoll track={role?.midi_track ?? null} durationSeconds={inspection?.midi?.duration_seconds ?? 0} durationTicks={inspection?.midi?.duration_ticks} alignment={alignment?.report.notes} selectedPhrase={selectedPhrase} selectedWord={selectedWord} invalidPhraseLines={invalidPhraseLines} playheadMs={active ? mediaState?.position_ms : null} onCursorChange={(milliseconds) => void seek(milliseconds)} onSelectPhrase={(line) => { setSelectedPhrase(line); setSelectedWord(null); setShowAllWords(false); }} onPlaybackPhraseChange={(line) => { setSelectedPhrase(line); setSelectedWord(null); setShowAllWords(false); }} onSelectWord={(line, wordIndex) => { setSelectedPhrase(line); setSelectedWord({ line, wordIndex }); setShowAllWords(wordIndex >= 10); }} onResizeWord={(edge, movement) => void adjust(edge, movement)} onResizePhrase={(edge, movement) => void adjustPhrase(edge, movement)} onAddVirtualSplit={(noteIndex, fraction) => void addVirtualSplit(noteIndex, fraction)}>{overlay}</PianoRoll>{loading && <div className="align-loading" role="status" aria-live="polite"><LoaderCircle size={17} /><span>Loading alignment and phrase map...</span></div>}</div>
