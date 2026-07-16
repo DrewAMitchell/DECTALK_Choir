@@ -9,6 +9,7 @@ type Props = {
   durationSeconds: number;
   durationTicks?: number;
   alignment?: AlignmentEntry[];
+  virtualSplits?: Array<{ note_index: number; fraction: number }>;
   selectedPhrase?: number | null;
   selectedWord?: SelectedWord;
   invalidPhraseLines?: number[];
@@ -76,6 +77,7 @@ function PianoRollCanvas({
   durationSeconds,
   durationTicks,
   alignment = [],
+  virtualSplits = [],
   selectedPhrase,
   selectedWord,
   invalidPhraseLines = [],
@@ -120,6 +122,18 @@ function PianoRollCanvas({
     const end = Math.max(...sourceNotes.map((note) => (note.end_tick / maxTick) * durationMs));
     return { start, end };
   }, [durationMs, maxTick, sourceNotes]);
+  const displaySourceSegments = useMemo(() => sourceNotes.flatMap((_, sourceIndex) => {
+    const fractions = virtualSplits
+      .filter((split) => split.note_index === sourceIndex + 1 && split.fraction > 0.05 && split.fraction < 0.95)
+      .map((split) => split.fraction)
+      .sort((left, right) => left - right);
+    const boundaries = [0, ...new Set(fractions), 1];
+    return boundaries.slice(0, -1).map((startFraction, segmentIndex) => ({
+      sourceIndex,
+      startFraction,
+      endFraction: boundaries[segmentIndex + 1],
+    }));
+  }), [sourceNotes, virtualSplits]);
   const entriesByNote = useMemo(() => new Map(alignment.map((entry) => [entry.note_index, entry])), [alignment]);
   const phrases = useMemo(() => {
     const grouped = new Map<number, AlignmentEntry[]>();
@@ -398,15 +412,12 @@ function PianoRollCanvas({
   const finishVirtualSplit = (event: PointerEvent<SVGRectElement>) => {
     if (!virtualSplitDrag || virtualSplitDrag.pointerId !== event.pointerId || !onAddVirtualSplit || !sourceNotes.length) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    const fraction = virtualSplitDrag.fraction;
-    const timing = noteTiming(virtualSplitDrag.displayIndex);
-    const sourceIndex = sourceNotes.findIndex((note) => {
-      const start = (note.start_tick / maxTick) * durationMs;
-      const end = (note.end_tick / maxTick) * durationMs;
-      return timing.start >= start - 1 && timing.end <= end + 1;
-    });
+    const segment = displaySourceSegments[virtualSplitDrag.displayIndex];
     setVirtualSplitDrag(null);
-    if (sourceIndex >= 0) onAddVirtualSplit(sourceIndex + 1, fraction);
+    if (!segment) return;
+    const fraction = segment.startFraction
+      + virtualSplitDrag.fraction * (segment.endFraction - segment.startFraction);
+    onAddVirtualSplit(segment.sourceIndex + 1, fraction);
   };
   const updateVirtualSplit = (event: PointerEvent<SVGRectElement>) => {
     if (!virtualSplitDrag || virtualSplitDrag.pointerId !== event.pointerId) return;
@@ -510,7 +521,7 @@ function PianoRollCanvas({
         {selectedPhraseRange && (["start", "end"] as const).map((edge) => {
           const target = phraseBoundaryTargets(edge).find((item) => item.movement === 0);
           if (!target) return null;
-          return <rect key={`phrase-${edge}`} className={`phrase-boundary-region ${edge}`} x={target.x - 11} y="22" width="22" height="448" onPointerDown={(event) => beginPhraseDrag(event, edge)} onPointerMove={updatePhraseDrag} onPointerUp={finishPhraseDrag} onPointerCancel={() => setPhraseDrag(null)}><title>Drag to move this phrase edge across MIDI notes. Red targets create a temporary word-without-note review state.</title></rect>;
+          return <rect key={`phrase-${edge}`} className={`phrase-boundary-region ${edge}`} x={edge === "start" ? target.x - 10 : target.x} y="22" width="10" height="448" onPointerDown={(event) => beginPhraseDrag(event, edge)} onPointerMove={updatePhraseDrag} onPointerUp={finishPhraseDrag} onPointerCancel={() => setPhraseDrag(null)}><title>Drag to move this phrase edge across MIDI notes. Red targets create a temporary word-without-note review state.</title></rect>;
         })}
         {selectedWordRange && (["start", "end"] as const).map((edge) => {
           const target = boundaryTargets(edge).find((item) => item.movement === 0);

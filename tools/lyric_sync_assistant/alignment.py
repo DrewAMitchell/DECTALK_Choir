@@ -398,8 +398,20 @@ def add_virtual_note_split(
         raise ValueError("Choose a valid MIDI note to split.")
     if not 0.05 < fraction < 0.95:
         raise ValueError("Virtual splits must leave a meaningful duration on both sides.")
-    virtual_splits = [item for item in report.get("virtual_splits", []) if isinstance(item, dict)]
-    if any(int(item.get("note_index", -1)) == note_index and abs(float(item.get("fraction", -1)) - fraction) < 0.02 for item in virtual_splits):
+    virtual_splits: list[dict[str, int | float]] = []
+    splits_by_note: dict[int, list[float]] = {}
+    for item in report.get("virtual_splits", []):
+        if not isinstance(item, dict):
+            continue
+        try:
+            existing_note_index = int(item["note_index"])
+            existing_fraction = float(item["fraction"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if 1 <= existing_note_index <= len(source_notes) and 0.05 < existing_fraction < 0.95:
+            virtual_splits.append({"note_index": existing_note_index, "fraction": existing_fraction})
+            splits_by_note.setdefault(existing_note_index, []).append(existing_fraction)
+    if any(abs(existing - fraction) < 0.02 for existing in splits_by_note.get(note_index, [])):
         raise ValueError("A virtual split already exists at that position.")
     raw_notes = [
         NoteEvent(
@@ -410,8 +422,26 @@ def add_virtual_note_split(
         )
         for note in source_notes
     ]
-    virtual_splits.append({"note_index": note_index, "fraction": round(fraction, 5)})
     token_lines = _token_lines_from_report(report, aligned_text)
+    current_boundaries = [0.0, *sorted(set(splits_by_note.get(note_index, []))), 1.0]
+    segment_index = next(
+        index
+        for index, (start, end) in enumerate(zip(current_boundaries, current_boundaries[1:]))
+        if start < fraction < end
+    )
+    display_index = sum(1 + len(set(splits_by_note.get(index, []))) for index in range(1, note_index)) + segment_index
+    displayed_notes = report.get("notes", [])
+    owner = displayed_notes[display_index] if display_index < len(displayed_notes) else None
+    if isinstance(owner, dict):
+        try:
+            owner_line = int(owner["line"])
+            owner_word = int(owner["word_index"])
+        except (KeyError, TypeError, ValueError):
+            owner_line = owner_word = 0
+        if 1 <= owner_line <= len(token_lines) and 1 <= owner_word <= len(token_lines[owner_line - 1]):
+            token_lines[owner_line - 1][owner_word - 1].note_count += 1
+
+    virtual_splits.append({"note_index": note_index, "fraction": round(fraction, 5)})
     summary = report.get("summary", {})
     entries, new_summary = align_tokens(
         _tokens_from_lines(token_lines),
@@ -958,15 +988,22 @@ def delete_alignment_token(
     target_word = word_index - 1
     if target_line < 0 or target_line >= len(token_lines) or target_word < 0 or target_word >= len(token_lines[target_line]):
         raise ValueError("The selected lyric unit is no longer present in the aligned text.")
-    if len(token_lines[target_line]) <= 1:
-        raise ValueError("A phrase must retain at least one lyric unit.")
-
-    removed = token_lines[target_line].pop(target_word)
+    removing_phrase = len(token_lines[target_line]) == 1
+    if removing_phrase:
+        if sum(len(tokens) for tokens in token_lines) <= 1:
+            raise ValueError("The final lyric unit cannot be removed.")
+        removed = token_lines.pop(target_line)[0]
+    else:
+        removed = token_lines[target_line].pop(target_word)
     remaining_tokens = [token for token_line in token_lines for token in token_line]
-    if not remaining_tokens:
-        raise ValueError("The final lyric unit cannot be removed.")
     # Preserve all immediate following words by settling the released notes at the tail.
     remaining_tokens[-1].note_count += removed.note_count
+
+    line_timings = report.get("line_timings")
+    if removing_phrase and isinstance(line_timings, list):
+        line_timings = list(line_timings)
+        if target_line < len(line_timings):
+            line_timings.pop(target_line)
 
     notes = [
         NoteEvent(
@@ -989,14 +1026,19 @@ def delete_alignment_token(
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
     updated_report["token_counts"] = _token_counts(token_lines)
+    if isinstance(line_timings, list):
+        updated_report["line_timings"] = line_timings
     updated_report["version"] = max(2, int(report.get("version", 1)))
     updated_text = "\n".join(
         render_aligned_lyrics(
             token_lines,
             entries,
-            line_timings=report.get("line_timings"),
+            line_timings=line_timings,
         )
     ) + "\n"
+    if removing_phrase:
+        selected_line_index = min(target_line, len(token_lines) - 1)
+        return updated_report, updated_text, (selected_line_index + 1, 1)
     return updated_report, updated_text, (line, min(word_index, len(token_lines[target_line])))
 
 
