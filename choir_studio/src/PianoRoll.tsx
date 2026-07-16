@@ -13,6 +13,7 @@ type Props = {
   selectedWord?: SelectedWord;
   invalidPhraseLines?: number[];
   playheadMs?: number | null;
+  playbackPaused?: boolean;
   onSelectPhrase?: (line: number) => void;
   onPlaybackPhraseChange?: (line: number) => void;
   onSelectWord?: (line: number, wordIndex: number) => void;
@@ -79,6 +80,7 @@ function PianoRollCanvas({
   selectedWord,
   invalidPhraseLines = [],
   playheadMs,
+  playbackPaused = false,
   onSelectPhrase,
   onPlaybackPhraseChange,
   onSelectWord,
@@ -290,6 +292,10 @@ function PianoRollCanvas({
       setFollowedPhrase(null);
       return;
     }
+    if (playbackPaused) {
+      setFollowedPhrase(null);
+      return;
+    }
     const activePhrase = phrases.find((phrase) => playheadMs >= phrase.start && playheadMs <= phrase.end);
     if (activePhrase) {
       if (activePhrase.line !== followedPhrase) {
@@ -304,7 +310,7 @@ function PianoRollCanvas({
       setFollowedPhrase(null);
       if (!manualViewportRef.current && (playheadMs < viewStartMs || playheadMs > viewEndMs)) setTimeCenterMs(playheadMs);
     }
-  }, [playheadMs, phrases, followedPhrase, viewStartMs, viewEndMs, onPlaybackPhraseChange]);
+  }, [playheadMs, playbackPaused, phrases, followedPhrase, viewStartMs, viewEndMs, onPlaybackPhraseChange]);
 
   const setZoom = (next: number) => setTimeZoom(Math.max(0, Math.min(90, next)));
   const pan = (direction: -1 | 1) => {
