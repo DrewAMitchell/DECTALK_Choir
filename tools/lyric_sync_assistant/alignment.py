@@ -505,16 +505,16 @@ def shift_alignment_token(
     return updated_report, updated_text
 
 
-def claim_alignment_note(
+def adjust_alignment_token_note_count(
     report: dict,
     aligned_text: str,
     line: int,
     word_index: int,
-    direction: int,
+    delta: int,
 ) -> tuple[dict, str]:
-    """Give one adjacent note to a word without crossing a phrase boundary."""
-    if direction not in {-1, 1}:
-        raise ValueError("Choose the immediately preceding or following note claim.")
+    """Adjust one word's note count without changing its phrase allocation."""
+    if delta not in {-1, 1}:
+        raise ValueError("Word note-count adjustment must be minus or plus one.")
 
     token_lines = _token_lines_from_report(report, aligned_text)
     line_index = line - 1
@@ -523,18 +523,42 @@ def claim_alignment_note(
         raise ValueError("The selected lyric unit is no longer present in the aligned text.")
 
     tokens = token_lines[line_index]
-    neighbor_index = token_index + direction
-    if neighbor_index < 0 or neighbor_index >= len(tokens):
-        side = "preceding" if direction < 0 else "following"
-        raise ValueError(f"There is no {side} word in this phrase.")
-
     target_token = tokens[token_index]
-    neighbor_token = tokens[neighbor_index]
-    if neighbor_token.note_count <= 1:
-        side = "preceding" if direction < 0 else "following"
-        raise ValueError(f"The {side} word has only one note to preserve.")
-    neighbor_token.note_count -= 1
-    target_token.note_count += 1
+    if delta > 0:
+        donors = [
+            index
+            for index, token in enumerate(tokens)
+            if index != token_index and token.note_count > 1
+        ]
+        if not donors:
+            raise ValueError("No other word in this phrase has a spare note.")
+        donor_index = min(
+            donors,
+            key=lambda index: (abs(index - token_index), index < token_index),
+        )
+        tokens[donor_index].note_count -= 1
+        target_token.note_count += 1
+    else:
+        if target_token.note_count <= 1:
+            raise ValueError("A word must retain at least one note.")
+        recipients = [
+            index
+            for index, token in enumerate(tokens)
+            if index != token_index and token.note_count == 0
+        ]
+        if not recipients:
+            if token_index + 1 < len(tokens):
+                recipients = [token_index + 1]
+            elif token_index > 0:
+                recipients = [token_index - 1]
+        if not recipients:
+            raise ValueError("A one-word phrase cannot return a note to another word.")
+        recipient_index = min(
+            recipients,
+            key=lambda index: (abs(index - token_index), index < token_index),
+        )
+        target_token.note_count -= 1
+        tokens[recipient_index].note_count += 1
 
     raw_notes = report.get("notes", [])
     notes = [

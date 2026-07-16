@@ -48,7 +48,7 @@ from assistant import (
 from alignment import (
     add_virtual_note_split,
     apply_timed_alignment_template,
-    claim_alignment_note,
+    adjust_alignment_token_note_count,
     build_alignment,
     delete_alignment_token,
     insert_alignment_token,
@@ -998,15 +998,15 @@ def handle(request: dict[str, Any]) -> Any:
         except (TypeError, ValueError) as error:
             raise BridgeError(str(error)) from error
         return _write_candidate_alignment(song, role, updated_report, updated_text)
-    if command == "claim_alignment_note":
+    if command == "adjust_word_note_count":
         report, text, line, word_index = _alignment_request(song, role, request)
         try:
-            updated_report, updated_text = claim_alignment_note(
+            updated_report, updated_text = adjust_alignment_token_note_count(
                 report,
                 text,
                 line,
                 word_index,
-                int(request.get("direction")),
+                int(request.get("delta")),
             )
         except (TypeError, ValueError) as error:
             raise BridgeError(str(error)) from error

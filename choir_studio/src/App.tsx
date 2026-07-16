@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { BarChart3, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, FileAudio, FolderOpen, LoaderCircle, Minus, Moon, Music2, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
+import { BarChart3, CircleAlert, CircleCheck, FileAudio, FolderOpen, LoaderCircle, Minus, Moon, Music2, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
 import { bridge, deleteSong, media, openFfmpegDownload, openMedia, openSongFolder, renderJobStatus, spectrogramJobStatus, startRenderJob, startSpectrogramJob, type MediaStatus, type RenderJobStatus, type SpectrogramJobStatus } from "./bridge";
 import { PianoRoll } from "./PianoRoll";
 import type { AlignmentReport, Role, SongInspection } from "./types";
@@ -399,11 +399,11 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
       setAlignment(result);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
-  const claimAdjacentNote = async (direction: -1 | 1) => {
+  const adjustWordNoteCount = async (delta: -1 | 1) => {
     if (!alignment || !selectedWord || !role) return;
-    setBusy("Claiming adjacent note"); setError("");
+    setBusy("Adjusting word notes"); setError("");
     try {
-      const result = await bridge<{ report: AlignmentReport; text: string }>({ command: "claim_alignment_note", song, role: role.role, report: alignment.report, text: alignment.text, line: selectedWord.line, word_index: selectedWord.wordIndex, direction });
+      const result = await bridge<{ report: AlignmentReport; text: string }>({ command: "adjust_word_note_count", song, role: role.role, report: alignment.report, text: alignment.text, line: selectedWord.line, word_index: selectedWord.wordIndex, delta });
       setAlignment(result);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
@@ -456,8 +456,9 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
   const selectedWordPosition = words.findIndex((item) => item.line === selectedWord?.line && item.word_index === selectedWord?.wordIndex);
-  const canClaimPrevious = selectedWordPosition > 0 && words[selectedWordPosition - 1].note_count > 1;
-  const canClaimNext = selectedWordPosition >= 0 && selectedWordPosition < words.length - 1 && words[selectedWordPosition + 1].note_count > 1;
+  const selectedWordNoteCount = selectedWordPosition >= 0 ? words[selectedWordPosition].note_count : 0;
+  const canDecreaseWordNotes = words.length > 1 && selectedWordNoteCount > 1;
+  const canIncreaseWordNotes = selectedWordPosition >= 0 && words.some((item, index) => index !== selectedWordPosition && item.note_count > 1);
   const selectedPhraseInvalid = selectedPhrase !== null && invalidPhraseLines.includes(selectedPhrase);
   const overlay = alignment && selectedPhrase !== null ? <div className={`phrase-workbench ${selectedPhraseInvalid ? "invalid" : ""}`}>
     <div className="phrase-workbench-heading"><p className="eyebrow">{selectedPhrase ? `Phrase ${selectedPhrase}` : "Select a phrase above the notes"}</p><strong>{selectedPhrase ? "Drag either full-height edge guide to snap across any available note boundary." : "Phrase blocks stay compact until selected."}</strong></div>
@@ -466,7 +467,7 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
       const isSelected = selectedWord?.line === item.line && selectedWord.wordIndex === item.word_index;
       return <div className={`word-token ${draggedWord === item.word_index ? "dragging" : ""} ${item.note_count === 0 ? "invalid" : ""}`} style={{ "--word-color": wordColor(item.line, item.word_index) } as CSSProperties} key={`${item.line}-${item.word_index}`} draggable={!busy} title="Drag this word onto another word to move it before that word" onDragStart={() => setDraggedWord(item.word_index!)} onDragEnd={() => setDraggedWord(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void reorderWord(item.word_index!); }}>
         <button className={isSelected ? "selected" : ""} onClick={() => { setSelectedWord({ line: item.line!, wordIndex: item.word_index! }); setInsertOpen(false); }} title={item.lyric ?? ""}>{item.lyric}<small>{item.note_count === 0 ? "Needs note" : `${item.duration_ms} ms`}</small></button>
-        {isSelected && <span className="word-quick-controls"><button type="button" title="Claim one note from the preceding word" aria-label="Claim one note from the preceding word" disabled={!!busy || !canClaimPrevious} onPointerDown={(event) => event.stopPropagation()} onClick={() => void claimAdjacentNote(-1)}><ChevronLeft size={12} /></button><button type="button" title="Claim one note from the following word" aria-label="Claim one note from the following word" disabled={!!busy || !canClaimNext} onPointerDown={(event) => event.stopPropagation()} onClick={() => void claimAdjacentNote(1)}><ChevronRight size={12} /></button></span>}
+        {isSelected && <span className="word-quick-controls"><button type="button" title="Give one note back to this phrase" aria-label="Decrease this word's note count" disabled={!!busy || !canDecreaseWordNotes} onPointerDown={(event) => event.stopPropagation()} onClick={() => void adjustWordNoteCount(-1)}><Minus size={12} /></button><button type="button" title="Assign one more note from this phrase" aria-label="Increase this word's note count" disabled={!!busy || !canIncreaseWordNotes} onPointerDown={(event) => event.stopPropagation()} onClick={() => void adjustWordNoteCount(1)}><Plus size={12} /></button></span>}
         <button className={deleteArmed ? "word-delete armed" : "word-delete"} type="button" title={deleteArmed ? `Ctrl-click to remove ${item.lyric}` : `Hold Ctrl to remove ${item.lyric}`} aria-label={deleteArmed ? `Remove ${item.lyric}` : `Hold Ctrl to remove ${item.lyric}`} draggable={false} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { if (!event.ctrlKey) return; void removeWord(item.line!, item.word_index!); }} disabled={!!busy || !deleteArmed}><Minus size={11} /></button>
       </div>;
     })}{hiddenWordCount > 0 && <button className="word-more" type="button" onClick={() => setShowAllWords(true)}>{hiddenWordCount} more</button>}{showAllWords && words.length > 10 && <button className="word-more" type="button" onClick={() => setShowAllWords(false)}>Collapse</button>}<div className="word-insert-anchor"><button className="add-word" type="button" title="Insert a word after the selected word" aria-label="Insert a word" onClick={() => { const anchor = selectedWord ?? (words.length ? { line: words[words.length - 1].line!, wordIndex: words[words.length - 1].word_index! } : null); if (anchor) { setSelectedWord(anchor); setInsertOpen(true); } }} disabled={!words.length || !!busy}><Plus size={15} /></button>{insertOpen && <form className="word-insert-popover" onSubmit={(event) => { event.preventDefault(); void insert(); }}><input autoFocus value={insertWord} onChange={(event) => setInsertWord(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setInsertOpen(false); setInsertWord(""); } }} placeholder="New word" /><button className="primary" type="submit" disabled={!!busy || !insertWord.trim()}>Insert</button><button className="secondary" type="button" aria-label="Cancel insert" title="Cancel insert" onClick={() => { setInsertOpen(false); setInsertWord(""); }}><X size={14} /></button></form>}</div></div>}
