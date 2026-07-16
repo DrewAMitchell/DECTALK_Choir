@@ -29,6 +29,14 @@ DIRECT_PHONEMES = sorted(
     reverse=True,
 )
 
+def unsupportedDectalkPhonemes(phonemes):
+    """Return symbols that cannot be emitted in a DECTALK phoneme command."""
+    return sorted({
+        str(phoneme)
+        for phoneme in phonemes
+        if str(phoneme) != '_' and str(phoneme).lower() not in DIRECT_PHONEMES
+    })
+
 Pronunciation_Overrides = {
     'dong': ['D', 'AO1', 'NG'],
     'feeling': ['F', 'IY1', 'L', 'IY0', 'NG'],

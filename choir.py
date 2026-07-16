@@ -838,6 +838,16 @@ if True:
 		for fooLine in compiledLyrics[fooPartName]:
 			startTime = fooLine[0]
 			partialTxtFile = f"{songOutputDir}/{fooPartName}/{startTime}.txt"
+			invalidPhonemes = pp.unsupportedDectalkPhonemes(
+				fooPhen[0] for fooPhen in fooLine[1:] if fooPhen != ' '
+			)
+			if invalidPhonemes:
+				print(
+					f"ERROR: {fooPartName} phrase at {startTime} ms contains unsupported "
+					f"DECTALK phoneme command(s): {', '.join(invalidPhonemes)}"
+				)
+				exit(1)
+
 
 			# Write partial text file
 			partialTxtFile = open(partialTxtFile, 'w')

@@ -41,6 +41,7 @@ SHORT_WORDS = {
 }
 
 EXAMPLE_SONGS = ['DaisyBell', 'AuldLangSyne', 'CarolOfTheBells_Short']
+PLACEHOLDER_MAX_PHRASE_NOTES = 8
 
 
 @dataclass
@@ -751,12 +752,19 @@ def render_placeholder_draft(notes, phrases, placeholder, include_comments=True)
 	"""Create one editable direct-phoneme token per MIDI note.
 
 	The note-level skeleton intentionally maximizes editability. Users can merge
-	notes later with the normal ``N*word`` or ``A|B|word`` syntax.
+	notes later with the normal ``N*word`` or ``A|B|word`` syntax. Rest-derived
+	phrases are capped at eight notes so a long uninterrupted run remains usable
+	in the alignment workbench.
 	"""
 
 	placeholder = normalize_placeholder_word(placeholder)
 	output_lines = [f'# draft-mode: placeholder={placeholder}'] if include_comments else []
-	for phrase_index, phrase_notes in enumerate(phrases):
+	bounded_phrases = [
+		phrase_notes[offset:offset + PLACEHOLDER_MAX_PHRASE_NOTES]
+		for phrase_notes in phrases
+		for offset in range(0, len(phrase_notes), PLACEHOLDER_MAX_PHRASE_NOTES)
+	]
+	for phrase_index, phrase_notes in enumerate(bounded_phrases):
 		start_ms = round(phrase_notes[0].start_ms)
 		end_ms = round(phrase_notes[-1].end_ms)
 		if include_comments:

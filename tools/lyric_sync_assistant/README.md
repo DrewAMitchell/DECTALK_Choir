@@ -28,7 +28,7 @@ For a track with no lyrics yet, create an editable note-level scaffold:
 ```
 
 This writes one direct-phoneme placeholder per MIDI note, split at detected
-phrase gaps. Transcript inputs are normalized before lookup: commas and other
+phrase gaps and additionally capped at eight consecutive notes per line. Transcript inputs are normalized before lookup: commas and other
 unsupported punctuation are removed while apostrophes and choir lyric control
 syntax are retained.
 

@@ -122,6 +122,7 @@ Phoneme conversion details:
 - `IH` followed by `NG` is normalized to `IY NG`. `IH N` is left alone.
 - CMU `hh` is converted to DECTALK `hx`; `y` is converted to `yx`.
 - Direct syllables are validated before rendering. `doo` and `dxoo` are not valid direct phoneme syllables; use `duw` and `dxuw`. Invalid direct input fails during lyric conversion rather than producing DECTALK command errors.
+- `say.exe` vocalizes "command error in phoneme" into its WAV while still returning exit code `0` with no stdout/stderr. `choir.py` therefore preflights every final emitted phoneme symbol against `DIRECT_PHONEMES` and fails with the affected role and phrase before launching DECTALK; process-log matching cannot detect this engine behavior.
 - Timed lyric lines are padded with silence when shorter than the requested duration and trimmed from the end when longer.
 
 ## Lyric Sync Assistant
@@ -135,7 +136,7 @@ Phoneme conversion details:
 - Without `--auto-lines`, source line breaks are kept as lyric-phrase hints while notes are aligned globally to the MIDI track.
 - `--auto-lines` flattens source words, aligns them globally to the MIDI track, then splits the output at detected MIDI rest phrases.
 - Transcript drafts emit renderer-valid `[MM:SS] lyric` lines. Existing `[timestamp]` and `[timestamp|duration]` prefixes are preserved; plain input receives MIDI-derived starts. A single untimestamped bulk block is automatically split at MIDI phrase rests; use `--auto-lines` for multiline untimestamped input. Diagnostic `#` lines are opt-in with `--comments`.
-- `--placeholder [phoneme]` creates a note-level direct-phoneme skeleton; it defaults to `` `duw`` and emits one placeholder per MIDI note, grouped by phrase gaps.
+- `--placeholder [phoneme]` creates a note-level direct-phoneme skeleton; it defaults to `` `duw`` and emits one placeholder per MIDI note, grouped by phrase gaps with a maximum of eight consecutive notes per generated line.
 - Transcript source lines are normalized before dictionary lookup. Commas and unsupported punctuation are removed; apostrophes and existing lyric syntax such as timestamps, repeats, and count markers are retained.
 - Phrase, word-boundary, and tight-cluster thresholds are BPM-relative by default; override with `--phrase-gap-ms`, `--word-gap-ms`, and `--tight-gap-ms` when a MIDI export needs different sync boundaries.
 - The standalone `tools/lyric_sync_assistant/alignment.py` writes a note-by-note report and renderer-ready copy under `songs/<Song>/outputs/lyrics_aligned/`. Choir Studio keeps one durable working candidate at `songs/<Song>/outputs/lyrics_drafts/<Part>.txt` with its report beside it. The Lyrics editor always shows that active candidate when present. **Note skeleton** only generates editable phrase-broken placeholder text in the editor; **Draft timing** turns that same editor text into the active candidate and preserves the pre-draft text under `songs/<Song>/inputs/lyrics/<LYRICS_FILENAME>.raw.txt`. A non-empty candidate is the active lyric source for Review and rendering; its Align edits are immediately renderable. **Apply to source** is only needed to replace the configured lyric input.
