@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { ArrowLeft, BarChart3, CircleAlert, CircleCheck, FileAudio, FolderOpen, LoaderCircle, Minus, Moon, Music2, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
+import { ArrowLeft, BarChart3, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, FileAudio, FolderOpen, LoaderCircle, Minus, Moon, Music2, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
 import { bridge, deleteSong, media, openFfmpegDownload, openMedia, openSongFolder, renderJobStatus, spectrogramJobStatus, startRenderJob, startSpectrogramJob, type MediaStatus, type RenderJobStatus, type SpectrogramJobStatus } from "./bridge";
 import { PianoRoll } from "./PianoRoll";
 import type { AlignmentReport, Role, SongInspection } from "./types";
@@ -7,6 +7,13 @@ import choirStudioMark from "./assets/choir-studio-mark.svg";
 
 type Stage = "align" | "review";
 const stages: Array<[Stage, string, typeof Music2]> = [["align", "Align", WandSparkles], ["review", "Render Audio", BarChart3]];
+const lyricEditorTips = [
+  { lead: "Use near-homonyms.", message: <>Sound spelling can improve pronunciation: try <code>frir</code> for <q>for</q>, or <code>uh</code> when <q>a</q> sounds too sharp.</> },
+  { lead: "Split difficult words.", message: <>Break complex words into simpler sound-alike chunks; for example, try <code>a quaint ants</code> when <code>acquaintance</code> is unclear.</> },
+  { lead: "Fix MIDI structure externally.", message: <>If two sung syllables need distinct notes but the MIDI has one sustained note, split it in a MIDI editor. Align only assigns lyrics to existing notes.</> },
+  { lead: "Avoid extremely short notes.", message: <>Tiny MIDI notes leave too little time for DECTALK to pronounce a phoneme cleanly. Lengthen or merge those notes in a MIDI editor before aligning lyrics.</> },
+];
+const lyricTipIntervals = [10000, 6500, 4000];
 const FFMPEG_WINGET_COMMAND = "winget install --id Gyan.FFmpeg.Shared --exact";
 const UI_STATE_KEY = "dectalk-choir-studio.ui-state";
 type StoredUiState = { song?: string; role?: string; stage?: Stage; theme?: "dark" | "light"; render_roles?: Record<string, string[]> };
@@ -324,7 +331,30 @@ function LyricsStage({ transcript, transcriptLoaded, setTranscript, validation, 
     : replaceArmed
       ? `Confirm creation of a ${skeletonPhoneme} note skeleton${hasLyrics ? " and replacement of the current lyrics" : ""}.`
       : "Create one direct DECTALK phoneme per MIDI note, grouped at MIDI rests.";
-  return <><section className="surface-header lyrics-header"><div className="lyrics-title"><p className="eyebrow">Working lyric draft</p><h1>Lyrics</h1><p>Paste lyrics or create a note skeleton here. Draft timing turns this same text into the editable aligned draft.</p></div><div className="header-actions lyrics-actions"><span className={dirty ? "save-state dirty" : "save-state"}>{replaceArmed ? "Confirm note skeleton" : dirty ? "Unsaved changes" : "Saved"}</span><button className="secondary" onClick={onSave} disabled={!!busy || !dirty}>Save draft</button><label className="skeleton-control" title={skeletonTitle}><input value={skeletonPhoneme} onChange={(event) => setSkeletonPhoneme(event.target.value)} aria-label="Note skeleton phoneme" placeholder="duw" /><button className="secondary" onClick={createSkeleton} disabled={skeletonDisabled}><Music2 size={16} /> {replaceArmed ? "Confirm skeleton" : "Note skeleton"}</button></label><button className="primary" onClick={onDraft} disabled={!!busy || !transcript.trim()}><WandSparkles size={16} /> Draft timing</button></div></section><textarea className="transcript" value={transcript} onChange={(event) => setTranscript(event.target.value)} placeholder="Paste plain lyrics, or create one direct phoneme per MIDI note. Line breaks are phrase hints; commas and unsupported punctuation are normalized." />{validation && (!validation.ok || validation.normalized_lines.length > 0) && <div className={validation.ok ? "notice" : "warning"}><CircleAlert size={17} /><div>{validation.invalid_words.length > 0 && <><strong>Check these words:</strong> {validation.invalid_words.join(", ")}</>}{validation.normalized_lines.length > 0 && <span> Punctuation will be normalized before drafting.</span>}</div></div>}{draftState?.review_segments.length ? <details className="draft-review" open><summary>{draftState.review_segments.length} rapid multi-note word {draftState.review_segments.length === 1 ? "span needs" : "spans need"} verification <span>gaps at or below {draftState.tight_gap_ms} ms</span></summary><div>{draftState.review_segments.map((segment) => <div key={`${segment.line}-${segment.word_index}`} style={{ "--word-color": wordColor(segment.line, segment.word_index) } as CSSProperties}><strong>{segment.word}</strong><span>{segment.note_count} notes · {Math.round(segment.start_ms / 1000)}s-{Math.round(segment.end_ms / 1000)}s</span></div>)}</div></details> : null}{draftState && <details className="generated"><summary>Generated draft ready for alignment <span>{draftState.path}</span></summary><pre>{draftState.text}</pre></details>}</>;
+  return <><section className="surface-header lyrics-header"><div className="lyrics-title"><p className="eyebrow">Working lyric draft</p><h1>Lyrics</h1><p>Paste lyrics or create a note skeleton here. Draft timing turns this same text into the editable aligned draft.</p></div><div className="header-actions lyrics-actions"><span className={dirty ? "save-state dirty" : "save-state"}>{replaceArmed ? "Confirm note skeleton" : dirty ? "Unsaved changes" : "Saved"}</span><button className="secondary" onClick={onSave} disabled={!!busy || !dirty}>Save draft</button><label className="skeleton-control" title={skeletonTitle}><input value={skeletonPhoneme} onChange={(event) => setSkeletonPhoneme(event.target.value)} aria-label="Note skeleton phoneme" placeholder="duw" /><button className="secondary" onClick={createSkeleton} disabled={skeletonDisabled}><Music2 size={16} /> {replaceArmed ? "Confirm skeleton" : "Note skeleton"}</button></label><button className="primary" onClick={onDraft} disabled={!!busy || !transcript.trim()}><WandSparkles size={16} /> Draft timing</button></div></section><LyricsTipBoard /><textarea className="transcript" value={transcript} onChange={(event) => setTranscript(event.target.value)} placeholder="Paste plain lyrics, or create one direct phoneme per MIDI note. Line breaks are phrase hints; commas and unsupported punctuation are normalized." />{validation && (!validation.ok || validation.normalized_lines.length > 0) && <div className={validation.ok ? "notice" : "warning"}><CircleAlert size={17} /><div>{validation.invalid_words.length > 0 && <><strong>Check these words:</strong> {validation.invalid_words.join(", ")}</>}{validation.normalized_lines.length > 0 && <span> Punctuation will be normalized before drafting.</span>}</div></div>}{draftState?.review_segments.length ? <details className="draft-review" open><summary>{draftState.review_segments.length} rapid multi-note word {draftState.review_segments.length === 1 ? "span needs" : "spans need"} verification <span>gaps at or below {draftState.tight_gap_ms} ms</span></summary><div>{draftState.review_segments.map((segment) => <div key={`${segment.line}-${segment.word_index}`} style={{ "--word-color": wordColor(segment.line, segment.word_index) } as CSSProperties}><strong>{segment.word}</strong><span>{segment.note_count} notes · {Math.round(segment.start_ms / 1000)}s-{Math.round(segment.end_ms / 1000)}s</span></div>)}</div></details> : null}{draftState && <details className="generated"><summary>Generated draft ready for alignment <span>{draftState.path}</span></summary><pre>{draftState.text}</pre></details>}</>;
+}
+
+function LyricsTipBoard() {
+  const [tipIndex, setTipIndex] = useState(0);
+  const [speedIndex, setSpeedIndex] = useState(1);
+  const [paused, setPaused] = useState(false);
+  const intervalMs = lyricTipIntervals[speedIndex];
+  useEffect(() => {
+    if (paused) return;
+    const timer = window.setInterval(() => setTipIndex((current) => (current + 1) % lyricEditorTips.length), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [paused, intervalMs]);
+  const tip = lyricEditorTips[tipIndex];
+  return <aside className={`lyrics-tip-board${paused ? " paused" : ""}`} role="note" aria-label="Lyric drafting tip" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={() => setPaused(false)}>
+    <span className="lyrics-tip-label"><Sparkles size={14} /> Choir tip</span>
+    <p key={tipIndex}><strong>{tip.lead}</strong> {tip.message}</p>
+    <span className="lyrics-tip-timing">
+      <button type="button" onClick={() => setSpeedIndex((current) => Math.max(0, current - 1))} disabled={speedIndex === 0} title="Rotate tips more slowly" aria-label="Rotate lyric tips more slowly"><ChevronsLeft size={13} /></button>
+      <span className="lyrics-tip-progress" title={`${intervalMs / 1000} seconds per tip`}><i key={`${tipIndex}-${speedIndex}-${paused}`} style={{ "--tip-duration": `${intervalMs}ms` } as CSSProperties} /></span>
+      <button type="button" onClick={() => setSpeedIndex((current) => Math.min(lyricTipIntervals.length - 1, current + 1))} disabled={speedIndex === lyricTipIntervals.length - 1} title="Rotate tips more quickly" aria-label="Rotate lyric tips more quickly"><ChevronsRight size={13} /></button>
+      <span className="lyrics-tip-count">{tipIndex + 1}/{lyricEditorTips.length}</span>
+    </span>
+  </aside>;
 }
 
 function AlignStage({ role, inspection, song, alignment, loading, templateSources, onAdoptTemplate, onOpenLyrics, setAlignment, selectedPhrase, setSelectedPhrase, busy, setBusy, setError }: { role: Role | null; inspection: SongInspection | null; song: string; alignment: { report: AlignmentReport; text: string } | null; loading: boolean; templateSources: AlignmentTemplate[]; onAdoptTemplate(sourceRole: string): void; onOpenLyrics(): void; setAlignment(value: { report: AlignmentReport; text: string } | null): void; selectedPhrase: number | null; setSelectedPhrase(value: number): void; busy: string; setBusy(value: string): void; setError(value: string): void }) {
