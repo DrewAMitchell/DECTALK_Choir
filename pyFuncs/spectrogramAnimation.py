@@ -1,7 +1,9 @@
 import math as m
+import os
 import scipy
 import numpy as np
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import subprocess as sp
 
@@ -19,17 +21,7 @@ FONT_PATH = Path(__file__).resolve().parent / "fonts" / "NexaText-Trial-Light.tt
 
 
 def _output_song_dir(songTitle):
-    repo_relative = Path("outputs") / songTitle
-    output_relative = Path(songTitle)
-    cwd = Path.cwd()
-
-    if repo_relative.exists():
-        return repo_relative
-    if output_relative.exists():
-        return output_relative
-    if cwd.name.lower() == songTitle.lower():
-        return Path(".")
-    return repo_relative
+    return Path("songs") / songTitle / "outputs"
 
 
 def _newest_file(paths):
@@ -112,6 +104,57 @@ def _bar_dimensions(videoDims, trackPosition, barCount, barGapFrac):
     return (barSpacing, barWidth, maxHeight, xLeftEdge, yCenter)
 
 
+def _prepare_track_spectrogram(track_name, wav_path, frames_per_second, freq_range, bar_count):
+    """Build one track's normalized FFT frame data; safe to run alongside other tracks."""
+    sampling_rate, wave_data = wavfile.read(str(wav_path))
+    proc_spec = signal.spectrogram(
+        wave_data,
+        sampling_rate,
+        window=("hamming"),
+        nperseg=int(sampling_rate / frames_per_second),
+    )
+    time_range = len(wave_data) / sampling_rate
+    frame_count = max(1, m.ceil(time_range * frames_per_second))
+    spec_data = proc_spec[2]
+
+    fps_adjusted = np.zeros((len(spec_data), frame_count), dtype=np.float32)
+    target_frames = np.arange(frame_count)
+    source_frames = np.linspace(0, frame_count - 1, len(spec_data[0]))
+    for index in range(len(spec_data)):
+        fps_adjusted[index] = np.interp(target_frames, source_frames, spec_data[index])
+    fps_adjusted = np.transpose(fps_adjusted)
+
+    freq_domain = proc_spec[0]
+    freq_min_index = (np.abs(freq_domain - freq_range[0])).argmin()
+    freq_max_index = (np.abs(freq_domain - freq_range[1])).argmin()
+    bar_adjusted = np.zeros((len(fps_adjusted), bar_count), dtype=np.float32)
+    frequency_targets = np.arange(bar_count)
+    frequency_source = np.arange(
+        freq_min_index,
+        freq_max_index,
+        (freq_max_index - freq_min_index) / len(fps_adjusted[0]),
+    )
+    for index in range(len(fps_adjusted)):
+        bar_adjusted[index] = np.interp(frequency_targets, frequency_source, fps_adjusted[index])
+
+    np.sqrt(np.abs(bar_adjusted), out=bar_adjusted)
+    spec_max = np.max(bar_adjusted, axis=1)
+    spec_max = np.sort(spec_max[spec_max > 0.0])
+    normalization = spec_max[m.floor(len(spec_max) * 0.9)] if len(spec_max) else 1.0
+    bar_adjusted /= normalization
+    np.minimum(bar_adjusted, 1.0, out=bar_adjusted)
+    return {
+        "track": track_name,
+        "data": bar_adjusted,
+        "frame_count": frame_count,
+        "time_range": time_range,
+        "freq_min_index": freq_min_index,
+        "freq_max_index": freq_max_index,
+        "freq_bin_count": len(fps_adjusted[0]),
+        "normalization": normalization,
+    }
+
+
 
 
 def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 1440), freqRange=(100, 5000), divisionFactor = 500, framesPerSecond=30, barCount=100, back_color=[0, 0, 0], barGapFrac = 0.5):
@@ -128,98 +171,44 @@ def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 144
     
     spectDict = {}
     animationFrameCount = 0
-    for fooTrack in trackNames:
-        print(f"\n{fooTrack}:")
-        fooTrackDict = settings_yaml['Tracks'][fooTrack]
-        # Convert input colors to HSV
-        bar_color = fooTrackDict['VID_HSB']
-        bar_color = colorsys.hsv_to_rgb(bar_color[0]/360, bar_color[1]/100, bar_color[2]/100)
-        bar_color = tuple([int(255*foo) for foo in bar_color] )
-        print(f"   bar_color:{bar_color}")
-
-
-
-        
-        # Load waveFile to process
-        readWav = wavfile.read(str(tracksDir / f"{fooTrack}.wav"))
-        samplingRate = readWav[0]
-
-        # Run spectrogram on waveFile
-        procSpec = signal.spectrogram(readWav[1], samplingRate, window=('hamming'), nperseg=int(readWav[0]/framesPerSecond)) # nperseg gets close to target framesPerSecond
-
-
-        # Calculate length of wav in seconds
-        timeRange = len(readWav[1]) / samplingRate
-        print(f"   timeRange:{timeRange}")
-
-        # Get just spectrogram data
-        specData = procSpec[2]
-        
-        frameCount = max(1, m.ceil(timeRange*framesPerSecond))
-        animationFrameCount = max(animationFrameCount, frameCount)
-        print(f"   frameCount:{frameCount}")
-
-        # Interpolate spectrogram to match time domain to FPS
-        fpsAdjustedSpec = np.zeros((len(specData), frameCount), dtype=np.float32)
-        targetFrames = np.arange(0, frameCount, 1)
-        sourceFrames = np.linspace(0, frameCount - 1, len(specData[0]))
-        for ii in range(len(specData)):
-            fpsAdjustedSpec[ii] = np.interp(targetFrames, sourceFrames, specData[ii])
-        
-        # Flip array so axis 0 is time and axis 1 is frequency
-        fpsAdjustedSpec = np.transpose(fpsAdjustedSpec)
-
-        # Get min and max index of frequency domain which matches freqRange
-        freqDomain = procSpec[0]
-        freqMinInd = (np.abs(freqDomain - freqRange[0])).argmin()
-        freqMaxInd = (np.abs(freqDomain - freqRange[1])).argmin()
-
-        print(f"   freq range: {freqMinInd}->{freqMaxInd} out of {len(fpsAdjustedSpec[ii])}")
-
-        #  Interpolate spectrogram to match frequency domain barCount
-        barAdjustedSpec = np.zeros((len(fpsAdjustedSpec), barCount), dtype=np.float32)
-        for ii in range(len(fpsAdjustedSpec)):
-            barAdjustedSpec[ii] = np.interp( 
-                np.arange(barCount),
-                np.arange(freqMinInd, freqMaxInd, (freqMaxInd-freqMinInd)/len(fpsAdjustedSpec[ii])), 
-                fpsAdjustedSpec[ii] )
-
-        adjustedSpectrogram = barAdjustedSpec
-        
-        for yy in range(frameCount): # Process FFT to improve visuals
-            fooFFt = adjustedSpectrogram[yy] # Load FFT for this time stamp
-            fooFFt = np.abs(fooFFt) # Take absolute value
-            fooFFt = np.sqrt(fooFFt) # Square root for nicer looking visual range
-            # fooFFt = signal.savgol_filter(fooFFt, 10, 3) # Filter to prevent harsh edges
-            adjustedSpectrogram[yy] = fooFFt
-
-        # Find max at each spectrogram timestamp, sort maximums, and take index near the top to use as max
-        specMax = np.max(adjustedSpectrogram, axis=1)
-        specMax = specMax[np.where(specMax > 0.0)]
-        specMax.sort()
-        # print(specMax)
-        divisionFactor = specMax[m.floor(len(specMax)*0.9  )] 
-        print(f"   divisionFactor:{divisionFactor}")
-
-        adjustedSpectrogram /= divisionFactor
-        adjustedSpectrogram[np.where(adjustedSpectrogram > 1.0)] = 1.0
-
-        fooPos = fooTrackDict['VID_Position']
-
-        spectDict[fooTrack] = {
-            'data':adjustedSpectrogram,
-            'color':bar_color,
-            'label': fooTrackDict['VID_Label'],
-            'position': fooPos,
-            'currFFT': deepcopy(adjustedSpectrogram[0]),
-            'frameCount': frameCount,
-            'barDims': _bar_dimensions(videoDims, fooPos, barCount, barGapFrac), # Order is spacing, bar width, maxHeight, xLeftEdge, yCenter
-            
-            # # Calculate label size
-            # 'labelText': fooTrackDict['VID_Label'],
-            # 'labelDims': draw.textsize(labelText, font=labelFont),
-            # labelPosition = ( (vidWidth-labelWidth)/2, 0.7*vidHeight -labelHeight/2)
+    worker_count = min(len(trackNames), max(1, min(4, os.cpu_count() or 1)))
+    print(f"Preparing {len(trackNames)} spectrograms across {worker_count} CPU workers")
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="choir-spectrogram") as executor:
+        prepared = {
+            fooTrack: executor.submit(
+                _prepare_track_spectrogram,
+                fooTrack,
+                tracksDir / f"{fooTrack}.wav",
+                framesPerSecond,
+                freqRange,
+                barCount,
+            )
+            for fooTrack in trackNames
         }
+        for fooTrack in trackNames:
+            track_data = prepared[fooTrack].result()
+            print(f"\n{fooTrack}:")
+            fooTrackDict = settings_yaml['Tracks'][fooTrack]
+            bar_color = fooTrackDict['VID_HSB']
+            bar_color = colorsys.hsv_to_rgb(bar_color[0]/360, bar_color[1]/100, bar_color[2]/100)
+            bar_color = tuple([int(255*foo) for foo in bar_color])
+            print(f"   bar_color:{bar_color}")
+            print(f"   timeRange:{track_data['time_range']}")
+            print(f"   frameCount:{track_data['frame_count']}")
+            print(f"   freq range: {track_data['freq_min_index']}->{track_data['freq_max_index']} out of {track_data['freq_bin_count']}")
+            print(f"   divisionFactor:{track_data['normalization']}")
+
+            animationFrameCount = max(animationFrameCount, track_data['frame_count'])
+            fooPos = fooTrackDict['VID_Position']
+            spectDict[fooTrack] = {
+                'data': track_data['data'],
+                'color': bar_color,
+                'label': fooTrackDict['VID_Label'],
+                'position': fooPos,
+                'currFFT': deepcopy(track_data['data'][0]),
+                'frameCount': track_data['frame_count'],
+                'barDims': _bar_dimensions(videoDims, fooPos, barCount, barGapFrac),
+            }
 
     audioFileName = _find_output_audio(songTitle, songOutputDir)
     if audioFileName:
@@ -336,3 +325,6 @@ def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 144
         ],
         check=True,
     )
+    if finalFileName.is_file() and finalFileName.stat().st_size > 0:
+        outputFileName.unlink(missing_ok=True)
+        print(f"Removed intermediate animation: {outputFileName}")

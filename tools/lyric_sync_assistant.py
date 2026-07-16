@@ -28,6 +28,7 @@ if str(REPO_ROOT) not in sys.path:
 
 import pyFuncs.MidiProcessing as pymidi
 import pyFuncs.PhonemeProcessing as pp
+from pyFuncs.SongPaths import find_midi_file as find_song_midi_file, lyrics_directory, outputs_directory
 
 
 SHORT_WORDS = {
@@ -90,10 +91,10 @@ def resolve_track(settings, output_part_name):
 
 
 def find_midi_file(song_dir):
-	midi_files = sorted(path for path in song_dir.iterdir() if path.suffix.lower() == '.mid')
-	if not midi_files:
-		raise SystemExit(f"No .mid file found in {song_dir}")
-	return midi_files[0]
+	midi_file = find_song_midi_file(song_dir)
+	if midi_file is None:
+		raise SystemExit(f"No .mid file found in {song_dir / 'inputs'}")
+	return midi_file
 
 
 def load_track_notes(song_dir, settings, midi_track_name):
@@ -710,7 +711,7 @@ def validate_part(song_title, part_name, args):
 	notes, beat_ms, bpm, midi_file = load_track_notes(song_dir, settings, track['track_filename'])
 	phrase_gap_ms, word_gap_ms, tight_gap_ms = resolve_thresholds(args, settings, beat_ms)
 
-	gold_path = song_dir / 'lyrics' / f"{track['lyrics_filename']}.txt"
+	gold_path = lyrics_directory(song_dir) / f"{track['lyrics_filename']}.txt"
 	gold_lines = read_lyric_token_lines(gold_path)
 	source_lines = strip_sync_to_source_lines(gold_lines)
 	phrases = split_note_phrases(notes, phrase_gap_ms)
@@ -746,7 +747,7 @@ def iter_validation_parts(song_title, requested_part=None):
 
 		track = track or {}
 		lyrics_filename = track.get('LYRICS_FILENAME', part_name)
-		lyrics_path = song_dir / 'lyrics' / f"{lyrics_filename}.txt"
+		lyrics_path = lyrics_directory(song_dir) / f"{lyrics_filename}.txt"
 		if lyrics_path.exists():
 			yield part_name
 
@@ -832,12 +833,12 @@ def build_arg_parser():
 	)
 	parser.add_argument(
 		'--output',
-		help="Draft output path. Defaults to outputs/<song>/lyrics_drafts/<part>.txt",
+		help="Draft output path. Defaults to songs/<song>/outputs/lyrics_drafts/<part>.txt",
 	)
 	parser.add_argument(
 		'--apply',
 		action='store_true',
-		help="Write directly to songs/<song>/lyrics/<LYRICS_FILENAME>.txt instead of outputs/.",
+		help="Write directly to songs/<song>/inputs/lyrics/<LYRICS_FILENAME>.txt instead of generated outputs.",
 	)
 	parser.add_argument(
 		'--overwrite',
@@ -896,7 +897,7 @@ def main():
 	notes, beat_ms, bpm, midi_file = load_track_notes(song_dir, settings, track['track_filename'])
 	phrase_gap_ms, word_gap_ms, tight_gap_ms = resolve_thresholds(args, settings, beat_ms)
 
-	lyrics_dir = song_dir / 'lyrics'
+	lyrics_dir = lyrics_directory(song_dir)
 	raw_source = lyrics_dir / f"{track['lyrics_filename']}.raw.txt"
 	configured_source = lyrics_dir / f"{track['lyrics_filename']}.txt"
 	if args.text_file:
@@ -924,7 +925,7 @@ def main():
 	elif args.output:
 		output_path = Path(args.output)
 	else:
-		output_path = REPO_ROOT / 'outputs' / args.song / 'lyrics_drafts' / f"{args.part}.txt"
+		output_path = outputs_directory(song_dir) / 'lyrics_drafts' / f"{args.part}.txt"
 
 	if output_path.exists() and not args.overwrite:
 		raise SystemExit(f"Refusing to overwrite existing file without --overwrite: {output_path}")

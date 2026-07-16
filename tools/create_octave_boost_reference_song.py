@@ -13,8 +13,9 @@ from mido import Message, MetaMessage, MidiFile, MidiTrack, bpm2tempo
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SONG_NAME = 'OctaveBoostReference'
 SONG_DIR = REPO_ROOT / 'songs' / SONG_NAME
-LYRICS_DIR = SONG_DIR / 'lyrics'
-MIDI_PATH = SONG_DIR / f'{SONG_NAME}.mid'
+INPUTS_DIR = SONG_DIR / 'inputs'
+LYRICS_DIR = INPUTS_DIR / 'lyrics'
+MIDI_PATH = INPUTS_DIR / f'{SONG_NAME}.mid'
 
 TICKS_PER_BEAT = 480
 BEATS_PER_CHORD = 4
@@ -133,6 +134,7 @@ def create_settings():
 
 def main():
 	SONG_DIR.mkdir(parents=True, exist_ok=True)
+	INPUTS_DIR.mkdir(parents=True, exist_ok=True)
 	create_midi()
 	create_lyrics()
 	create_settings()

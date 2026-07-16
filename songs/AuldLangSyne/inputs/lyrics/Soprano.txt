@@ -1,8 +1,8 @@
-Should auld 2*acquaint aans be four got
-And never brought to 2*mind
-Should auld 2*acquaint aans be four got
+Should auld 1|1|acquaint aans be four got
+And 1|1|never brought to mind
+Should auld 1|1|acquaint aans be four got
 And days of auld `leyng sign
-Four 2*auld 2*`leyng sign my dear
-Four 2*auld 2*`leyng sign
+2*Four auld 2*`leyng 2*sign my 2*dear
+Four auld `leyng sign
 Wheel take uh cup oh kind ness yet
 Four days of auld `leyng sign

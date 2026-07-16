@@ -6,20 +6,25 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build:release",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
         "title": "DECTALK Choir Studio",
-        "width": 1360,
-        "height": 880,
+        "width": 1100,
+        "height": 500,
         "minWidth": 1040,
-        "minHeight": 700
+        "minHeight": 420
       }
     ],
     "security": { "csp": null }
   },
-  "bundle": { "active": true, "targets": "all" }
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.ico"],
+    "resources": ["resources/runtime_template/**/*"]
+  }
 }

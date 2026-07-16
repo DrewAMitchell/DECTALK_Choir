@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "prepare-runtime": "..\\.venv\\Scripts\\python.exe tools\\prepare_release_runtime.py",
+    "build:release": "npm run prepare-runtime && npm run build",
+    "bundle": "tauri build",
     "check": "tsc -b --pretty false"
   },
   "dependencies": {

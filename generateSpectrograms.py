@@ -125,9 +125,10 @@ except:
 videoDimensions = _video_dimensions(settings_yaml)
 
 # Folder for output files
-os.makedirs(f"outputs/{songTitle}/_animation", exist_ok = True)
+songOutputDir = f"songs/{songTitle}/outputs"
+os.makedirs(f"{songOutputDir}/_animation", exist_ok = True)
 
-wavFileList = os.listdir(f"outputs/{songTitle}/_tracks/")
+wavFileList = os.listdir(f"{songOutputDir}/_tracks/")
 wavFileList = [foo.split('.')[0] for foo in wavFileList if '.wav' in foo]
 
 trackList = [foo for foo in settings_yaml['Tracks']]
@@ -147,6 +148,17 @@ print(f"Only .wav:{wavFileList}")
 print(f"Only settings:{trackList}")
 print(f"outputParts:{outputParts}")
 
+requestedParts = [part.strip() for part in os.environ.get("DECTALK_CHOIR_SPECTROGRAM_ROLES", "").split(",") if part.strip()]
+if requestedParts:
+    unavailableParts = [part for part in requestedParts if part not in outputParts]
+    outputParts = [part for part in outputParts if part in requestedParts]
+    if unavailableParts:
+        print(f"Enabled tracks without rendered stems:{unavailableParts}")
+    print(f"Spectrogram tracks:{outputParts}")
+if not outputParts:
+    print("No enabled rendered stems are available for spectrogram generation")
+    exit(1)
+
 # Add default settings to dictionary if none found
 for fooTrack in outputParts:
     trackDict = settings_yaml['Tracks'][fooTrack]
@@ -160,8 +172,8 @@ for fooTrack in outputParts:
 # 
 # for fooTrack in outputParts:
 #     print(f"\nAnimating {fooTrack}")
-#     wavFileName = f"outputs/{songTitle}/_tracks/{fooTrack}.wav"
-#     outputFileName = f"outputs/{songTitle}/_animation/{fooTrack}.mp4"
+#     wavFileName = f"{songOutputDir}/_tracks/{fooTrack}.wav"
+#     outputFileName = f"{songOutputDir}/_animation/{fooTrack}.mp4"
 
 backColor = [100, 0, 0]
 specAnimate.generateAnimation(outputParts, songTitle, settings_yaml, videoDims=videoDimensions, framesPerSecond=30, back_color=backColor)
@@ -170,14 +182,14 @@ print("DONE!")
 exit()
 
 # # Setup video output
-# outputFileName = f"outputs/{songTitle}/_finished/{songTitle}.mp4"
+# outputFileName = f"{songOutputDir}/_finished/{songTitle}.mp4"
 # fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 # video = cv2.VideoWriter(outputFileName, fourcc, framesPerSecond, videoDimensions)
 
 
 # clipSet = []
 # for fooTrack in outputParts:
-#     vidFileName = f"outputs/{songTitle}/_animation/{fooTrack}.mp4"
+#     vidFileName = f"{songOutputDir}/_animation/{fooTrack}.mp4"
 #     vid = cv2.VideoCapture(vidFileName)
 
 #     trackSettings = settings_yaml['Tracks'][fooTrack]['VID_Position']
@@ -237,7 +249,7 @@ exit()
 
 # # Use ffmpeg to mix output audio and video to single, synced file
 # print(f"Adding audio for final output")
-# audioFileName = f"outputs/{songTitle}/_finished/{songTitle}.wav"
-# finalFileName = f"outputs/{songTitle}/{songTitle}.mp4"
+# audioFileName = f"{songOutputDir}/_finished/{songTitle}.wav"
+# finalFileName = f"{songOutputDir}/{songTitle}.mp4"
 # import subprocess as sp
 # sp.run(f"ffmpeg -y -i {outputFileName} -i {audioFileName} -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 {finalFileName}", shell=True)

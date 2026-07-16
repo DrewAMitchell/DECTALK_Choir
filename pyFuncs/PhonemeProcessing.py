@@ -238,6 +238,9 @@ def lyricsToPhonemes(lyricsFileName, printInfo=True, convertLowercase=True, DECT
                 continue
 
             elif fooWord[0] == '`':   # ` indicates to load syllable directly without modification
+                if len(convertDirectSyllableToPhonemes(fooWord)) == 0:
+                    print(f"ERROR: Invalid direct phoneme syllable \"{fooWord}\" in {lyricsFileName}   (line {currentLineIndex})")
+                    exit()
                 outPhonemes = fooWord
 
             elif '*' in fooWord:    # * indicates that the word should be played for multiple notes per syllable

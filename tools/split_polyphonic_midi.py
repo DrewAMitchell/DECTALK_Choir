@@ -8,7 +8,7 @@ to retain a musically coherent contour.
 
 Examples:
     .\.venv\Scripts\python.exe tools\split_polyphonic_midi.py ^
-        C:/Users/Drew/Downloads/earth-angel.mid
+        C:/Users/<user>/Downloads/earth-angel.mid
 
     .\.venv\Scripts\python.exe tools\split_polyphonic_midi.py input.mid ^
         --output output_monophonic.mid

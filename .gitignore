@@ -1,11 +1,18 @@
 # Ignore folders which are generated during runtime
-outputs/*
+/outputs/
 *.pyc
 
 # Choir Studio build artifacts
 choir_studio/node_modules/
 choir_studio/dist/
 choir_studio/src-tauri/target/
+choir_studio/src-tauri/gen/
+choir_studio/src-tauri/resources/runtime_template/*
+!choir_studio/src-tauri/resources/runtime_template/.gitkeep
+!choir_studio/src-tauri/resources/runtime_template/runtime-manifest.placeholder
+choir_studio/*.tsbuildinfo
+choir_studio/vite.config.js
+choir_studio/vite.config.d.ts
 
 # Extra folders
 zips/*
@@ -21,3 +28,9 @@ songs/*
 !songs/AuldLangSyne*
 !songs/DaisyBell*
 !songs/OctaveBoostReference*
+
+# Generated artifacts remain co-located with each song but are never source.
+songs/*/outputs/
+songs/*/inputs/lyrics/*.raw.txt
+songs/*/inputs/lyrics/*.original.txt
+songs/*/inputs/lyrics/*.before-alignment.txt

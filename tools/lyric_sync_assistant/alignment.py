@@ -23,6 +23,7 @@ if str(ASSISTANT_DIR) not in sys.path:
     sys.path.insert(0, str(ASSISTANT_DIR))
 
 from pyFuncs.PitchMapping import midi_pitch_name
+from pyFuncs.SongPaths import lyrics_directory, outputs_directory
 from assistant import (
     NoteEvent,
     format_synced_word,
@@ -74,7 +75,7 @@ def _tokens_from_lines(token_lines) -> list[AlignmentToken]:
             tokens.append(
                 AlignmentToken(
                     word=token.word,
-                    note_count=max(1, int(token.note_count)),
+                    note_count=max(0, int(token.note_count)),
                     line=line_index,
                     word_index=word_index,
                 )
@@ -113,6 +114,7 @@ def align_tokens(
     entries: list[AlignmentEntry] = []
     note_index = 0
     overflow_tokens = 0
+    zero_note_tokens = sum(1 for token in tokens if token.note_count == 0)
     phrase_boundaries = 0
     word_boundaries = 0
 
@@ -192,7 +194,7 @@ def align_tokens(
     summary: dict[str, int | float | str] = {
         "status": (
             "Aligned"
-            if assigned_notes == len(notes) and overflow_tokens == 0
+            if assigned_notes == len(notes) and overflow_tokens == 0 and zero_note_tokens == 0
             else "Needs review"
         ),
         "midi_notes": len(notes),
@@ -200,6 +202,7 @@ def align_tokens(
         "unassigned_notes": max(0, len(notes) - assigned_notes),
         "draft_tokens": len(tokens),
         "overflow_tokens": overflow_tokens,
+        "zero_note_tokens": zero_note_tokens,
         "phrase_boundaries": phrase_boundaries,
         "word_boundaries": word_boundaries,
         "phrase_gap_ms": round(phrase_gap_ms, 1),
@@ -268,7 +271,7 @@ def render_aligned_lyrics(
             prefix = ""
         output.append((prefix + " " if prefix else "") + " ".join(rendered_tokens))
 
-    if entry_index < len(entries):
+    if entry_index < len(entries) and include_comments:
         output.append(
             f"# alignment warning: {len(entries) - entry_index} MIDI note(s) have no lyric token"
         )
@@ -294,6 +297,143 @@ def _token_lines_from_text(text: str):
     return token_lines
 
 
+def _token_lines_from_report(report: dict, text: str):
+    """Restore temporary zero-note allocations from the candidate sidecar."""
+
+    token_lines = _token_lines_from_text(text)
+    stored_counts = report.get("token_counts")
+    if not isinstance(stored_counts, list):
+        return token_lines
+    count_map = {
+        (item.get("line"), item.get("word_index")): item.get("note_count")
+        for item in stored_counts
+        if isinstance(item, dict)
+    }
+    for line_index, tokens in enumerate(token_lines, start=1):
+        for word_index, token in enumerate(tokens, start=1):
+            count = count_map.get((line_index, word_index))
+            if isinstance(count, int) and count >= 0:
+                token.note_count = count
+    return token_lines
+
+
+def _token_counts(token_lines) -> list[dict[str, int | str]]:
+    return [
+        {
+            "line": line_index,
+            "word_index": word_index,
+            "word": token.word,
+            "note_count": token.note_count,
+        }
+        for line_index, tokens in enumerate(token_lines, start=1)
+        for word_index, token in enumerate(tokens, start=1)
+    ]
+
+
+def _fill_phrase_note_gaps(tokens: list[AlignmentToken]) -> None:
+    """Give every word one note when this phrase already has enough notes.
+
+    Phrase-boundary edits deliberately permit temporary zero-note words.  Once
+    a phrase grows enough to cover all of its words, retain the existing
+    timing as much as possible by borrowing from the nearest word with a
+    surplus instead of making the user propagate boundaries one word at a
+    time.
+    """
+
+    if sum(token.note_count for token in tokens) < len(tokens):
+        return
+
+    for gap_index, token in enumerate(tokens):
+        if token.note_count:
+            continue
+        donors = [
+            (abs(index - gap_index), index)
+            for index, candidate in enumerate(tokens)
+            if candidate.note_count > 1
+        ]
+        if not donors:
+            return
+        _, donor_index = min(donors)
+        tokens[donor_index].note_count -= 1
+        token.note_count += 1
+
+
+def _split_note_events(notes: list[NoteEvent], virtual_splits: list[dict]) -> list[NoteEvent]:
+    by_note: dict[int, list[float]] = {}
+    for item in virtual_splits:
+        if not isinstance(item, dict):
+            continue
+        try:
+            note_index = int(item["note_index"])
+            fraction = float(item["fraction"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if 0.05 < fraction < 0.95:
+            by_note.setdefault(note_index, []).append(fraction)
+    split_notes: list[NoteEvent] = []
+    for note_index, note in enumerate(notes, start=1):
+        fractions = sorted(set(round(value, 5) for value in by_note.get(note_index, [])))
+        boundaries = [0.0, *fractions, 1.0]
+        for start, end in zip(boundaries, boundaries[1:]):
+            duration = note.end_ms - note.start_ms
+            split_notes.append(NoteEvent(
+                pitch=note.pitch,
+                velocity=note.velocity,
+                start_ms=note.start_ms + duration * start,
+                end_ms=note.start_ms + duration * end,
+            ))
+    return split_notes
+
+
+def add_virtual_note_split(
+    report: dict,
+    aligned_text: str,
+    note_index: int,
+    fraction: float,
+) -> tuple[dict, str]:
+    """Split one source MIDI note for alignment without mutating the MIDI file."""
+
+    source_notes = report.get("source_notes") or report.get("notes", [])
+    if not isinstance(note_index, int) or note_index < 1 or note_index > len(source_notes):
+        raise ValueError("Choose a valid MIDI note to split.")
+    if not 0.05 < fraction < 0.95:
+        raise ValueError("Virtual splits must leave a meaningful duration on both sides.")
+    virtual_splits = [item for item in report.get("virtual_splits", []) if isinstance(item, dict)]
+    if any(int(item.get("note_index", -1)) == note_index and abs(float(item.get("fraction", -1)) - fraction) < 0.02 for item in virtual_splits):
+        raise ValueError("A virtual split already exists at that position.")
+    raw_notes = [
+        NoteEvent(
+            pitch=int(note.get("midi_pitch", note.get("pitch"))),
+            velocity=int(note.get("velocity", 0)),
+            start_ms=float(note["start_ms"]),
+            end_ms=float(note["end_ms"]),
+        )
+        for note in source_notes
+    ]
+    virtual_splits.append({"note_index": note_index, "fraction": round(fraction, 5)})
+    token_lines = _token_lines_from_report(report, aligned_text)
+    summary = report.get("summary", {})
+    entries, new_summary = align_tokens(
+        _tokens_from_lines(token_lines),
+        _split_note_events(raw_notes, virtual_splits),
+        float(summary.get("phrase_gap_ms", 0)),
+        float(summary.get("word_gap_ms", 0)),
+        placeholder_word=summary.get("placeholder_word") or None,
+    )
+    updated_report = dict(report)
+    updated_report["summary"] = new_summary
+    updated_report["notes"] = [asdict(entry) for entry in entries]
+    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["virtual_splits"] = virtual_splits
+    updated_report["source_notes"] = [
+        {"midi_pitch": note.pitch, "velocity": note.velocity, "start_ms": note.start_ms, "end_ms": note.end_ms}
+        for note in raw_notes
+    ]
+    updated_report["version"] = max(3, int(report.get("version", 1)))
+    updated_text = "\n".join(render_aligned_lyrics(token_lines, entries, line_timings=report.get("line_timings"))) + "\n"
+    return updated_report, updated_text
+
+
 def shift_alignment_token(
     report: dict,
     aligned_text: str,
@@ -304,7 +444,7 @@ def shift_alignment_token(
     """Move one lyric unit by one MIDI note while preserving total allocation."""
     if direction not in {-1, 1}:
         raise ValueError("Alignment movement must be one note earlier or later.")
-    token_lines = _token_lines_from_text(aligned_text)
+    token_lines = _token_lines_from_report(report, aligned_text)
     locations = [
         (line_index, token_index)
         for line_index, tokens in enumerate(token_lines)
@@ -353,6 +493,7 @@ def shift_alignment_token(
     updated_report = dict(report)
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
+    updated_report["token_counts"] = _token_counts(token_lines)
     updated_report["version"] = max(2, int(report.get("version", 1)))
     updated_text = "\n".join(
         render_aligned_lyrics(
@@ -364,70 +505,36 @@ def shift_alignment_token(
     return updated_report, updated_text
 
 
-def resize_alignment_token(
+def claim_alignment_note(
     report: dict,
     aligned_text: str,
     line: int,
     word_index: int,
-    edge: str,
-    movement: int,
+    direction: int,
 ) -> tuple[dict, str]:
-    """Move one visible lyric boundary by one MIDI note.
+    """Give one adjacent note to a word without crossing a phrase boundary."""
+    if direction not in {-1, 1}:
+        raise ValueError("Choose the immediately preceding or following note claim.")
 
-    ``edge`` is ``start`` or ``end`` and ``movement`` is -1 for earlier/shorter
-    or +1 for later/longer in timeline order. The neighboring token absorbs the
-    inverse allocation, so the total MIDI note count never changes.
-    """
-
-    if edge not in {"start", "end"}:
-        raise ValueError("Lyric boundary must be start or end.")
-    if movement not in {-1, 1}:
-        raise ValueError("Lyric boundary movement must be one note at a time.")
-
-    token_lines = _token_lines_from_text(aligned_text)
-    locations = [
-        (line_index, token_index)
-        for line_index, tokens in enumerate(token_lines)
-        for token_index, _ in enumerate(tokens)
-    ]
-    target = (line - 1, word_index - 1)
-    if target not in locations:
+    token_lines = _token_lines_from_report(report, aligned_text)
+    line_index = line - 1
+    token_index = word_index - 1
+    if line_index < 0 or line_index >= len(token_lines) or token_index < 0 or token_index >= len(token_lines[line_index]):
         raise ValueError("The selected lyric unit is no longer present in the aligned text.")
-    target_index = locations.index(target)
-    target_token = token_lines[target[0]][target[1]]
 
-    if edge == "start":
-        neighbor_index = target_index - 1
-        if neighbor_index < 0 or locations[neighbor_index][0] != target[0]:
-            raise ValueError("The phrase start is fixed; adjust the phrase range separately.")
-        neighbor_location = locations[neighbor_index]
-        neighbor_token = token_lines[neighbor_location[0]][neighbor_location[1]]
-        if movement < 0:
-            if neighbor_token.note_count <= 1:
-                raise ValueError("The preceding word has only one note to preserve.")
-            neighbor_token.note_count -= 1
-            target_token.note_count += 1
-        else:
-            if target_token.note_count <= 1:
-                raise ValueError("The selected lyric unit has only one note to give back.")
-            target_token.note_count -= 1
-            neighbor_token.note_count += 1
-    else:
-        neighbor_index = target_index + 1
-        if neighbor_index >= len(locations) or locations[neighbor_index][0] != target[0]:
-            raise ValueError("The phrase end is fixed; adjust the phrase range separately.")
-        neighbor_location = locations[neighbor_index]
-        neighbor_token = token_lines[neighbor_location[0]][neighbor_location[1]]
-        if movement > 0:
-            if neighbor_token.note_count <= 1:
-                raise ValueError("The following word has only one note to preserve.")
-            neighbor_token.note_count -= 1
-            target_token.note_count += 1
-        else:
-            if target_token.note_count <= 1:
-                raise ValueError("The selected lyric unit has only one note to give back.")
-            target_token.note_count -= 1
-            neighbor_token.note_count += 1
+    tokens = token_lines[line_index]
+    neighbor_index = token_index + direction
+    if neighbor_index < 0 or neighbor_index >= len(tokens):
+        side = "preceding" if direction < 0 else "following"
+        raise ValueError(f"There is no {side} word in this phrase.")
+
+    target_token = tokens[token_index]
+    neighbor_token = tokens[neighbor_index]
+    if neighbor_token.note_count <= 1:
+        side = "preceding" if direction < 0 else "following"
+        raise ValueError(f"The {side} word has only one note to preserve.")
+    neighbor_token.note_count -= 1
+    target_token.note_count += 1
 
     raw_notes = report.get("notes", [])
     notes = [
@@ -450,6 +557,135 @@ def resize_alignment_token(
     updated_report = dict(report)
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
+    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["version"] = max(3, int(report.get("version", 1)))
+    updated_text = "\n".join(
+        render_aligned_lyrics(
+            token_lines,
+            entries,
+            line_timings=report.get("line_timings"),
+        )
+    ) + "\n"
+    return updated_report, updated_text
+
+
+def resize_alignment_token(
+    report: dict,
+    aligned_text: str,
+    line: int,
+    word_index: int,
+    edge: str,
+    movement: int,
+) -> tuple[dict, str]:
+    """Move a visible lyric boundary by one or more MIDI notes.
+
+    Negative values move earlier/shorter and positive values move later/longer
+    in timeline order. The neighboring token absorbs the inverse allocation,
+    so the total MIDI note count never changes.
+    """
+
+    if edge not in {"start", "end"}:
+        raise ValueError("Lyric boundary must be start or end.")
+    if not isinstance(movement, int) or movement == 0:
+        raise ValueError("Lyric boundary movement must be at least one note.")
+
+    token_lines = _token_lines_from_report(report, aligned_text)
+    locations = [
+        (line_index, token_index)
+        for line_index, tokens in enumerate(token_lines)
+        for token_index, _ in enumerate(tokens)
+    ]
+    target = (line - 1, word_index - 1)
+    if target not in locations:
+        raise ValueError("The selected lyric unit is no longer present in the aligned text.")
+    target_index = locations.index(target)
+    target_token = token_lines[target[0]][target[1]]
+
+    assigned_notes = sum(token.note_count for tokens in token_lines for token in tokens)
+    unassigned_tail = max(0, len(report.get("notes", [])) - assigned_notes)
+
+    if edge == "start":
+        preceding_locations = locations[:target_index]
+        preceding_tokens = [token_lines[line_index][token_index] for line_index, token_index in preceding_locations]
+        if not preceding_tokens:
+            raise ValueError("The first lyric start cannot move without a preceding lyric unit.")
+        if movement < 0:
+            amount = abs(movement)
+            available = sum(max(0, token.note_count - 1) for token in preceding_tokens)
+            if available < amount:
+                raise ValueError("Earlier lyrics cannot give that many notes.")
+            target_token.note_count += amount
+            remaining = amount
+            for token in reversed(preceding_tokens):
+                transferred = min(remaining, max(0, token.note_count - 1))
+                token.note_count -= transferred
+                remaining -= transferred
+                if not remaining:
+                    break
+        else:
+            if target_token.note_count <= movement:
+                raise ValueError("The selected lyric unit cannot give that many notes back.")
+            target_token.note_count -= movement
+            preceding_tokens[-1].note_count += movement
+    else:
+        following_locations = locations[target_index + 1:]
+        following_tokens = [token_lines[line_index][token_index] for line_index, token_index in following_locations]
+        if movement > 0:
+            available = sum(token.note_count for token in following_tokens) + unassigned_tail
+            if available < movement:
+                raise ValueError("Following lyrics cannot give that many notes.")
+            target_token.note_count += movement
+            remaining = movement
+            # Keep following words viable until the user deliberately crosses
+            # that boundary; then zero-note words become an explicit review state.
+            for token in reversed(following_tokens):
+                transferred = min(remaining, max(0, token.note_count - 1))
+                token.note_count -= transferred
+                remaining -= transferred
+                if not remaining:
+                    break
+            for token in following_tokens:
+                transferred = min(remaining, token.note_count)
+                token.note_count -= transferred
+                remaining -= transferred
+                if not remaining:
+                    break
+        else:
+            amount = abs(movement)
+            if target_token.note_count <= amount:
+                raise ValueError("The selected lyric unit cannot give that many notes back.")
+            target_token.note_count -= amount
+            for token in following_tokens:
+                if amount and token.note_count == 0:
+                    token.note_count += 1
+                    amount -= 1
+            if amount and following_tokens:
+                following_tokens[-1].note_count += amount
+
+    _fill_phrase_note_gaps(token_lines[target[0]])
+
+    raw_notes = report.get("notes", [])
+    notes = [
+        NoteEvent(
+            pitch=int(note["midi_pitch"]),
+            velocity=int(note.get("velocity", 0)),
+            start_ms=float(note["start_ms"]),
+            end_ms=float(note["end_ms"]),
+        )
+        for note in raw_notes
+    ]
+    summary = report.get("summary", {})
+    entries, new_summary = align_tokens(
+        _tokens_from_lines(token_lines),
+        notes,
+        float(summary.get("phrase_gap_ms", 0)),
+        float(summary.get("word_gap_ms", 0)),
+        placeholder_word=summary.get("placeholder_word") or None,
+    )
+    updated_report = dict(report)
+    updated_report["summary"] = new_summary
+    updated_report["notes"] = [asdict(entry) for entry in entries]
+    updated_report["token_counts"] = _token_counts(token_lines)
     updated_report["version"] = max(2, int(report.get("version", 1)))
     updated_text = "\n".join(
         render_aligned_lyrics(
@@ -468,48 +704,90 @@ def resize_alignment_phrase(
     edge: str,
     movement: int,
 ) -> tuple[dict, str]:
-    """Move one phrase boundary while preserving the total MIDI allocation."""
+    """Move a phrase boundary by one or more notes without changing total allocation."""
 
     if edge not in {"start", "end"}:
         raise ValueError("Phrase boundary must be start or end.")
-    if movement not in {-1, 1}:
-        raise ValueError("Phrase boundary movement must be one note at a time.")
+    if not isinstance(movement, int) or movement == 0:
+        raise ValueError("Phrase boundary movement must be at least one note.")
 
-    token_lines = _token_lines_from_text(aligned_text)
+    token_lines = _token_lines_from_report(report, aligned_text)
     target_index = line - 1
     if target_index < 0 or target_index >= len(token_lines) or not token_lines[target_index]:
         raise ValueError("The selected phrase is no longer present in the aligned text.")
+
+    assigned_notes = sum(token.note_count for tokens in token_lines for token in tokens)
+    unassigned_tail = max(0, len(report.get("notes", [])) - assigned_notes)
 
     if edge == "start":
         if target_index == 0 or not token_lines[target_index - 1]:
             raise ValueError("The first phrase start cannot move earlier or later.")
         target_token = token_lines[target_index][0]
-        neighbor_token = token_lines[target_index - 1][-1]
+        preceding_tokens = [
+            token
+            for preceding_line in token_lines[:target_index]
+            for token in preceding_line
+        ]
         if movement < 0:
-            if neighbor_token.note_count <= 1:
-                raise ValueError("The preceding phrase has no note to give this phrase.")
-            neighbor_token.note_count -= 1
-            target_token.note_count += 1
+            amount = abs(movement)
+            available = sum(max(0, token.note_count - 1) for token in preceding_tokens)
+            if available < amount:
+                raise ValueError("Earlier phrases cannot give that many notes.")
+            target_token.note_count += amount
+            remaining = amount
+            # Consume from the global tail so every prior word keeps one note.
+            for token in reversed(preceding_tokens):
+                transferred = min(remaining, token.note_count - 1)
+                token.note_count -= transferred
+                remaining -= transferred
+                if not remaining:
+                    break
         else:
-            if target_token.note_count <= 1:
-                raise ValueError("This phrase has no leading note to give back.")
-            target_token.note_count -= 1
-            neighbor_token.note_count += 1
+            if target_token.note_count <= movement:
+                raise ValueError("This phrase cannot give that many leading notes back.")
+            target_token.note_count -= movement
+            # Released time belongs at the preceding tail, moving this phrase later.
+            preceding_tokens[-1].note_count += movement
     else:
-        if target_index >= len(token_lines) - 1 or not token_lines[target_index + 1]:
-            raise ValueError("The final phrase end cannot move earlier or later.")
+        following_tokens = [
+            token
+            for following_line in token_lines[target_index + 1:]
+            for token in following_line
+        ]
         target_token = token_lines[target_index][-1]
-        neighbor_token = token_lines[target_index + 1][0]
         if movement > 0:
-            if neighbor_token.note_count <= 1:
-                raise ValueError("The following phrase has no note to give this phrase.")
-            neighbor_token.note_count -= 1
-            target_token.note_count += 1
+            available = sum(token.note_count for token in following_tokens) + unassigned_tail
+            if available < movement:
+                raise ValueError("Later phrases cannot give that many notes.")
+            target_token.note_count += movement
+            remaining = movement
+            # Preserve the following phrase's first words, then compensate at the tail.
+            for token in reversed(following_tokens):
+                transferred = min(remaining, token.note_count - 1)
+                token.note_count -= transferred
+                remaining -= transferred
+                if not remaining:
+                    break
+            for token in following_tokens:
+                transferred = min(remaining, token.note_count)
+                token.note_count -= transferred
+                remaining -= transferred
+                if not remaining:
+                    break
         else:
-            if target_token.note_count <= 1:
-                raise ValueError("This phrase has no trailing note to give back.")
-            target_token.note_count -= 1
-            neighbor_token.note_count += 1
+            amount = abs(movement)
+            if target_token.note_count <= amount:
+                raise ValueError("This phrase cannot give that many trailing notes back.")
+            target_token.note_count -= amount
+            # The unused duration settles at the tail, so every following phrase shifts earlier.
+            for token in following_tokens:
+                if amount and token.note_count == 0:
+                    token.note_count += 1
+                    amount -= 1
+            if amount and following_tokens:
+                following_tokens[-1].note_count += amount
+
+    _fill_phrase_note_gaps(token_lines[target_index])
 
     notes = [
         NoteEvent(
@@ -531,6 +809,7 @@ def resize_alignment_phrase(
     updated_report = dict(report)
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
+    updated_report["token_counts"] = _token_counts(token_lines)
     updated_report["version"] = max(2, int(report.get("version", 1)))
     updated_text = "\n".join(
         render_aligned_lyrics(
@@ -558,7 +837,7 @@ def insert_alignment_token(
     if parsed is None or not parsed.word.strip():
         raise ValueError("Enter one lyric word or direct phoneme unit to insert.")
 
-    token_lines = _token_lines_from_text(aligned_text)
+    token_lines = _token_lines_from_report(report, aligned_text)
     target = (line - 1, word_index - 1)
     if target[0] < 0 or target[0] >= len(token_lines) or target[1] < 0 or target[1] >= len(token_lines[target[0]]):
         raise ValueError("The selected lyric unit is no longer present in the aligned text.")
@@ -630,6 +909,7 @@ def insert_alignment_token(
     updated_report = dict(report)
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
+    updated_report["token_counts"] = _token_counts(token_lines)
     updated_report["version"] = max(2, int(report.get("version", 1)))
     updated_text = "\n".join(
         render_aligned_lyrics(
@@ -639,6 +919,110 @@ def insert_alignment_token(
         )
     ) + "\n"
     return updated_report, updated_text, (line, insert_index + 1)
+
+
+def delete_alignment_token(
+    report: dict,
+    aligned_text: str,
+    line: int,
+    word_index: int,
+) -> tuple[dict, str, tuple[int, int]]:
+    """Remove one word and close its note span without leaving timing holes."""
+
+    token_lines = _token_lines_from_report(report, aligned_text)
+    target_line = line - 1
+    target_word = word_index - 1
+    if target_line < 0 or target_line >= len(token_lines) or target_word < 0 or target_word >= len(token_lines[target_line]):
+        raise ValueError("The selected lyric unit is no longer present in the aligned text.")
+    if len(token_lines[target_line]) <= 1:
+        raise ValueError("A phrase must retain at least one lyric unit.")
+
+    removed = token_lines[target_line].pop(target_word)
+    remaining_tokens = [token for token_line in token_lines for token in token_line]
+    if not remaining_tokens:
+        raise ValueError("The final lyric unit cannot be removed.")
+    # Preserve all immediate following words by settling the released notes at the tail.
+    remaining_tokens[-1].note_count += removed.note_count
+
+    notes = [
+        NoteEvent(
+            pitch=int(note["midi_pitch"]),
+            velocity=int(note.get("velocity", 0)),
+            start_ms=float(note["start_ms"]),
+            end_ms=float(note["end_ms"]),
+        )
+        for note in report.get("notes", [])
+    ]
+    summary = report.get("summary", {})
+    entries, new_summary = align_tokens(
+        _tokens_from_lines(token_lines),
+        notes,
+        float(summary.get("phrase_gap_ms", 0)),
+        float(summary.get("word_gap_ms", 0)),
+        placeholder_word=summary.get("placeholder_word") or None,
+    )
+    updated_report = dict(report)
+    updated_report["summary"] = new_summary
+    updated_report["notes"] = [asdict(entry) for entry in entries]
+    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["version"] = max(2, int(report.get("version", 1)))
+    updated_text = "\n".join(
+        render_aligned_lyrics(
+            token_lines,
+            entries,
+            line_timings=report.get("line_timings"),
+        )
+    ) + "\n"
+    return updated_report, updated_text, (line, min(word_index, len(token_lines[target_line])))
+
+
+def reorder_alignment_token(
+    report: dict,
+    aligned_text: str,
+    line: int,
+    word_index: int,
+    target_word_index: int,
+) -> tuple[dict, str, tuple[int, int]]:
+    """Move a word before another word in its phrase, keeping its note claim."""
+
+    token_lines = _token_lines_from_report(report, aligned_text)
+    target_line = line - 1
+    source_index = word_index - 1
+    destination_index = target_word_index - 1
+    if target_line < 0 or target_line >= len(token_lines):
+        raise ValueError("The selected phrase is no longer present in the aligned text.")
+    tokens = token_lines[target_line]
+    if not (0 <= source_index < len(tokens)) or not (0 <= destination_index < len(tokens)):
+        raise ValueError("The selected lyric unit is no longer present in the aligned text.")
+    if source_index == destination_index:
+        return report, aligned_text, (line, word_index)
+
+    moved = tokens.pop(source_index)
+    tokens.insert(destination_index, moved)
+    notes = [
+        NoteEvent(
+            pitch=int(note["midi_pitch"]),
+            velocity=int(note.get("velocity", 0)),
+            start_ms=float(note["start_ms"]),
+            end_ms=float(note["end_ms"]),
+        )
+        for note in report.get("notes", [])
+    ]
+    summary = report.get("summary", {})
+    entries, new_summary = align_tokens(
+        _tokens_from_lines(token_lines),
+        notes,
+        float(summary.get("phrase_gap_ms", 0)),
+        float(summary.get("word_gap_ms", 0)),
+        placeholder_word=summary.get("placeholder_word") or None,
+    )
+    updated_report = dict(report)
+    updated_report["summary"] = new_summary
+    updated_report["notes"] = [asdict(entry) for entry in entries]
+    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["version"] = max(2, int(report.get("version", 1)))
+    updated_text = "\n".join(render_aligned_lyrics(token_lines, entries, line_timings=report.get("line_timings"))) + "\n"
+    return updated_report, updated_text, (line, destination_index + 1)
 
 
 def build_alignment(
@@ -684,6 +1068,12 @@ def build_alignment(
         "draft_source": str(draft_path),
         "source_mode": "placeholder" if placeholder_word else "transcript",
         "line_timings": line_timings,
+        "token_counts": _token_counts(token_lines),
+        "source_notes": [
+            {"midi_pitch": note.pitch, "velocity": note.velocity, "start_ms": note.start_ms, "end_ms": note.end_ms}
+            for note in notes
+        ],
+        "virtual_splits": [],
         "summary": summary,
         "notes": [asdict(entry) for entry in entries],
     }
@@ -695,11 +1085,118 @@ def build_alignment(
     )
 
 
+def apply_timed_alignment_template(
+    source_report: dict,
+    source_text: str,
+    target_report: dict,
+    source_role: str,
+) -> tuple[dict, str]:
+    """Copy an alignment's lyric ownership onto another track by musical time.
+
+    Tracks in a harmony frequently have different note counts.  This maps each
+    target note to the nearest ordered source word window, rather than copying
+    source note indices or attempting to force equal note counts.
+    """
+
+    token_lines = _token_lines_from_report(source_report, source_text)
+    token_by_key = {
+        (line_index, word_index): token
+        for line_index, tokens in enumerate(token_lines, start=1)
+        for word_index, token in enumerate(tokens, start=1)
+    }
+    source_words: dict[tuple[int, int], list[dict]] = {}
+    for entry in source_report.get("notes", []):
+        if not isinstance(entry, dict):
+            continue
+        line = entry.get("line")
+        word_index = entry.get("word_index")
+        if isinstance(line, int) and isinstance(word_index, int) and (line, word_index) in token_by_key:
+            source_words.setdefault((line, word_index), []).append(entry)
+    windows = []
+    for key, entries in source_words.items():
+        try:
+            start_ms = min(float(entry["start_ms"]) for entry in entries)
+            end_ms = max(float(entry["end_ms"]) for entry in entries)
+        except (KeyError, TypeError, ValueError):
+            continue
+        windows.append({"key": key, "start_ms": start_ms, "end_ms": end_ms, "center_ms": (start_ms + end_ms) / 2})
+    windows.sort(key=lambda item: (item["center_ms"], item["key"]))
+    if not windows:
+        raise ValueError("The source alignment has no timed lyric notes to copy.")
+
+    raw_target_notes = target_report.get("source_notes")
+    if not isinstance(raw_target_notes, list) or not raw_target_notes:
+        raise ValueError("The target track has no notes to receive the template.")
+    target_notes: list[NoteEvent] = []
+    for note in raw_target_notes:
+        if not isinstance(note, dict):
+            raise ValueError("The target alignment has invalid MIDI note data.")
+        try:
+            target_notes.append(NoteEvent(
+                pitch=int(note["midi_pitch"]),
+                velocity=int(note.get("velocity", 0)),
+                start_ms=float(note["start_ms"]),
+                end_ms=float(note["end_ms"]),
+            ))
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("The target alignment has invalid MIDI note data.") from error
+
+    for tokens in token_lines:
+        for token in tokens:
+            token.note_count = 0
+    for note in target_notes:
+        center_ms = (note.start_ms + note.end_ms) / 2
+        closest = min(windows, key=lambda window: abs(window["center_ms"] - center_ms))
+        token_by_key[closest["key"]].note_count += 1
+
+    source_summary = source_report.get("summary", {})
+    target_summary = target_report.get("summary", {})
+    entries, summary = align_tokens(
+        _tokens_from_lines(token_lines),
+        target_notes,
+        float(target_summary.get("phrase_gap_ms", source_summary.get("phrase_gap_ms", 0))),
+        float(target_summary.get("word_gap_ms", source_summary.get("word_gap_ms", 0))),
+        placeholder_word=target_summary.get("placeholder_word") or None,
+    )
+    entry_data = [asdict(entry) for entry in entries]
+    for entry in entry_data:
+        if entry["lyric"] is not None:
+            entry["confidence"] = "Template"
+            entry["status"] = "Template timing"
+    summary["status"] = "Template timing" if not summary["zero_note_tokens"] else "Needs review"
+    summary["template_source_role"] = source_role
+    summary["template_source_notes"] = len(source_report.get("notes", []))
+    summary["template_target_notes"] = len(target_notes)
+    summary["template_mode"] = "analog_time"
+
+    updated_report = dict(target_report)
+    updated_report["version"] = max(3, int(target_report.get("version", 1)))
+    updated_report["summary"] = summary
+    updated_report["notes"] = entry_data
+    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["virtual_splits"] = []
+    updated_report["template"] = {
+        "source_role": source_role,
+        "mode": "analog_time",
+        "source_note_count": len(source_report.get("notes", [])),
+        "target_note_count": len(target_notes),
+    }
+    text = "\n".join(
+        render_aligned_lyrics(
+            token_lines,
+            entries,
+            line_timings=target_report.get("line_timings"),
+        )
+    ) + "\n"
+    return updated_report, text
+
+
 def _default_draft(song_title: str, part_name: str, track: dict) -> Path:
-    generated = REPO_ROOT / "outputs" / song_title / "lyrics_drafts" / f"{part_name}.txt"
+    song_dir = REPO_ROOT / "songs" / song_title
+    generated = outputs_directory(song_dir) / "lyrics_drafts" / f"{part_name}.txt"
     if generated.is_file():
         return generated
-    return REPO_ROOT / "songs" / song_title / "lyrics" / f"{track['lyrics_filename']}.txt"
+    return lyrics_directory(song_dir) / f"{track['lyrics_filename']}.txt"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -710,11 +1207,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("part", help="Output role name under Tracks:")
     parser.add_argument(
         "--draft",
-        help="Drafted lyric file. Defaults to outputs/<song>/lyrics_drafts/<part>.txt.",
+        help="Drafted lyric file. Defaults to songs/<song>/outputs/lyrics_drafts/<part>.txt.",
     )
     parser.add_argument(
         "--output",
-        help="Canonical aligned lyric output. Defaults to outputs/<song>/lyrics_aligned/<part>.txt.",
+        help="Canonical aligned lyric output. Defaults to songs/<song>/outputs/lyrics_aligned/<part>.txt.",
     )
     parser.add_argument(
         "--report",
@@ -723,7 +1220,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="Write the aligned lyric file to the configured songs/<song>/lyrics input.",
+        help="Write the aligned lyric file to the configured songs/<song>/inputs/lyrics input.",
     )
     parser.add_argument(
         "--overwrite",
@@ -753,16 +1250,16 @@ def main() -> None:
         include_timing=args.include_timing,
     )
     output_path = (
-        REPO_ROOT / "songs" / args.song / "lyrics" / f"{track['lyrics_filename']}.txt"
+        lyrics_directory(REPO_ROOT / "songs" / args.song) / f"{track['lyrics_filename']}.txt"
         if args.apply
         else Path(args.output).expanduser().resolve()
         if args.output
-        else REPO_ROOT / "outputs" / args.song / "lyrics_aligned" / f"{args.part}.txt"
+        else outputs_directory(REPO_ROOT / "songs" / args.song) / "lyrics_aligned" / f"{args.part}.txt"
     )
     report_path = (
         Path(args.report).expanduser().resolve()
         if args.report
-        else REPO_ROOT / "outputs" / args.song / "lyrics_aligned" / f"{args.part}.json"
+        else outputs_directory(REPO_ROOT / "songs" / args.song) / "lyrics_aligned" / f"{args.part}.json"
     )
 
     for path in (output_path, report_path):

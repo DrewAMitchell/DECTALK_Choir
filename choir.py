@@ -4,10 +4,12 @@
 # Convert lyrics and midi to playable demo
 import sys
 import os
+import json
 import shutil
 import time
 import math as m
 import statistics as stats
+from pathlib import Path
 from pyFuncs.PitchMapping import (
 	DEFAULT_MAX_DECTALK_PITCH,
 	DEFAULT_MIN_DECTALK_PITCH,
@@ -17,6 +19,8 @@ from pyFuncs.PitchMapping import (
 	validate_dectalk_pitch_bounds,
 	wrap_dectalk_pitch,
 )
+from pyFuncs.AudioSafety import DEFAULT_PEAK_CEILING_DBFS, apply_peak_ceiling
+from pyFuncs.SongPaths import has_lyric_content, render_lyrics_path
 
 # Make sure song is specified
 if len(sys.argv) < 2:
@@ -24,6 +28,10 @@ if len(sys.argv) < 2:
 	exit()
 
 songTitle = sys.argv[-1]
+songDir = f"songs/{songTitle}"
+songInputsDir = f"{songDir}/inputs"
+songLyricsDir = f"{songInputsDir}/lyrics"
+songOutputDir = f"{songDir}/outputs"
 
 
 
@@ -40,11 +48,43 @@ if not songTitle in os.listdir('songs'):
 # Load settings.yaml from within folder
 import yaml
 try:
-	file = open(f"songs/{songTitle}/settings.yaml", 'r')
+	file = open(f"{songDir}/settings.yaml", 'r')
 	settings_yaml = yaml.safe_load(file)
 except:
-	print(f"songs/{songTitle}/settings.yaml not loaded")
+	print(f"{songDir}/settings.yaml not loaded")
 	exit()
+
+# Choir Studio may restrict one render with an explicit environment selection.
+# Without that override, the persisted per-role RENDER_ENABLED setting is authoritative.
+requestedRenderRoles = [
+	role.strip()
+	for role in os.environ.get('DECTALK_CHOIR_RENDER_ROLES', '').split(',')
+	if role.strip()
+]
+if requestedRenderRoles:
+	unknownRenderRoles = [role for role in requestedRenderRoles if role not in settings_yaml['Tracks']]
+	if unknownRenderRoles:
+		print(f"Unknown requested render role(s): {', '.join(unknownRenderRoles)}")
+		exit(1)
+	settings_yaml['Tracks'] = {
+		role: track
+		for role, track in settings_yaml['Tracks'].items()
+		if role in requestedRenderRoles
+	}
+	if not settings_yaml['Tracks']:
+		print('No configured roles were selected for rendering')
+		exit(1)
+	print(f"Rendering selected roles: {', '.join(settings_yaml['Tracks'])}")
+else:
+	settings_yaml['Tracks'] = {
+		role: track
+		for role, track in settings_yaml['Tracks'].items()
+		if not isinstance(track, dict) or track.get('RENDER_ENABLED', True)
+	}
+	if not settings_yaml['Tracks']:
+		print('No configured roles are enabled for rendering')
+		exit(1)
+	print(f"Rendering enabled roles: {', '.join(settings_yaml['Tracks'])}")
 
 # Constants loaded from settings.yaml
 if not 'noteOffset' in settings_yaml: noteOffset = DEFAULT_NOTE_OFFSET
@@ -75,8 +115,11 @@ noteNormalizeReferenceMin = settings_yaml.get('noteNormalizeReferenceMin', 7)
 noteNormalizeReferenceMax = settings_yaml.get('noteNormalizeReferenceMax', 16)
 noteNormalizeTargetDbfs = settings_yaml.get('noteNormalizeTargetDbfs', 'auto')
 noteNormalizeMaxBoostDb = settings_yaml.get('noteNormalizeMaxBoostDb', 0.0)
-noteNormalizePeakCeilingDbfs = settings_yaml.get('noteNormalizePeakCeilingDbfs', -1.0)
+noteNormalizePeakCeilingDbfs = settings_yaml.get('noteNormalizePeakCeilingDbfs', DEFAULT_PEAK_CEILING_DBFS)
+stemPeakCeilingDbfs = settings_yaml.get('stemPeakCeilingDbfs', noteNormalizePeakCeilingDbfs)
+finalMixPeakCeilingDbfs = settings_yaml.get('finalMixPeakCeilingDbfs', DEFAULT_PEAK_CEILING_DBFS)
 velocityVolumeScaleDb = settings_yaml.get('velocityVolumeScaleDb', 0.0)
+ignoreMidiVelocity = settings_yaml.get('ignoreMidiVelocity', True)
 
 minDectalkPitch = int(minDectalkPitch)
 maxDectalkPitch = int(maxDectalkPitch)
@@ -92,6 +135,11 @@ def roundBoostSemitones(boost):
 	if boost >= 0:
 		return int(m.floor(boost + 0.5))
 	return int(m.ceil(boost - 0.5))
+
+def isEnabled(value):
+	if isinstance(value, str):
+		return value.strip().lower() in ('1', 'true', 'yes', 'on')
+	return bool(value)
 
 def getDectalkPitch(noteValue, octaveBoost):
 	noteVal = round(noteValue - octaveBoost)
@@ -132,9 +180,11 @@ for fooTrack in settings_yaml['Tracks']:
 	trackDict = settings_yaml['Tracks'][fooTrack]
 	if 'LYRICS_FILENAME' not in trackDict: trackDict['LYRICS_FILENAME'] = fooTrack
 	if 'TRACK_FILENAME' not in trackDict: trackDict['TRACK_FILENAME'] = fooTrack
+	if 'RENDER_ENABLED' not in trackDict: trackDict['RENDER_ENABLED'] = True
 	if 'DEC_SETUP' not in trackDict: trackDict['DEC_SETUP'] = ''
 	if 'VOLUME_ADJUST_DB' not in trackDict: trackDict['VOLUME_ADJUST_DB'] = 0.0
 	if 'VELOCITY_VOLUME_SCALE_DB' not in trackDict: trackDict['VELOCITY_VOLUME_SCALE_DB'] = velocityVolumeScaleDb
+	if 'IGNORE_MIDI_VELOCITY' not in trackDict: trackDict['IGNORE_MIDI_VELOCITY'] = ignoreMidiVelocity
 	if 'PITCH_SHIFT' not in trackDict: trackDict['PITCH_SHIFT'] = 0
 	if 'OCTAVE_BOOST' not in trackDict: trackDict['OCTAVE_BOOST'] = 0
 	if 'GAP_MEND_MS' not in trackDict: trackDict['GAP_MEND_MS'] = gapMendMs
@@ -146,6 +196,7 @@ for fooTrack in settings_yaml['Tracks']:
 	if 'NOTE_NORMALIZE_TARGET_DBFS' not in trackDict: trackDict['NOTE_NORMALIZE_TARGET_DBFS'] = noteNormalizeTargetDbfs
 	if 'NOTE_NORMALIZE_MAX_BOOST_DB' not in trackDict: trackDict['NOTE_NORMALIZE_MAX_BOOST_DB'] = noteNormalizeMaxBoostDb
 	if 'NOTE_NORMALIZE_PEAK_CEILING_DBFS' not in trackDict: trackDict['NOTE_NORMALIZE_PEAK_CEILING_DBFS'] = noteNormalizePeakCeilingDbfs
+	if 'STEM_PEAK_CEILING_DBFS' not in trackDict: trackDict['STEM_PEAK_CEILING_DBFS'] = stemPeakCeilingDbfs
 	if 'SEGMENT_NORMALIZE_PITCH_START' not in trackDict: trackDict['SEGMENT_NORMALIZE_PITCH_START'] = trackDict['PITCH_VOLUME_BOOST_START']
 	if 'SEGMENT_NORMALIZE_TARGET_DBFS' not in trackDict: trackDict['SEGMENT_NORMALIZE_TARGET_DBFS'] = -18.0
 	if 'SEGMENT_NORMALIZE_MAX_BOOST_DB' not in trackDict: trackDict['SEGMENT_NORMALIZE_MAX_BOOST_DB'] = 0.0
@@ -164,6 +215,48 @@ def getTrackSourceName(outputPartName):
 	return settings_yaml['Tracks'][outputPartName]['TRACK_FILENAME']
 
 
+def applyVirtualNoteSplits(outputPartName, notes):
+	"""Apply Studio's per-role virtual lyric splits without changing source MIDI."""
+	path = f"{songLyricsDir}/.alignment/{outputPartName}.json"
+	try:
+		with open(path, 'r', encoding='utf-8') as splitFile:
+			virtualSplits = json.load(splitFile).get('virtual_splits', [])
+	except (OSError, ValueError):
+		return notes
+
+	byNote = {}
+	for split in virtualSplits:
+		try:
+			noteIndex = int(split['note_index'])
+			fraction = float(split['fraction'])
+		except (KeyError, TypeError, ValueError):
+			continue
+		if 0.05 < fraction < 0.95:
+			byNote.setdefault(noteIndex, []).append(fraction)
+
+	if not byNote:
+		return notes
+	result = []
+	musicalNoteIndex = 0
+	for note in notes:
+		if note[0] < 0:
+			result.append(note)
+			continue
+		musicalNoteIndex += 1
+		fractions = sorted(set(round(value, 5) for value in byNote.get(musicalNoteIndex, [])))
+		if not fractions:
+			result.append(note)
+			continue
+		boundaries = [0.0] + fractions + [1.0]
+		for startFraction, endFraction in zip(boundaries, boundaries[1:]):
+			result.append([
+				note[0], note[1], note[2] * (endFraction - startFraction),
+				note[3] + note[2] * startFraction,
+			])
+	print(f"{outputPartName}: applied {sum(len(values) for values in byNote.values())} virtual note split(s)")
+	return result
+
+
 gapMendMsByMidiPart = {}
 for outputPartName in settings_yaml['Tracks']:
 	trackDict = settings_yaml['Tracks'][outputPartName]
@@ -179,27 +272,29 @@ for outputPartName in settings_yaml['Tracks']:
 print(f"Converting tracks to phonemes ")
 import pyFuncs.PhonemeProcessing as pp
 
+if not os.path.isdir(songInputsDir):
+	print(f"Song inputs folder not found: {songInputsDir}")
+	exit(1)
+if not os.path.isdir(songLyricsDir):
+	print(f"Song lyric inputs folder not found: {songLyricsDir}")
+	exit(1)
+
 
 def hasRenderableLyricContent(lyricFileName):
-	try:
-		with open(lyricFileName, 'r') as lyricFile:
-			return any(
-				line.strip() and not line.lstrip().startswith('#')
-				for line in lyricFile
-			)
-	except OSError:
-		return False
+	return has_lyric_content(Path(lyricFileName))
 
 
 phonemeSet = {}
-lyricsList = [foo.split('.')[0] for foo in os.listdir(f"songs/{songTitle}/lyrics")]
 for trackName in settings_yaml['Tracks']:
 	lyricsFileStem = settings_yaml['Tracks'][trackName]['LYRICS_FILENAME']
-	if lyricsFileStem not in lyricsList: continue
-	print(f"   Converting /lyrics/{lyricsFileStem}.txt for  {trackName}")
-	lyricFileName = f"songs/{songTitle}/lyrics/{lyricsFileStem}.txt"
+	lyricPath = render_lyrics_path(Path(songDir), trackName, lyricsFileStem)
+	lyricFileName = str(lyricPath)
+	if lyricPath.parent.name == 'lyrics_drafts':
+		print(f"   Converting /outputs/lyrics_drafts/{trackName}.txt for  {trackName}")
+	else:
+		print(f"   Converting /inputs/lyrics/{lyricsFileStem}.txt for  {trackName}")
 	if not hasRenderableLyricContent(lyricFileName):
-		print(f"   Skipping {trackName}: lyric input is empty or comment-only")
+		print(f"   Skipping {trackName}: lyric or note-skeleton input is empty or comment-only")
 		continue
 	try:
 		phonemes = pp.lyricsToPhonemes(lyricFileName, DECTALK_check=True, printInfo=False)
@@ -265,9 +360,9 @@ def forceCompiledLineDuration(fooLine, targetDurationMs, partName):
 
 # Get name of midi file
 midiFileName = ''
-for foo in os.listdir(f"songs/{songTitle}"):
-	if foo.split('.')[-1] == 'mid':
-		midiFileName = f"songs/{songTitle}/{foo}"
+for foo in os.listdir(songInputsDir):
+	if foo.split('.')[-1].lower() in ('mid', 'midi'):
+		midiFileName = f"{songInputsDir}/{foo}"
 		break
 
 # Catch if no midi file
@@ -428,9 +523,9 @@ for fooPartName in partNamesToOutput:
 compiledLyrics = {}
 for fooPartName in partNamesToOutput:
 	# # Actually write output
-	# lyricFileName = f"outputs/{songTitle}/phonemes/{fooPartName}.txt"
+	# lyricFileName = f"{songOutputDir}/phonemes/{fooPartName}.txt"
 	fooPhonemes = phonemeSet[fooPartName]
-	fooNotes = noteSet[getTrackSourceName(fooPartName)]
+	fooNotes = applyVirtualNoteSplits(fooPartName, noteSet[getTrackSourceName(fooPartName)])
 	fooCompiledLyrics = [[]]
 
 	# outputFile = open(lyricFileName, 'w')
@@ -462,7 +557,7 @@ for fooPartName in partNamesToOutput:
 
 
 		if fooPhonemes[lyricIndex][0] == '`': # If syllable was input directly
-			symbolsToSing = pp.splitDirectPhonemeSyllable(fooPhonemes[lyricIndex][1:])
+			symbolsToSing = pp.splitDirectPhonemeSyllable(fooPhonemes[lyricIndex][1:], strict=True)
 			symbolIsVowel = [1 if pp.isDirectVowelPhoneme(foo) else 0 for foo in symbolsToSing]
 		else:
 			symbolsToSing = []
@@ -564,21 +659,31 @@ for fooPartName in partNamesToOutput:
 			vowelCount = sum(symbolIsVowel_subset)
 			consonantCount = len(symbolIsVowel_subset) - sum(symbolIsVowel_subset)
 
-			if consonantCount == 0 or vowelCount == 0: # If word does not have vowels or consonants catch divide by 0 error
-				consonantDuration = round(noteDuration * consonantCount / (consonantCount + vowelCount))
-				consonantFraction = consonantDuration
-				vowelDuration = round(noteDuration * vowelCount / (consonantCount + vowelCount))
+			if vowelCount == 0:
+				# A direct phoneme input may contain a consonant-only subset. It still
+				# owns this note, so distribute the full note duration between its
+				# consonants rather than attempting to derive a vowel duration.
+				consonantDuration = round(noteDuration / consonantCount)
+				consonantFraction = 1
+				vowelDuration = 0
+			elif consonantCount == 0:
+				consonantDuration = 0
+				consonantFraction = 0
+				vowelDuration = round(noteDuration / vowelCount)
 			else:
 				consonantFraction = consonantFractionTarget - pow(consonantFractionTarget, consonantCount+1)
 				consonantDuration = round(noteDuration * consonantFraction / consonantCount)
 				vowelDuration = round(noteDuration * (1-consonantFraction) / vowelCount)
 
-			if consonantDuration < consonantMinMs:
-				consonantDuration = consonantMinMs
-				vowelDuration = round( (noteDuration -consonantCount*consonantDuration) / vowelCount)
-
-			if consonantDuration > consonantMaxMs:
-				consonantDuration = consonantMaxMs
+			if vowelCount > 0 and consonantCount > 0:
+				# Preserve vowel time on short notes. A fixed consonant minimum can
+				# otherwise consume an entire note and silently drop its syllable.
+				minimumVowelDuration = min(40, max(1, round(noteDuration / (2 * vowelCount))))
+				maxConsonantDuration = max(0, (noteDuration - vowelCount*minimumVowelDuration) // consonantCount)
+				if consonantDuration < consonantMinMs:
+					consonantDuration = min(consonantMinMs, maxConsonantDuration)
+				if consonantDuration > consonantMaxMs:
+					consonantDuration = min(consonantMaxMs, maxConsonantDuration)
 				vowelDuration = round( (noteDuration -consonantCount*consonantDuration) / vowelCount)
 
 
@@ -613,7 +718,7 @@ for fooPartName in partNamesToOutput:
 # Display lyrics over data
 if '-plt' in sys.argv[1]:
 	from PIL import Image, ImageDraw, ImageFont
-	os.makedirs(f"outputs/{songTitle}/_vis", exist_ok = True) # Folder for output files
+	os.makedirs(f"{songOutputDir}/_vis", exist_ok = True) # Folder for output files
 
 	colorSet = [(147, 181, 198), (221, 237, 170), (240, 207, 101), (215, 129, 106), (189, 79, 108), ]
 	yPerNote = 120
@@ -697,7 +802,7 @@ if '-plt' in sys.argv[1]:
 
 				startTime += noteLen
 
-		outImg.save(f"outputs/{songTitle}/_vis/phonemePlot_{fooPartName}.png")
+		outImg.save(f"{songOutputDir}/_vis/phonemePlot_{fooPartName}.png")
 
 
 
@@ -708,10 +813,10 @@ if True:
 	import subprocess as sp
 
 	# Output files
-	os.makedirs(f"outputs/{songTitle}/", exist_ok = True) # Folder for output files
-	outputTracksDir = f"outputs/{songTitle}/_tracks"
+	os.makedirs(songOutputDir, exist_ok = True) # Folder for output files
+	outputTracksDir = f"{songOutputDir}/_tracks"
 	resetOutputDir(outputTracksDir) # Folder for output audio tracks
-	os.makedirs(f"outputs/{songTitle}/_finished", exist_ok = True) # Folder for final mixed outputs
+	os.makedirs(f"{songOutputDir}/_finished", exist_ok = True) # Folder for final mixed outputs
 
 	# Iterate over each track and save
 	for fooPartName in partNamesToOutput:
@@ -719,14 +824,14 @@ if True:
 		foo_OCTAVE_BOOST = settings_yaml['Tracks'][fooPartName]['OCTAVE_BOOST']
 		# if fooPartName != 'Tenor': continue
 
-		partialOutputDir = f"outputs/{songTitle}/{fooPartName}"
+		partialOutputDir = f"{songOutputDir}/{fooPartName}"
 		resetOutputDir(partialOutputDir) # Save partial tracks
 
 		# Generate partial .txt files for running DECtalk
 		print(f"{fooPartName} Partial txt files")
 		for fooLine in compiledLyrics[fooPartName]:
 			startTime = fooLine[0]
-			partialTxtFile = f"outputs/{songTitle}/{fooPartName}/{startTime}.txt"
+			partialTxtFile = f"{songOutputDir}/{fooPartName}/{startTime}.txt"
 
 			# Write partial text file
 			partialTxtFile = open(partialTxtFile, 'w')
@@ -746,10 +851,10 @@ if True:
 		print(f"{fooPartName} Partial wav files")
 		for fooLine in compiledLyrics[fooPartName]:
 			startTime = fooLine[0]
-			partialTxtFile = f"outputs/{songTitle}/{fooPartName}/{startTime}.txt"
+			partialTxtFile = f"{songOutputDir}/{fooPartName}/{startTime}.txt"
 			# partialTxtFile = open(partialTxtFileName, 'r')
 
-			outputWav = f"outputs/{songTitle}/{fooPartName}/{startTime}.wav"
+			outputWav = f"{songOutputDir}/{fooPartName}/{startTime}.wav"
 			partialTxtInput = open(partialTxtFile, 'rb')
 			DEC_proc = sp.Popen([f".{os.sep}say.exe", "-w", outputWav], stdin=partialTxtInput) # Finally actual run DECtalk! Opens a bunch of processes to run every file in parallel
 			partialTxtInput.close()
@@ -908,9 +1013,6 @@ def getNoteNormalizeTargetDbfs(lineAudioSet, octaveBoost, trackDict):
 
 def applyNoteNormalize(audioSegment, fooLine, octaveBoost, targetDbfs, trackDict):
 	maxBoostDb = float(trackDict['NOTE_NORMALIZE_MAX_BOOST_DB'])
-	if maxBoostDb <= 0 or targetDbfs is None:
-		return audioSegment
-
 	peakCeilingDbfs = float(trackDict['NOTE_NORMALIZE_PEAK_CEILING_DBFS'])
 	outAudio = AudioSegment.empty()
 	cursorMs = 0
@@ -920,14 +1022,17 @@ def applyNoteNormalize(audioSegment, fooLine, octaveBoost, targetDbfs, trackDict
 			outAudio += audioSegment[cursorMs:noteGroup['startMs']]
 
 		noteAudio = audioSegment[noteGroup['startMs']:noteGroup['endMs']]
-		boostDb = 0.0
+		adjustmentDb = 0.0
 		if len(noteAudio) > 0 and m.isfinite(noteAudio.dBFS):
-			boostDb = min(maxBoostDb, max(0.0, targetDbfs - noteAudio.dBFS))
-			if m.isfinite(noteAudio.max_dBFS):
-				boostDb = min(boostDb, peakCeilingDbfs - noteAudio.max_dBFS)
+			if maxBoostDb > 0 and targetDbfs is not None:
+				adjustmentDb = min(maxBoostDb, max(0.0, targetDbfs - noteAudio.dBFS))
+			if adjustmentDb:
+				noteAudio += adjustmentDb
+			noteAudio, ceilingGainDb = apply_peak_ceiling(noteAudio, peakCeilingDbfs)
+			adjustmentDb += ceilingGainDb
 
-		if boostDb > 0:
-			noteAudio += boostDb
+		if adjustmentDb < -0.01:
+			print(f"note peak guard:{adjustmentDb:+.2f} dB to {peakCeilingDbfs:.1f} dBFS")
 		outAudio += noteAudio
 		cursorMs = noteGroup['endMs']
 
@@ -978,22 +1083,22 @@ for fooPartName in partNamesToOutput:
 	trackDict = settings_yaml['Tracks'][fooPartName]
 	foo_OCTAVE_BOOST = settings_yaml['Tracks'][fooPartName]['OCTAVE_BOOST']
 	firstNote = compiledLyrics[fooPartName][0][0] # Get time of first note
-	outputAudio = AudioSegment.silent((firstNote + 1000)) # Init audio output as silence to fill up until the start of the audio
+	outputAudio = None
 	lineAudioSet = []
 
 	for fooLine in compiledLyrics[fooPartName]:
 		# Get average velocities of notes in this line to adjust playback volume
 		velocities = [foo[3] for foo in fooLine[1:] if type(foo) == tuple and foo[0] != '_']
-		if len(velocities) > 0:
+		if not isEnabled(trackDict['IGNORE_MIDI_VELOCITY']) and len(velocities) > 0:
 			meanVelocity = (sum(velocities)/len(velocities)/127 -0.5)*float(trackDict['VELOCITY_VOLUME_SCALE_DB'])
 		else:
 			meanVelocity = 0
 
 		startTime = fooLine[0]
-		readWavFileName = f"outputs/{songTitle}/{fooPartName}/{startTime}.wav"
+		readWavFileName = f"{songOutputDir}/{fooPartName}/{startTime}.wav"
 
 		# try:
-		nextAudio = AudioSegment.from_file(readWavFileName) +meanVelocity +trackDict['VOLUME_ADJUST_DB']
+		nextAudio = AudioSegment.from_file(readWavFileName).set_sample_width(4) +meanVelocity +trackDict['VOLUME_ADJUST_DB']
 		nextAudio = applyPitchVolumeBoost(nextAudio, fooLine, foo_OCTAVE_BOOST, trackDict)
 		nextAudio = applySegmentNormalize(nextAudio, fooLine, foo_OCTAVE_BOOST, trackDict)
 
@@ -1016,7 +1121,8 @@ for fooPartName in partNamesToOutput:
 
 	for fooLine, startTime, nextAudio in lineAudioSet:
 		nextAudio = applyNoteNormalize(nextAudio, fooLine, foo_OCTAVE_BOOST, noteNormalizeTargetDbfs, trackDict)
-		outputAudio = (AudioSegment.silent((startTime +1000)) + nextAudio).overlay(outputAudio)
+		phraseAudio = AudioSegment.silent(startTime + 1000, frame_rate=nextAudio.frame_rate).set_channels(nextAudio.channels).set_sample_width(4) + nextAudio
+		outputAudio = phraseAudio if outputAudio is None else phraseAudio.overlay(outputAudio)
 		# except:
 		#     print(f"ERROR READING {readWavFileName}, LINE NOT INCLUDED")
 
@@ -1036,7 +1142,7 @@ for fooPartName in partNamesToOutput:
 		#     print(f">")
 		#     outputAudio = outputAudio[:startTime] + outputAudio[startTime:].overlay(nextAudio)
 
-	outputAudioDict[fooPartName] = outputAudio
+	outputAudioDict[fooPartName] = outputAudio if outputAudio is not None else AudioSegment.silent(firstNote + 1000).set_sample_width(4)
 
 audioLenth = max( [outputAudioDict[fooPartName].duration_seconds for fooPartName in partNamesToOutput] )
 targetAudioLengthMs = round(audioLenth*1000)
@@ -1045,28 +1151,40 @@ print(f"audioLenth:{audioLenth}")
 
 # Export equal-length track stems
 for fooPartName in partNamesToOutput:
+	trackDict = settings_yaml['Tracks'][fooPartName]
 	trackAudio = outputAudioDict[fooPartName]
 	if len(trackAudio) < targetAudioLengthMs:
 		trackAudio += AudioSegment.silent(targetAudioLengthMs-len(trackAudio))
 	elif len(trackAudio) > targetAudioLengthMs:
 		trackAudio = trackAudio[:targetAudioLengthMs]
+	trackAudio, stemCeilingGainDb = apply_peak_ceiling(trackAudio, trackDict['STEM_PEAK_CEILING_DBFS'])
+	if stemCeilingGainDb < -0.01:
+		print(f"{fooPartName} stem peak guard:{stemCeilingGainDb:+.2f} dB to {float(trackDict['STEM_PEAK_CEILING_DBFS']):.1f} dBFS")
+	trackAudio = trackAudio.set_sample_width(2)
 	outputAudioDict[fooPartName] = trackAudio
 
-	print(f"Exporting:   outputs/{songTitle}/_tracks/{fooPartName}.wav")
-	trackAudio.export(f"outputs/{songTitle}/_tracks/{fooPartName}.wav", format='wav') #export mixed  audio file
+	print(f"Exporting:   {songOutputDir}/_tracks/{fooPartName}.wav")
+	trackAudio.export(f"{songOutputDir}/_tracks/{fooPartName}.wav", format='wav') #export mixed  audio file
 
-# Final mix
-outputAudio = AudioSegment.silent(targetAudioLengthMs)
+# Final mix: accumulate at 32-bit width before applying the export ceiling so
+# adding stems cannot clip before the guard gets a chance to attenuate it.
+firstTrack = outputAudioDict[partNamesToOutput[0]].set_sample_width(4)
+outputAudio = AudioSegment.silent(targetAudioLengthMs, frame_rate=firstTrack.frame_rate).set_channels(firstTrack.channels).set_sample_width(4)
 for fooPartName in partNamesToOutput:
-	readWavFileName = f"outputs/{songTitle}/_tracks/{fooPartName}.wav"
-	trackAudio = AudioSegment.from_file(readWavFileName)
+	readWavFileName = f"{songOutputDir}/_tracks/{fooPartName}.wav"
+	trackAudio = AudioSegment.from_file(readWavFileName).set_sample_width(4)
 	outputAudio = outputAudio.overlay(trackAudio)
 
 	# outputAudio.overlay(outputAudioDict[fooPartName])
 	# print(outputAudioDict[fooPartName])
 
-print(f"Exporting:   outputs/{songTitle}/_finished/{songTitle}.wav")
-outputAudio.export(f"outputs/{songTitle}/_finished/{songTitle}.wav", format='wav')
+outputAudio, mixCeilingGainDb = apply_peak_ceiling(outputAudio, finalMixPeakCeilingDbfs)
+if mixCeilingGainDb < -0.01:
+	print(f"final mix peak guard:{mixCeilingGainDb:+.2f} dB to {float(finalMixPeakCeilingDbfs):.1f} dBFS")
+outputAudio = outputAudio.set_sample_width(2)
+
+print(f"Exporting:   {songOutputDir}/_finished/{songTitle}.wav")
+outputAudio.export(f"{songOutputDir}/_finished/{songTitle}.wav", format='wav')
 
 # Generate spectrogram visualization if -vis tag is included
 if '-vis' in sys.argv[1]:
@@ -1077,7 +1195,7 @@ if '-vis' in sys.argv[1]:
 
 if '-play' in sys.argv[1]:
 	# from playsound import playsound
-	# playsound(f"outputs/{songTitle}/_finished/{songTitle}.wav")
+	# playsound(f"{songOutputDir}/_finished/{songTitle}.wav")
 
 	from pydub.playback import play
 	play(outputAudio)
