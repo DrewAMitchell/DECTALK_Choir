@@ -154,11 +154,16 @@ export default function App() {
   const [alignmentLoading, setAlignmentLoading] = useState(false);
   const [alignmentTransitionPending, startAlignmentTransition] = useTransition();
   const alignmentRequestRef = useRef(0);
+  const invalidateAlignmentLoad = useCallback(() => {
+    alignmentRequestRef.current += 1;
+    setAlignmentLoading(false);
+  }, []);
 
   const role = useMemo(() => inspection?.roles.find((item) => item.role === roleName) ?? null, [inspection, roleName]);
   const transcriptKey = `${song}:${roleName}`;
   const loadSong = useCallback(async (nextSong: string, preferredRole = "") => {
     if (!nextSong) return;
+    invalidateAlignmentLoad();
     setBusy("Loading song"); setError("");
     try {
       const next = await bridge<SongInspection>({ command: "inspect_song", song: nextSong });
@@ -166,7 +171,7 @@ export default function App() {
       setInspection(next); setSong(nextSong); setRoleName(nextRole); setDraftState(null); setDraftRole(""); setAlignment(null); setAlignmentRole(""); setSelectedPhrase(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(""); }
-  }, []);
+  }, [invalidateAlignmentLoad]);
   useEffect(() => { bridge<string[]>({ command: "list_songs" }).then((items) => { setSongs(items); const restoredSong = storedUiState.song && items.includes(storedUiState.song) ? storedUiState.song : items[0]; if (restoredSong) void loadSong(restoredSong, restoredSong === storedUiState.song ? storedUiState.role : ""); }).catch((cause) => setError(String(cause))); }, [loadSong]);
   useEffect(() => { document.documentElement.dataset.theme = theme; window.localStorage.setItem("dectalk-choir-studio.theme", theme); }, [theme]);
   useEffect(() => {
@@ -189,6 +194,7 @@ export default function App() {
     }
     let cancelled = false;
     setTranscriptLoadedKey("");
+    setTranscript(""); setSavedTranscript(""); setValidation(null);
     bridge<TranscriptState>({ command: "read_transcript", song, role: roleName }).then((value) => {
       if (cancelled) return;
       setTranscript(value.text); setSavedTranscript(value.text); setTranscriptLoadedKey(`${song}:${roleName}`); setValidation(null);
@@ -210,14 +216,14 @@ export default function App() {
         const candidate = workspace.candidate;
         if (!candidate.exists || !candidate.text || !candidate.path || !candidate.report) {
           setDraftState(null); setDraftRole(""); setAlignment(null); setAlignmentRole(""); setSelectedPhrase(null);
+          setAlignmentLoading(false);
           return;
         }
         setDraftState({ text: candidate.text, path: candidate.path, warnings: [], review_segments: [], tight_gap_ms: 0 });
         setDraftRole(roleName); setAlignment({ text: candidate.text, report: candidate.report }); setAlignmentRole(roleName); setSelectedPhrase(firstPhraseLine(candidate.report));
+        setAlignmentLoading(false);
       });
-    }).catch((cause) => { if (!cancelled && requestId === alignmentRequestRef.current) { setTemplateSources([]); setError(String(cause)); } }).finally(() => {
-      if (!cancelled && requestId === alignmentRequestRef.current) setAlignmentLoading(false);
-    });
+    }).catch((cause) => { if (!cancelled && requestId === alignmentRequestRef.current) { setTemplateSources([]); setAlignmentLoading(false); setError(String(cause)); } });
     return () => { cancelled = true; };
   }, [song, roleName, stage, startAlignmentTransition]);
   useEffect(() => {
@@ -238,6 +244,7 @@ export default function App() {
   }, [lyricsModalOpen]);
   const runDraft = async () => {
     if (!song || !roleName) return;
+    invalidateAlignmentLoad();
     setBusy("Drafting and aligning lyrics"); setError("");
     try {
       const draft = await bridge<DraftState>({ command: "draft", song, role: roleName, text: transcript, auto_lines: false });
@@ -252,6 +259,7 @@ export default function App() {
       setError("Wait for this role's lyric source to finish loading before creating a note skeleton.");
       return;
     }
+    invalidateAlignmentLoad();
     setBusy("Creating note skeleton"); setError("");
     try {
       const skeleton = await bridge<NoteSkeleton>({ command: "create_note_skeleton", song, role: roleName, placeholder });
@@ -282,6 +290,7 @@ export default function App() {
   const playRender = async () => { if (!inspection?.final_mix) return; try { await openMedia(inspection.final_mix); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
   const adoptTemplate = async (sourceRole: string) => {
     if (!song || !roleName || !sourceRole) return;
+    invalidateAlignmentLoad();
     setBusy(`Copying ${sourceRole} alignment`); setError("");
     try {
       const result = await bridge<{ report: AlignmentReport; text: string; path: string }>({ command: "copy_alignment_template", song, role: roleName, source_role: sourceRole });
@@ -293,6 +302,7 @@ export default function App() {
   const activeAlignment = alignmentRole === roleName ? alignment : null;
   const reviewEnabledRoles = renderRolesBySong[song] ?? inspection?.roles.filter((item) => item.render_enabled && item.render_eligible).map((item) => item.role) ?? [];
   const selectRole = (nextRole: string) => {
+    invalidateAlignmentLoad();
     setRoleName(nextRole); setSelectedPhrase(null); setDraftState(null); setDraftRole(""); setAlignment(null); setAlignmentRole(""); setTemplateSources([]);
     setLyricsPrompt("");
   };
@@ -355,7 +365,7 @@ function LyricsStage({ transcript, transcriptLoaded, setTranscript, validation, 
     : replaceArmed
       ? `Confirm creation of a ${skeletonPhoneme} note skeleton${hasLyrics ? " and replacement of the current lyrics" : ""}.`
       : "Create one direct DECTALK phoneme per MIDI note, grouped at MIDI rests.";
-  return <><section className="surface-header lyrics-header"><div className="lyrics-title"><p className="eyebrow">Working lyric draft</p><h1>Lyrics</h1><p>Paste lyrics or create a note skeleton here. Draft timing turns this same text into the editable aligned draft.</p></div><div className="header-actions lyrics-actions"><span className={dirty ? "save-state dirty" : "save-state"}>{replaceArmed ? "Confirm note skeleton" : dirty ? "Unsaved changes" : "Saved"}</span><button className="secondary" onClick={onSave} disabled={!!busy || !dirty}>Save draft</button><label className="skeleton-control" title={skeletonTitle}><input value={skeletonPhoneme} onChange={(event) => setSkeletonPhoneme(event.target.value)} aria-label="Note skeleton phoneme" placeholder="duw" /><button className="secondary" onClick={createSkeleton} disabled={skeletonDisabled}><Music2 size={16} /> {replaceArmed ? "Confirm skeleton" : "Note skeleton"}</button></label><button className="primary" onClick={onDraft} disabled={!!busy || !transcript.trim()}><WandSparkles size={16} /> Draft timing</button></div></section><LyricsTipBoard /><textarea className="transcript" value={transcript} onChange={(event) => setTranscript(event.target.value)} placeholder="Paste plain lyrics, or create one direct phoneme per MIDI note. Line breaks are phrase hints; commas and unsupported punctuation are normalized." />{validation && (!validation.ok || validation.normalized_lines.length > 0) && <div className={validation.ok ? "notice" : "warning"}><CircleAlert size={17} /><div>{validation.invalid_words.length > 0 && <><strong>Check these words:</strong> {validation.invalid_words.join(", ")}</>}{validation.normalized_lines.length > 0 && <span> Punctuation will be normalized before drafting.</span>}</div></div>}{draftState?.review_segments.length ? <details className="draft-review" open><summary>{draftState.review_segments.length} rapid multi-note word {draftState.review_segments.length === 1 ? "span needs" : "spans need"} verification <span>gaps at or below {draftState.tight_gap_ms} ms</span></summary><div>{draftState.review_segments.map((segment) => <div key={`${segment.line}-${segment.word_index}`} style={{ "--word-color": wordColor(segment.line, segment.word_index) } as CSSProperties}><strong>{segment.word}</strong><span>{segment.note_count} notes · {Math.round(segment.start_ms / 1000)}s-{Math.round(segment.end_ms / 1000)}s</span></div>)}</div></details> : null}{draftState && <details className="generated"><summary>Generated draft ready for alignment <span>{draftState.path}</span></summary><pre>{draftState.text}</pre></details>}</>;
+  return <><section className="surface-header lyrics-header"><div className="lyrics-title"><p className="eyebrow">Working lyric draft</p><h1>Lyrics</h1><p>Paste lyrics or create a note skeleton here. Draft timing turns this same text into the editable aligned draft.</p></div><div className="header-actions lyrics-actions"><span className={dirty ? "save-state dirty" : "save-state"}>{!transcriptLoaded ? "Loading lyrics" : replaceArmed ? "Confirm note skeleton" : dirty ? "Unsaved changes" : "Saved"}</span><button className="secondary" onClick={onSave} disabled={!!busy || !transcriptLoaded || !dirty}>Save draft</button><label className="skeleton-control" title={skeletonTitle}><input value={skeletonPhoneme} onChange={(event) => setSkeletonPhoneme(event.target.value)} aria-label="Note skeleton phoneme" placeholder="duw" /><button className="secondary" onClick={createSkeleton} disabled={skeletonDisabled}><Music2 size={16} /> {replaceArmed ? "Confirm skeleton" : "Note skeleton"}</button></label><button className="primary" onClick={onDraft} title={!transcriptLoaded ? "Wait for this role's lyrics to finish loading" : "Draft timing against this role's MIDI notes"} disabled={!!busy || !transcriptLoaded || !transcript.trim()}><WandSparkles size={16} /> Draft timing</button></div></section><LyricsTipBoard /><textarea className="transcript" value={transcript} onChange={(event) => setTranscript(event.target.value)} disabled={!transcriptLoaded} placeholder={transcriptLoaded ? "Paste plain lyrics, or create one direct phoneme per MIDI note. Line breaks are phrase hints; commas and unsupported punctuation are normalized." : "Loading this track's lyric source..."} />{validation && (!validation.ok || validation.normalized_lines.length > 0) && <div className={validation.ok ? "notice" : "warning"}><CircleAlert size={17} /><div>{validation.invalid_words.length > 0 && <><strong>Check these words:</strong> {validation.invalid_words.join(", ")}</>}{validation.normalized_lines.length > 0 && <span> Punctuation will be normalized before drafting.</span>}</div></div>}{draftState?.review_segments.length ? <details className="draft-review" open><summary>{draftState.review_segments.length} rapid multi-note word {draftState.review_segments.length === 1 ? "span needs" : "spans need"} verification <span>gaps at or below {draftState.tight_gap_ms} ms</span></summary><div>{draftState.review_segments.map((segment) => <div key={`${segment.line}-${segment.word_index}`} style={{ "--word-color": wordColor(segment.line, segment.word_index) } as CSSProperties}><strong>{segment.word}</strong><span>{segment.note_count} notes · {Math.round(segment.start_ms / 1000)}s-{Math.round(segment.end_ms / 1000)}s</span></div>)}</div></details> : null}{draftState && <details className="generated"><summary>Generated draft ready for alignment <span>{draftState.path}</span></summary><pre>{draftState.text}</pre></details>}</>;
 }
 
 function LyricsTipBoard() {
@@ -514,10 +524,11 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
   const canDecreaseWordNotes = words.length > 1 && selectedWordNoteCount > 1;
   const canIncreaseWordNotes = selectedWordPosition >= 0 && words.some((item, index) => index !== selectedWordPosition && item.note_count > 1);
   const selectedPhraseInvalid = selectedPhrase !== null && invalidPhraseLines.includes(selectedPhrase);
-  const phraseInstruction = selectedPhrase ? "Drag either full-height edge guide to snap across any available note boundary." : "Phrase blocks stay compact until selected.";
+  const hasSelectedPhrase = selectedPhrase !== null;
+  const phraseInstruction = hasSelectedPhrase ? "Drag either full-height edge guide to snap across any available note boundary." : "Phrase blocks stay compact until selected.";
   const overlay = alignment && selectedPhrase !== null ? <div className={`phrase-workbench ${selectedPhraseInvalid ? "invalid" : ""}`}>
-    <div className="phrase-workbench-heading" title={phraseInstruction}><p className="eyebrow">{selectedPhrase ? `Phrase ${selectedPhrase}` : "Select a phrase above the notes"}</p><strong>{phraseInstruction}</strong></div>
-    {selectedPhrase && <div className="word-strip">{visibleWords.map((item) => {
+    <div className="phrase-workbench-heading" title={phraseInstruction}><p className="eyebrow">{hasSelectedPhrase ? `Phrase ${selectedPhrase + 1}` : "Select a phrase above the notes"}</p><strong>{phraseInstruction}</strong></div>
+    {hasSelectedPhrase && <div className="word-strip">{visibleWords.map((item) => {
       if (item.line === null || item.word_index === null) return null;
       const isSelected = selectedWord?.line === item.line && selectedWord.wordIndex === item.word_index;
       return <div className={`word-token ${draggedWord === item.word_index ? "dragging" : ""} ${item.note_count === 0 ? "invalid" : ""}`} style={{ "--word-color": wordColor(item.line, item.word_index) } as CSSProperties} key={`${item.line}-${item.word_index}`} draggable={!busy} title="Drag this word onto another word to move it before that word" onDragStart={() => setDraggedWord(item.word_index!)} onDragEnd={() => setDraggedWord(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void reorderWord(item.word_index!); }}>
