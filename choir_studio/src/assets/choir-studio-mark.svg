@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="DECTALK Choir Studio visualizer mark">
+  <g fill="#60d4ae">
+    <rect x="38" y="138" width="22" height="72" rx="8"/>
+    <rect x="70" y="106" width="22" height="104" rx="8"/>
+    <rect x="102" y="72" width="22" height="138" rx="8"/>
+    <rect x="134" y="118" width="22" height="92" rx="8"/>
+    <rect x="166" y="92" width="22" height="118" rx="8"/>
+    <rect x="198" y="152" width="22" height="58" rx="8"/>
+  </g>
+  <g font-family="Georgia, 'Times New Roman', serif" font-size="42" font-weight="700" text-anchor="middle">
+    <text x="34" y="76" fill="#f29a4b">♯</text>
+    <text x="72" y="61" fill="#70a8ff">♭</text>
+    <text x="108" y="48" fill="#e87098">♯</text>
+    <text x="148" y="58" fill="#a5c95d">♭</text>
+    <text x="186" y="70" fill="#c08ae8">♯</text>
+    <text x="224" y="86" fill="#52bfd6">♭</text>
+  </g>
+</svg>

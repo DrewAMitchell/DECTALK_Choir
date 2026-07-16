@@ -3,6 +3,7 @@ import { BarChart3, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, FileAud
 import { bridge, deleteSong, media, openFfmpegDownload, openMedia, openSongFolder, renderJobStatus, spectrogramJobStatus, startRenderJob, startSpectrogramJob, type MediaStatus, type RenderJobStatus, type SpectrogramJobStatus } from "./bridge";
 import { PianoRoll } from "./PianoRoll";
 import type { AlignmentReport, Role, SongInspection } from "./types";
+import choirStudioMark from "./assets/choir-studio-mark.svg";
 
 type Stage = "align" | "review";
 const stages: Array<[Stage, string, typeof Music2]> = [["align", "Align", WandSparkles], ["review", "Review", BarChart3]];
@@ -280,7 +281,7 @@ export default function App() {
 
   return <main className="studio-shell">
     <header className="app-header">
-      <div className="brand"><span className="brand-mark" aria-hidden="true"><i className="visual-bar bar-low" /><i className="visual-bar bar-mid" /><i className="visual-bar bar-high" /><b className="sharp">#</b><b className="flat">♭</b></span><span>DECTALK Choir</span><strong>Studio</strong></div>
+      <div className="brand"><img className="brand-mark" src={choirStudioMark} alt="" /><span>DECTALK Choir</span><strong>Studio</strong></div>
       <div className="header-song-cluster"><label className="song-select"><span>Song</span><select value={song} onChange={(event) => void loadSong(event.target.value)}>{songs.map((item) => <option key={item}>{item}</option>)}</select></label><div className="selection-actions"><button className="header-command" type="button" onClick={() => void playRender()} disabled={!inspection?.final_mix} title="Open the completed song mix in your default media player" aria-label="Open render in default media player"><Play size={15} /></button><button className="header-command" type="button" onClick={() => void openOutputs()} disabled={!song} title="Open this song's generated output folder" aria-label="Open output folder"><FolderOpen size={16} /></button><button className="header-command destructive-command" type="button" onClick={() => setDeleteSongArmed(true)} disabled={!song} title="Delete this song and all of its outputs" aria-label="Delete selected song"><Trash2 size={15} /></button></div></div>
       <nav className="lifecycle" aria-label="Track design phases">
         {stages.map(([id, label, Icon], index) => <button key={id} className={stage === id ? "active" : ""} onClick={() => selectStage(id)}><span className="stage-index">{index + 1}</span><Icon size={16} />{label}</button>)}
