@@ -4,8 +4,8 @@ import { bridge, deleteSong, media, openFfmpegDownload, openMedia, openSongFolde
 import { PianoRoll } from "./PianoRoll";
 import type { AlignmentReport, Role, SongInspection } from "./types";
 
-type Stage = "lyrics" | "align" | "review";
-const stages: Array<[Stage, string, typeof Music2]> = [["lyrics", "Lyrics", PenLine], ["align", "Align", WandSparkles], ["review", "Review", BarChart3]];
+type Stage = "align" | "review";
+const stages: Array<[Stage, string, typeof Music2]> = [["align", "Align", WandSparkles], ["review", "Review", BarChart3]];
 const FFMPEG_WINGET_COMMAND = "winget install --id Gyan.FFmpeg.Shared --exact";
 const UI_STATE_KEY = "dectalk-choir-studio.ui-state";
 type StoredUiState = { song?: string; role?: string; stage?: Stage; theme?: "dark" | "light"; render_roles?: Record<string, string[]> };
@@ -101,7 +101,7 @@ export default function App() {
   const [song, setSong] = useState(storedUiState.song ?? "");
   const [inspection, setInspection] = useState<SongInspection | null>(null);
   const [roleName, setRoleName] = useState(storedUiState.role ?? "");
-  const [stage, setStage] = useState<Stage>(storedUiState.stage ?? "lyrics");
+  const [stage, setStage] = useState<Stage>(storedUiState.stage ?? "align");
   const [theme, setTheme] = useState<"dark" | "light">(storedUiState.theme ?? (window.localStorage.getItem("dectalk-choir-studio.theme") === "light" ? "light" : "dark"));
   const [renderRolesBySong, setRenderRolesBySong] = useState<Record<string, string[]>>(storedUiState.render_roles ?? {});
   const [transcript, setTranscript] = useState("");
@@ -151,7 +151,7 @@ export default function App() {
     });
   }, [song, inspection]);
   useEffect(() => {
-    if ((stage !== "lyrics" && !lyricsModalOpen) || !song || !roleName) {
+    if (!lyricsModalOpen || !song || !roleName) {
       setTranscriptLoadedKey("");
       return;
     }
@@ -162,7 +162,7 @@ export default function App() {
       setTranscript(value.text); setSavedTranscript(value.text); setTranscriptLoadedKey(`${song}:${roleName}`); setValidation(null);
     }).catch((cause) => { if (!cancelled) setError(String(cause)); });
     return () => { cancelled = true; };
-  }, [song, roleName, stage, lyricsModalOpen]);
+  }, [song, roleName, lyricsModalOpen]);
   useEffect(() => {
     if (stage !== "align" || !song || !roleName) {
       setAlignmentLoading(false);
@@ -189,10 +189,21 @@ export default function App() {
     return () => { cancelled = true; };
   }, [song, roleName, stage, startAlignmentTransition]);
   useEffect(() => {
-    if ((stage !== "lyrics" && !lyricsModalOpen) || !song || !roleName) return;
+    if (!lyricsModalOpen || !song || !roleName) return;
     const timer = window.setTimeout(() => bridge<typeof validation>({ command: "validate_transcript", song, role: roleName, text: transcript }).then(setValidation).catch(() => undefined), 350);
     return () => window.clearTimeout(timer);
-  }, [song, roleName, stage, transcript, lyricsModalOpen]);
+  }, [song, roleName, transcript, lyricsModalOpen]);
+  useEffect(() => {
+    if (!lyricsModalOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setLyricsModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [lyricsModalOpen]);
   const runDraft = async () => {
     if (!song || !roleName) return;
     setBusy("Drafting and aligning lyrics"); setError("");
@@ -223,10 +234,6 @@ export default function App() {
   };
   const selectStage = (nextStage: Stage) => {
     setLyricsPrompt("");
-    if (nextStage === "lyrics" && stage === "align") {
-      setLyricsModalOpen(true);
-      return;
-    }
     setStage(nextStage);
   };
   const openOutputs = async () => { try { await openSongFolder(song, "output"); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
@@ -286,9 +293,7 @@ export default function App() {
     {error && <div className="error-toast" role="alert" aria-live="assertive"><CircleAlert size={17} /><span>{error}</span><div className="error-actions">{/ffmpeg/i.test(error) && <><button type="button" className="error-action" onClick={() => void openFfmpegDownload().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Open FFmpeg's official Windows download guidance">Get FFmpeg</button><button type="button" className="error-action" onClick={() => void navigator.clipboard.writeText(FFMPEG_WINGET_COMMAND).then(() => setError(`Copied: ${FFMPEG_WINGET_COMMAND}`)).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Copy the Windows Package Manager install command">Copy winget</button></>}<button type="button" onClick={() => setError("")} title="Dismiss error" aria-label="Dismiss error"><X size={16} /></button></div></div>}
     <section className={`workspace ${stage === "review" ? "review-workspace" : ""}`}>
       <aside className="track-rail"><h2 className="rail-song-title" title={song}>{song || "Song"}</h2><div className="rail-heading"><PanelLeft size={16} /> Tracks</div><div className="track-list">{inspection?.roles.map((item) => <button key={item.role} className={item.role === roleName ? "track active" : "track"} onClick={() => selectRole(item.role)}><strong title={item.role}>{item.role}</strong><span>{item.midi_source_name}</span><small>{item.note_count} notes · {item.midi_range}</small>{item.polyphony && item.polyphony > 1 && <i>Needs split</i>}</button>)}</div></aside>
-      <section className={`surface${stage === "lyrics" ? " lyrics-surface" : ""}`}>
-        {stage === "lyrics" && lyricsPrompt && <div className="notice draft-route"><WandSparkles size={17} /><div>{lyricsPrompt}</div></div>}
-        {stage === "lyrics" && <section className="lyrics-stage"><LyricsStage transcript={transcript} transcriptLoaded={transcriptLoadedKey === transcriptKey} setTranscript={setTranscript} validation={validation} onDraft={runDraft} onNoteSkeleton={runNoteSkeleton} onSave={saveTranscript} busy={busy} draftState={hasDraft ? draftState : null} dirty={transcript !== savedTranscript} prompt={lyricsPrompt} /></section>}
+      <section className={`surface${stage === "align" ? " align-surface" : ""}`}>
         {stage === "align" && <AlignStage role={role} inspection={inspection} song={song} alignment={activeAlignment} loading={alignmentLoading || alignmentTransitionPending} templateSources={templateSources} onAdoptTemplate={adoptTemplate} onOpenLyrics={() => setLyricsModalOpen(true)} setAlignment={setAlignment} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} busy={busy} setBusy={setBusy} setError={setError} />}
         {stage === "review" && <ReviewStage song={song} role={role} inspection={inspection} enabledRoles={reviewEnabledRoles} onEnabledRolesChange={(roles) => void updateRenderRoles(roles)} onSelectRole={selectRole} onSelectVisualRole={selectRole} setInspection={setInspection} busy={busy} setBusy={setBusy} setError={setError} />}
       </section>

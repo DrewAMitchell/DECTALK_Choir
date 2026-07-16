@@ -283,6 +283,7 @@ button:disabled { cursor: wait; opacity: .55; }
 
 /* Compact stages share one rail width. Align keeps phrase controls in a single bounded row so a long skeleton cannot push its roll below the viewport. */
 .workspace { --track-rail-width: clamp(184px, 16vw, 200px); }
+.align-surface { padding-inline: clamp(10px, 1.2vw, 18px); }
 .review-stage.overview-panel .review-header { margin-bottom: 8px; }
 .align-workspace { min-height: 0; }
 .align-workspace > .align-roll-shell { display: block; }
@@ -306,9 +307,10 @@ button:disabled { cursor: wait; opacity: .55; }
 .align-transport .transport-group:first-child > span { flex: 1 1 auto; min-width: 0; }
 .align-lyrics-command { flex: 0 0 auto; }
 .lyrics-modal-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 24px; background: #07100f99; }
-.lyrics-modal { position: relative; display: flex; width: min(980px, calc(100vw - 48px)); max-height: calc(100vh - 48px); min-height: 0; padding: 18px; border: 1px solid #54746b; border-radius: 6px; background: #151e1d; box-shadow: 0 28px 80px #00000080; }
-.lyrics-modal .lyrics-stage { width: 100%; min-height: 0; max-height: calc(100vh - 84px); padding: 0 4px 0 0; }
-.lyrics-modal .lyrics-header { padding-right: 36px; }
+.lyrics-modal { position: relative; display: block; width: min(980px, calc(100vw - 48px)); max-height: calc(100vh - 48px); min-height: 0; overflow: hidden; padding: 18px; border: 1px solid #54746b; border-radius: 6px; background: #151e1d; box-shadow: 0 28px 80px #00000080; }
+.lyrics-modal .lyrics-stage { box-sizing: border-box; width: 100%; min-width: 0; min-height: 0; max-height: calc(100vh - 84px); overflow-x: hidden; padding: 0 4px 0 0; }
+.lyrics-modal .lyrics-header { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; padding-right: 36px; }
+.lyrics-modal .lyrics-actions { width: 100%; max-width: none; min-width: 0; justify-content: flex-start; }
 .lyrics-modal .transcript { min-height: 220px; }
 .lyrics-modal-close { position: absolute; z-index: 2; top: 10px; right: 10px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid #49635c; border-radius: 3px; background: #202b29; color: #b6c9c3; }
 .lyrics-modal-close:hover { border-color: #81b9a9; background: #2d3b38; color: #f0f8f5; }

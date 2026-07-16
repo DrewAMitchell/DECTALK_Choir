@@ -45,7 +45,6 @@ class PianoRollErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundary
 
 const PLOT_LEFT = 56;
 const PLOT_WIDTH = 910;
-const ALIGN_DEFAULT_WINDOW_MS = 180_000;
 const WORD_COLORS = ["#f29a4b", "#70a8ff", "#e87098", "#a5c95d", "#c08ae8", "#52bfd6"];
 
 const pitchName = (pitch: number) => {
@@ -95,9 +94,9 @@ function PianoRollCanvas({
     ? alignment.map((entry) => ({ start_tick: entry.start_ms, end_tick: entry.end_ms, pitch: entry.midi_pitch, velocity: entry.velocity, channel: 0 }))
     : sourceNotes;
   const durationMs = Math.max(1, durationSeconds * 1000);
-  const defaultTimeZoom = alignment.length
-    ? Math.max(0, Math.min(90, (1 - Math.min(1, ALIGN_DEFAULT_WINDOW_MS / durationMs)) / 0.009))
-    : 90;
+  // Always begin with the complete song in view. Phrase selection and playback
+  // can center the cursor without unexpectedly changing the user's zoom level.
+  const defaultTimeZoom = 0;
   const [timeZoom, setTimeZoom] = useState(defaultTimeZoom);
   const [timeCenterMs, setTimeCenterMs] = useState(durationMs / 2);
   const [cursorMs, setCursorMs] = useState<number | null>(null);
