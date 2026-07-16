@@ -253,10 +253,6 @@ def read_lyric_token_lines(path, sanitize=False):
 	return lines
 
 
-def read_source_lines(path):
-	return [list(line.words) for line in read_transcript_lines(path)]
-
-
 def read_transcript_lines(path):
 	"""Read sanitized lyric lines while retaining optional timing prefixes."""
 	if not path.exists():
@@ -319,17 +315,6 @@ def strip_sync_to_source_lines(token_lines):
 
 def flatten_tokens(lines):
 	return [token for line in lines for token in line]
-
-
-def line_boundaries(lines):
-	boundaries = set()
-	word_count = 0
-	total_words = len(flatten(lines))
-	for line in lines:
-		word_count += len(line)
-		if word_count < total_words:
-			boundaries.add(word_count)
-	return boundaries
 
 
 def token_line_boundaries(lines):

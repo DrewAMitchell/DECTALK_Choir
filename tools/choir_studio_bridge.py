@@ -17,7 +17,6 @@ import os
 from pathlib import Path
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 from typing import Any
@@ -35,7 +34,7 @@ for directory in (REPO_ROOT, ASSISTANT_DIR):
 import pyFuncs.PhonemeProcessing as phonemes
 from pyFuncs.ChoirInspection import _has_lyric_content, _lyric_conversion_issue, inspect_song
 from pyFuncs.MidiPreview import write_single_track_preview
-from pyFuncs.SongPaths import lyrics_directory, outputs_directory, render_lyrics_path
+from pyFuncs.SongPaths import lyrics_directory, outputs_directory
 from assistant import (
     normalize_placeholder_word,
     read_transcript_lines,
@@ -283,62 +282,6 @@ def _align(song: str, role: str) -> dict[str, Any]:
     return _write_candidate_alignment(song, role, report, text)
 
 
-def _require_ffmpeg() -> None:
-    if shutil.which("ffmpeg.exe") or shutil.which("ffmpeg"):
-        return
-    raise BridgeError(
-        "FFmpeg is required for rendering and spectrogram video. Install it, add its bin folder to PATH, then restart Choir Studio."
-    )
-
-
-def _render(song: str, requested_roles: object = None) -> dict[str, Any]:
-    """Run the established compiler once and return its operator-facing log."""
-
-    _require_ffmpeg()
-    song_dir, settings = load_settings(song)
-    configured_roles = list((settings.get("Tracks") or {}).keys())
-    if requested_roles is None:
-        selected_roles = configured_roles
-    elif not isinstance(requested_roles, list):
-        raise BridgeError("Render roles must be a list of configured role names.")
-    else:
-        selected_roles = list(dict.fromkeys(str(role) for role in requested_roles if str(role)))
-    if not selected_roles:
-        raise BridgeError("Select at least one track to render.")
-    unknown_roles = [role for role in selected_roles if role not in configured_roles]
-    if unknown_roles:
-        raise BridgeError(f"Unknown render role(s): {', '.join(unknown_roles)}")
-
-    validation_errors: list[str] = []
-    for role in selected_roles:
-        track = settings["Tracks"][role]
-        lyric_stem = str(track.get("LYRICS_FILENAME") or role)
-        lyric_path = render_lyrics_path(song_dir, role, lyric_stem)
-        if lyric_path.is_file() and _has_lyric_content(lyric_path):
-            issue = _lyric_conversion_issue(lyric_path)
-            if issue:
-                validation_errors.append(f"{role}: {issue}")
-
-    environment = os.environ.copy()
-    environment["DECTALK_CHOIR_RENDER_ROLES"] = ",".join(selected_roles)
-    result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "choir.py"), song],
-        cwd=REPO_ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-        env=environment,
-    )
-    return {
-        "returncode": result.returncode,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "ok": result.returncode == 0,
-        "validation_errors": validation_errors,
-        "selected_roles": selected_roles,
-    }
-
-
 def _update_render_enabled_roles(song: str, requested_roles: object) -> dict[str, Any]:
     """Persist Studio render selection without allowing incomplete roles into a run."""
     if not isinstance(requested_roles, list):
@@ -370,10 +313,6 @@ def _visual_triplet(value: object, label: str, lower: float, upper: float) -> li
     if any(item < lower or item > upper for item in parsed):
         raise BridgeError(f"{label} values must be between {lower:g} and {upper:g}.")
     return parsed
-
-
-def _format_triplet(values: list[float]) -> str:
-    return "[" + ", ".join(f"{value:.3f}".rstrip("0").rstrip(".") for value in values) + "]"
 
 
 def _replace_role_setting(path: Path, role: str, key: str, value: str) -> None:
@@ -810,24 +749,6 @@ def _update_track_tuning(song: str, role: str, requested: object) -> dict[str, A
     return {"settings_path": str(settings_path), "values": values}
 
 
-def _generate_spectrograms(song: str) -> dict[str, Any]:
-    """Run the established visualizer while returning a bounded, useful log."""
-
-    _require_ffmpeg()
-    result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "generateSpectrograms.py"), song],
-        cwd=REPO_ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    log = (result.stdout + result.stderr).strip()
-    if len(log) > 12000:
-        log = "[earlier progress omitted]\n" + log[-12000:]
-    output = outputs_directory(REPO_ROOT / "songs" / song) / "_finished" / f"{song}.mp4"
-    return {"ok": result.returncode == 0 and output.is_file(), "returncode": result.returncode, "log": log, "path": str(output)}
-
-
 def _prepare_midi_preview(song: str, role: str) -> dict[str, Any]:
     """Build a fresh, selected-track-only MIDI file for the Windows sequencer."""
 
@@ -1228,9 +1149,6 @@ def handle(request: dict[str, Any]) -> Any:
     song = _song_name(request.get("song"))
     if command == "inspect_song":
         return _jsonable(inspect_song(REPO_ROOT, song))
-    if command == "render":
-        return _render(song, request.get("roles"))
-
     role = _role(song, request.get("role"))
     if command == "save_visual_layout":
         return _save_visual_layout(song, role, request.get("position"), request.get("hsb"), request.get("options"))
@@ -1242,8 +1160,6 @@ def handle(request: dict[str, Any]) -> Any:
         return _update_track_tuning(song, role, request.get("values"))
     if command == "update_render_enabled_roles":
         return _update_render_enabled_roles(song, request.get("roles"))
-    if command == "generate_spectrograms":
-        return _generate_spectrograms(song)
     if command == "read_transcript":
         return _read_source(song, role)
     if command == "save_transcript":
@@ -1254,12 +1170,8 @@ def handle(request: dict[str, Any]) -> Any:
         return _create_note_skeleton(song, role, request.get("placeholder"))
     if command == "draft":
         return _draft(song, role, request.get("text"), request.get("auto_lines"))
-    if command == "load_candidate":
-        return _load_candidate(song, role)
     if command == "load_alignment_workspace":
         return _load_alignment_workspace(song, role)
-    if command == "alignment_template_sources":
-        return _alignment_template_sources(song, role)
     if command == "copy_alignment_template":
         return _copy_alignment_template(song, role, request.get("source_role"))
     if command == "align":

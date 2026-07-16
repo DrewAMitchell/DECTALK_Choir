@@ -147,6 +147,8 @@ Negative `OCTAVE_BOOST` is valid for very low final notes: DECtalk is asked to s
 
 Avoid large negative boosts as a default. `OCTAVE_BOOST: -12` can be useful for C2-range bass references, but `-24` has produced strong low-frequency pulse/formant artifacts in practice.
 
+Run `python tools/create_octave_boost_reference_song.py` to regenerate the checked-in octave reference. It previews complete chromatic octaves from C2 through C6 using boosts `-12`, `0`, `12`, and `24`. The `+36` three-octave boost is intentionally excluded because it does not render reliably.
+
 **VOLUME_ADJUST_DB**: Will adjust volume level of each track in decibels. Positive is louder, negative is quieter, and 0 is the same. I usually make higher tracks louder to be audible.
 
 **PITCH_VOLUME_BOOST_START / PITCH_VOLUME_BOOST_DB_PER_SEMITONE / PITCH_VOLUME_BOOST_MAX_DB**: Optional pitch-dependent gain curve for tracks that get quiet on high notes. Final audible pitches above the start value are boosted by the per-semitone amount, capped by the max dB value.
