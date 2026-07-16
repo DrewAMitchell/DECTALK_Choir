@@ -446,7 +446,18 @@ fn trim_job_log(log: String) -> String {
         .chars()
         .rev()
         .collect::<String>();
-    format!("... earlier generator output omitted ...\n{tail}")
+    let preserved_timings = log
+        .lines()
+        .filter(|line| {
+            line.starts_with("TIMING ") && !tail.lines().any(|tail_line| tail_line == *line)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if preserved_timings.is_empty() {
+        format!("... earlier generator output omitted ...\n{tail}")
+    } else {
+        format!("{preserved_timings}\n... earlier generator output omitted ...\n{tail}")
+    }
 }
 
 fn stream_process_output<R>(reader: R, is_stderr: bool, sender: mpsc::Sender<(bool, String)>)
@@ -488,6 +499,37 @@ fn append_render_log(status: &Arc<Mutex<RenderJobStatus>>, line: &str, is_stderr
         current.log.push_str(line);
         current.log = trim_job_log(std::mem::take(&mut current.log));
         current.message = render_progress_message(line);
+    }
+}
+
+fn spectrogram_progress_message(line: &str) -> String {
+    let line = line.trim();
+    if line.starts_with("Rendered ") {
+        line.to_string()
+    } else if line.starts_with("Compositing ") {
+        "Compositing track clips and final audio.".to_string()
+    } else if line.starts_with("TIMING stage=composition ") {
+        "Final video composition completed.".to_string()
+    } else if line.is_empty() || line.starts_with("TIMING ") {
+        "Generating the spectrogram video in the background.".to_string()
+    } else {
+        format!("Spectrogram: {line}")
+    }
+}
+
+fn append_spectrogram_log(status: &Arc<Mutex<SpectrogramJobStatus>>, line: &str, is_stderr: bool) {
+    if let Ok(mut current) = status.lock() {
+        if !current.log.is_empty() {
+            current.log.push('\n');
+        }
+        if is_stderr {
+            current.log.push_str("stderr: ");
+        }
+        current.log.push_str(line);
+        current.log = trim_job_log(std::mem::take(&mut current.log));
+        if !is_stderr {
+            current.message = spectrogram_progress_message(line);
+        }
     }
 }
 
@@ -670,71 +712,95 @@ fn start_spectrogram_job(
     std::thread::spawn(move || {
         let mut command = Command::new(&python);
         configure_python(&mut command, &root, &python);
-        let output = command
+        let mut child = match command
             .arg("-u")
             .arg(root.join("generateSpectrograms.py"))
             .arg(&song)
             .env("DECTALK_CHOIR_SPECTROGRAM_ROLES", roles.join(","))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .output();
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(error) => {
+                if let Ok(mut current) = status.lock() {
+                    *current = SpectrogramJobStatus {
+                        state: "failed".to_string(),
+                        song: Some(song),
+                        message: format!("Could not start the spectrogram generator: {error}"),
+                        returncode: None,
+                        log: String::new(),
+                        path: None,
+                    };
+                }
+                return;
+            }
+        };
+
+        let (sender, receiver) = mpsc::channel();
+        if let Some(stdout) = child.stdout.take() {
+            stream_process_output(stdout, false, sender.clone());
+        }
+        if let Some(stderr) = child.stderr.take() {
+            stream_process_output(stderr, true, sender.clone());
+        }
+        drop(sender);
+
+        let exit_status = loop {
+            while let Ok((is_stderr, line)) = receiver.try_recv() {
+                append_spectrogram_log(&status, &line, is_stderr);
+            }
+            match child.try_wait() {
+                Ok(Some(exit_status)) => {
+                    while let Ok((is_stderr, line)) =
+                        receiver.recv_timeout(Duration::from_millis(50))
+                    {
+                        append_spectrogram_log(&status, &line, is_stderr);
+                    }
+                    break Ok(exit_status);
+                }
+                Ok(None) => std::thread::sleep(Duration::from_millis(125)),
+                Err(error) => break Err(error),
+            }
+        };
         let video = root
             .join("songs")
             .join(&song)
             .join("outputs")
             .join("_finished")
             .join(format!("{song}.mp4"));
-        let next = match output {
-            Ok(output) => {
-                let mut log = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                if !stderr.trim().is_empty() {
-                    if !log.is_empty() {
-                        log.push('\n');
-                    }
-                    log.push_str(&stderr);
+        if let Ok(mut current) = status.lock() {
+            match exit_status {
+                Ok(exit_status) if exit_status.success() && video.is_file() => {
+                    current.state = "completed".to_string();
+                    current.message = "Spectrogram video generated.".to_string();
+                    current.returncode = exit_status.code();
+                    current.path = Some(video.to_string_lossy().to_string());
                 }
-                let returncode = output.status.code();
-                if output.status.success() && video.is_file() {
-                    SpectrogramJobStatus {
-                        state: "completed".to_string(),
-                        song: Some(song),
-                        message: "Spectrogram video generated.".to_string(),
-                        returncode,
-                        log: trim_job_log(log),
-                        path: Some(video.to_string_lossy().to_string()),
-                    }
-                } else {
-                    SpectrogramJobStatus {
-                        state: "failed".to_string(),
-                        song: Some(song),
-                        message: if output.status.success() {
-                            "Spectrogram generator completed without producing the expected video."
-                                .to_string()
-                        } else {
-                            format!(
-                                "Spectrogram generation exited {}.",
-                                returncode.map_or("without a status".to_string(), |code| code
-                                    .to_string())
-                            )
-                        },
-                        returncode,
-                        log: trim_job_log(log),
-                        path: None,
-                    }
+                Ok(exit_status) => {
+                    current.state = "failed".to_string();
+                    current.message = if exit_status.success() {
+                        "Spectrogram generator completed without producing the expected video."
+                            .to_string()
+                    } else {
+                        format!(
+                            "Spectrogram generation exited {}.",
+                            exit_status
+                                .code()
+                                .map_or("without a status".to_string(), |code| code.to_string())
+                        )
+                    };
+                    current.returncode = exit_status.code();
+                    current.path = None;
+                }
+                Err(error) => {
+                    current.state = "failed".to_string();
+                    current.message = format!("Could not monitor spectrogram generation: {error}");
+                    current.returncode = None;
+                    current.path = None;
                 }
             }
-            Err(error) => SpectrogramJobStatus {
-                state: "failed".to_string(),
-                song: Some(song),
-                message: format!("Could not start the spectrogram generator: {error}"),
-                returncode: None,
-                log: String::new(),
-                path: None,
-            },
-        };
-        if let Ok(mut current) = status.lock() {
-            *current = next;
+            current.log = trim_job_log(std::mem::take(&mut current.log));
         }
     });
     Ok(response)

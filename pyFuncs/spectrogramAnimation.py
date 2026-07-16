@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import subprocess as sp
+from time import perf_counter
 
 import cv2
 import numpy as np
@@ -262,7 +263,9 @@ def _draw_anchored_text(draw, text, anchor, dimensions, font, fill, stroke_width
 
 
 def _render_track_clip(payload):
+    total_started = perf_counter()
     track_name = payload["track_name"]
+    analysis_started = perf_counter()
     prepared = _prepare_track_spectrogram(
         track_name,
         Path(payload["wav_path"]),
@@ -270,6 +273,7 @@ def _render_track_clip(payload):
         tuple(payload["freq_range"]),
         payload["bar_count"],
     )
+    analysis_seconds = perf_counter() - analysis_started
     width, height, left, top = _region_geometry(tuple(payload["video_dims"]), payload["position"])
     spectrogram = payload["spectrogram"]
     rgb = colorsys.hsv_to_rgb(
@@ -305,6 +309,7 @@ def _render_track_clip(payload):
     cues = payload["word_cues"]
     cue_index = 0
     label = _track_label(track_name, payload["track_settings"], spectrogram)
+    frame_render_started = perf_counter()
     try:
         for frame_index in range(payload["animation_frame_count"]):
             draw.rectangle((0, 0, width, height), fill=(0, 0, 0))
@@ -337,6 +342,7 @@ def _render_track_clip(payload):
             writer.write(cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR))
     finally:
         writer.release()
+    frame_render_seconds = perf_counter() - frame_render_started
     return {
         "track": track_name,
         "path": str(output_path),
@@ -347,6 +353,9 @@ def _render_track_clip(payload):
         "normalization": prepared["normalization"],
         "word_cues": len(cues),
         "word_source": payload.get("word_source"),
+        "analysis_seconds": analysis_seconds,
+        "frame_render_seconds": frame_render_seconds,
+        "total_seconds": perf_counter() - total_started,
     }
 
 
@@ -391,6 +400,7 @@ def _compose_clips(clips, output_path, audio_path, video_dims, frames_per_second
 
 
 def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 1440), freqRange=(100, 5000), divisionFactor=500, framesPerSecond=30, barCount=100, back_color=(0, 0, 0), barGapFrac=0.5):
+    total_started = perf_counter()
     del divisionFactor
     song_output_dir = _output_song_dir(songTitle)
     tracks_dir = song_output_dir / "_tracks"
@@ -421,7 +431,7 @@ def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 144
         spectrogram = dict(track_settings.get("SPECTROGRAM") or {})
         cues, cue_source = _load_word_cues(songTitle, track_name)
         if spectrogram.get("CURRENT_WORD_ENABLED") and not cues:
-            print(f"{track_name}: current-word overlay skipped because no alignment timing is available")
+            print(f"{track_name}: current-word overlay skipped because no alignment timing is available", flush=True)
         safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", track_name).strip("_") or f"track_{index + 1}"
         payloads.append({
             "track_name": track_name,
@@ -440,8 +450,12 @@ def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 144
             "word_source": cue_source,
         })
 
+    setup_seconds = perf_counter() - total_started
+    print(f"TIMING stage=setup seconds={setup_seconds:.3f}", flush=True)
+
     worker_count = min(len(payloads), max(1, min(4, os.cpu_count() or 1)))
-    print(f"Rendering {len(payloads)} lossless track clips across {worker_count} workers")
+    print(f"Rendering {len(payloads)} lossless track clips across {worker_count} workers", flush=True)
+    parallel_started = perf_counter()
     clips_by_track = {}
     with ProcessPoolExecutor(max_workers=worker_count) as executor:
         futures = {executor.submit(_render_track_clip, payload): payload["track_name"] for payload in payloads}
@@ -451,14 +465,34 @@ def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 144
             clips_by_track[track_name] = clip
             print(
                 f"Rendered {track_name}: {clip['frames']} source frames, "
-                f"{clip['word_cues']} word cues, normalization {clip['normalization']:.4f}"
+                f"{clip['word_cues']} word cues, normalization {clip['normalization']:.4f}",
+                flush=True,
             )
+            print(
+                f"TIMING track={json.dumps(track_name)} analysis={clip['analysis_seconds']:.3f} "
+                f"frames={clip['frame_render_seconds']:.3f} total={clip['total_seconds']:.3f}",
+                flush=True,
+            )
+
+    parallel_seconds = perf_counter() - parallel_started
+    worker_seconds = sum(clip["total_seconds"] for clip in clips_by_track.values())
+    effective_parallelism = worker_seconds / parallel_seconds if parallel_seconds else 0
+    print(
+        f"TIMING stage=parallel_tracks seconds={parallel_seconds:.3f} workers={worker_count} "
+        f"worker_seconds={worker_seconds:.3f} effective_parallelism={effective_parallelism:.2f}",
+        flush=True,
+    )
 
     clips = [clips_by_track[track_name] for track_name in trackNames]
     output_path = finished_dir / f"{songTitle}.mp4"
-    print(f"Compositing {len(clips)} track clips and final audio")
+    print(f"Compositing {len(clips)} track clips and final audio", flush=True)
+    composition_started = perf_counter()
     _compose_clips(clips, output_path, audio_path, videoDims, framesPerSecond, duration, background)
+    print(f"TIMING stage=composition seconds={perf_counter() - composition_started:.3f} encoder=libx264", flush=True)
+    cleanup_started = perf_counter()
     for clip in clips:
         Path(clip["path"]).unlink(missing_ok=True)
-    print(f"Removed {len(clips)} intermediate track clips")
-    print(f"DONE: {output_path}")
+    print(f"Removed {len(clips)} intermediate track clips", flush=True)
+    print(f"TIMING stage=cleanup seconds={perf_counter() - cleanup_started:.3f}", flush=True)
+    print(f"TIMING stage=total seconds={perf_counter() - total_started:.3f}", flush=True)
+    print(f"DONE: {output_path}", flush=True)

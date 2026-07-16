@@ -77,6 +77,7 @@ type VisualTextOptions = {
   current_word_use_track_color: boolean;
 };
 type VisualDraft = { position: [number, number, number]; hsb: [number, number, number]; options: VisualTextOptions };
+type SpectrogramStageTiming = { stage: string; seconds: number; details: string };
 const visualTextPositions = [
   ["top-left", "Top left"], ["top-center", "Top center"], ["top-right", "Top right"],
   ["center-left", "Center left"], ["center", "Center"], ["center-right", "Center right"],
@@ -573,6 +574,25 @@ function formatDuration(seconds: number | undefined) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
+function parseSpectrogramStageTimings(log: string | undefined): SpectrogramStageTiming[] {
+  if (!log) return [];
+  const timings = new Map<string, SpectrogramStageTiming>();
+  for (const line of log.split(/\r?\n/)) {
+    const match = line.match(/^TIMING stage=([a-z_]+) seconds=([0-9.]+)(?:\s+(.*))?$/);
+    if (!match) continue;
+    const seconds = Number(match[2]);
+    if (Number.isFinite(seconds)) timings.set(match[1], { stage: match[1], seconds, details: match[3] ?? "" });
+  }
+  return [...timings.values()];
+}
+
+function formatStageDuration(seconds: number) {
+  if (seconds < 10) return `${seconds.toFixed(1)}s`;
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const rounded = Math.round(seconds);
+  return `${Math.floor(rounded / 60)}m ${String(rounded % 60).padStart(2, "0")}s`;
+}
+
 function hsbToHex([hue, saturation, brightness]: [number, number, number]) {
   const saturationUnit = Math.max(0, Math.min(100, saturation)) / 100;
   const brightnessUnit = Math.max(0, Math.min(100, brightness)) / 100;
@@ -908,12 +928,15 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const renderStatusLabel = renderState === "completed" ? "Render complete" : renderState === "running" ? "Rendering" : renderState === "failed" ? "Render failed" : "Ready to render";
   const renderStatusMessage = renderJob?.message ?? "Settings are saved in settings.yaml";
   const renderStatusIcon = renderState === "completed" ? <CircleCheck size={17} /> : renderState === "failed" ? <CircleAlert size={17} /> : renderState === "running" ? <LoaderCircle size={17} /> : <FileAudio size={17} />;
+  const spectrogramTimings = parseSpectrogramStageTimings(job?.log);
+  const spectrogramTotal = spectrogramTimings.find((timing) => timing.stage === "total");
+  const spectrogramStageLabels: Record<string, string> = { setup: "Setup", parallel_tracks: "Track clips", composition: "Composite", cleanup: "Cleanup", total: "Total" };
   return <section className={`review-stage ${panel}-panel`}>
     <header className="surface-header review-header"><div className="review-identity"><p className="eyebrow">Output review</p><h1>{song || "Select a song"}<span>{role?.role ?? "Select a role"}</span></h1><p>Enable renderable tracks in the table; tune an individual role from its cog.</p></div><section className={`review-render ${renderState}`} aria-label="Render selected tracks"><div className="render-status"><div className="render-status-state">{renderStatusIcon}<span>{renderStatusLabel}</span></div><strong>{enabledRoles.length} tracks enabled</strong><span className="render-status-message" title={renderStatusMessage}>{renderStatusMessage}</span></div><div className="review-render-actions"><button className="primary" type="button" onClick={() => void render()} disabled={renderState === "running" || !enabledRoles.length}>{renderState === "running" ? "Rendering in background..." : <><FileAudio size={16} /> Render enabled tracks <span className="render-duration">{formatDuration(inspection?.midi?.duration_seconds)}</span></>}</button><button className="secondary spectrogram-layout-command" type="button" onClick={() => { const initialRole = enabledVisualRoles.some((item) => item.role === visualRoleName) ? visualRoleName : enabledVisualRoles[0]?.role ?? ""; setVisualRoleName(initialRole); setPanel("visuals"); }} disabled={!hasFinishedRender || !enabledVisualRoles.length}><BarChart3 size={15} /> Spectrogram layout</button></div></section></header>
     {panel !== "overview" && <nav className="review-panel-nav" aria-label="Render audio workspace">
       <button className="secondary review-panel-back" type="button" onClick={() => setPanel("overview")}><ArrowLeft size={15} /><BarChart3 size={15} /> Output overview</button>
       {panel === "tune" && <span>Editing {role?.role ?? "the selected role"} tuning profile</span>}
-      {panel === "visuals" && <><span>{enabledVisualRoles.length} enabled render region{enabledVisualRoles.length === 1 ? "" : "s"}. Select regions directly on the canvas.</span>{job && job.state !== "idle" && <div className={`spectrogram-job-status ${job.state}`} role="status" aria-live="polite" title={job.message}>{job.state === "completed" ? <CircleCheck size={15} /> : job.state === "failed" ? <CircleAlert size={15} /> : <LoaderCircle size={15} />}<strong>{job.state === "completed" ? "Video complete" : job.state === "failed" ? "Video failed" : "Generating video"}</strong></div>}<div className="visual-header-actions"><button className="primary" type="button" onClick={() => void generate()} disabled={!!busy || visualSaving || !enabledRoles.length || job?.state === "running"}>{job?.state === "running" ? "Generating video..." : <><BarChart3 size={16} /> Generate spectrograms</>}</button><button className="secondary" type="button" onClick={() => void openMedia(inspection!.animation_path!)} disabled={!!busy || !inspection?.animation_exists || !inspection.animation_path}><Play size={15} /> Open video</button></div></>}
+      {panel === "visuals" && <><span>{enabledVisualRoles.length} enabled render region{enabledVisualRoles.length === 1 ? "" : "s"}. Select regions directly on the canvas.</span>{job && job.state !== "idle" && <div className={`spectrogram-job-status ${job.state}`} role="status" aria-live="polite" title={job.message}>{job.state === "completed" ? <CircleCheck size={15} /> : job.state === "failed" ? <CircleAlert size={15} /> : <LoaderCircle size={15} />}<strong>{job.state === "completed" ? "Video complete" : job.state === "failed" ? "Video failed" : "Generating video"}{spectrogramTotal ? ` · ${formatStageDuration(spectrogramTotal.seconds)}` : ""}</strong></div>}<div className="visual-header-actions"><button className="primary" type="button" onClick={() => void generate()} disabled={!!busy || visualSaving || !enabledRoles.length || job?.state === "running"}>{job?.state === "running" ? "Generating video..." : <><BarChart3 size={16} /> Generate spectrograms</>}</button><button className="secondary" type="button" onClick={() => void openMedia(inspection!.animation_path!)} disabled={!!busy || !inspection?.animation_exists || !inspection.animation_path}><Play size={15} /> Open video</button></div></>}
     </nav>}
     {panel === "tune" && <button className="tuning-modal-backdrop" type="button" onClick={() => setPanel("overview")} aria-label="Close track tuning" />}
     <section className="range-legend" aria-label="Register color legend"><strong>Register color</strong><span className="range-legend-blue">C2 low</span><span className="range-legend-green">C3 mid</span><span className="range-legend-yellow">C4 mid-high</span><span className="range-legend-orange">C5 weak</span><span className="range-legend-red">C6+ weakest</span></section>
@@ -984,6 +1007,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
         <div className="visual-save-state" role="status" aria-live="polite">{visualSaving || visualDirtyRoles.length ? <><LoaderCircle size={14} /> Saving layout...</> : <><CircleCheck size={14} /> Layout saved automatically</>}</div>
       </div>
     </section>
-    {job && job.state !== "idle" && <details className="generated review-log" open={job.state !== "completed"}><summary>{job.message} <span>{job.state === "running" ? "background job" : `exit ${job.returncode ?? "--"}`}</span></summary><pre>{job.log || "The generator is still running; its completed log will appear here."}</pre></details>}
+    {job && job.state !== "idle" && <section className="spectrogram-timing-summary" aria-label="Spectrogram render stage durations" aria-live="polite"><strong>Stage duration</strong><div>{spectrogramTimings.length ? spectrogramTimings.map((timing) => <span key={timing.stage} className={timing.stage === "total" ? "total" : ""} title={timing.details || undefined}><small>{spectrogramStageLabels[timing.stage] ?? timing.stage.replace(/_/g, " ")}</small>{formatStageDuration(timing.seconds)}</span>) : <span className="pending"><LoaderCircle size={13} /><small>Waiting for renderer timing...</small></span>}</div></section>}
+    {job && job.state !== "idle" && <details className="generated review-log" open={job.state !== "completed"}><summary>{job.message} <span>{job.state === "running" ? "background job" : `exit ${job.returncode ?? "--"}`} · timing and process log</span></summary><pre>{job.log || "The generator is still running; live timing and process output will appear here."}</pre></details>}
   </section>;
 }
