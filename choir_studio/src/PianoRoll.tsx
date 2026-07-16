@@ -43,8 +43,8 @@ class PianoRollErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundary
   }
 }
 
-const PLOT_LEFT = 56;
-const PLOT_WIDTH = 910;
+const PLOT_LEFT = 44;
+const PLOT_WIDTH = 948;
 const WORD_COLORS = ["#f29a4b", "#70a8ff", "#e87098", "#a5c95d", "#c08ae8", "#52bfd6"];
 
 const pitchName = (pitch: number) => {

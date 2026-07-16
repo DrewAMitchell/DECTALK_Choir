@@ -318,3 +318,43 @@ button:disabled { cursor: wait; opacity: .55; }
 :root[data-theme="light"] .lyrics-modal { border-color: #9dc0b5; background: #f7fbf9; box-shadow: 0 28px 80px #263b364d; }
 :root[data-theme="light"] .lyrics-modal-close { border-color: #aac7be; background: #edf5f1; color: #315a4d; }
 :root[data-theme="light"] .lyrics-modal-close:hover { border-color: #6f9f90; background: #dcece6; color: #173e32; }
+
+/* Align owns the full right-hand width; phrase editing is a compact sibling of the canvas. */
+.align-surface { padding-inline: 0; }
+.align-workspace > .midi-transport { border-right: 0; border-left: 0; }
+.align-workspace > .align-roll-shell { display: flex; flex-direction: column; }
+.align-workspace .align-roll-shell > .roll-wrap { flex: 1 1 auto; width: 100%; height: auto; }
+.align-phrase-toolbar { flex: 0 0 52px; min-width: 0; overflow: hidden; border: 1px solid #2d383a; border-bottom: 0; background: #192223; }
+.align-phrase-toolbar .phrase-workbench { height: 52px; min-height: 0; padding: 5px 10px; }
+.align-phrase-toolbar .phrase-workbench-heading { flex-basis: 150px; }
+.align-phrase-toolbar .word-strip { padding-block: 0 5px; }
+.align-lyrics-command { width: auto; min-height: 30px; padding-inline: 9px; }
+
+/* Reuse Review's register colors in the track rail without repeating the long span label. */
+.track-range { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 5px; }
+.track-range .pitch-range { min-width: 0; overflow: visible; font-size: 9px; }
+.track-range .pitch-range b { min-width: 21px; padding-inline: 3px; }
+.track-range .pitch-range em { display: none; }
+.track-range small { flex: 0 0 auto; }
+
+/* Review starts at the same left edge and reserves one rail-width for row identity/actions. */
+.review-workspace .surface { padding-inline: 0; }
+.review-workspace .review-stage { padding-right: 0; }
+.review-workspace .review-header, .review-workspace .range-legend, .review-workspace .review-panel-nav, .review-workspace .review-log { width: auto; max-width: none; margin-right: 12px; margin-left: 12px; }
+.review-workspace .review-track-table { width: 100%; max-width: none; margin-right: 0; margin-left: 0; border-right: 0; border-left: 0; }
+.review-track-table table { table-layout: fixed; }
+.review-track-table .review-col-controls { width: 88px; }
+.review-track-table .review-col-role { width: calc(var(--track-rail-width) - 88px); }
+.review-track-table .review-col-status { width: 140px; }
+.review-track-table .review-col-midi { width: 150px; }
+.review-track-table .review-col-pitch { width: 220px; }
+.review-track-table .review-col-peak { width: 80px; }
+.review-track-table th, .review-track-table td { overflow-wrap: anywhere; }
+
+@media (max-height: 600px) {
+  .align-phrase-toolbar { flex-basis: 44px; }
+  .align-phrase-toolbar .phrase-workbench { height: 44px; padding-block: 3px; }
+  .align-phrase-toolbar .phrase-workbench-heading { flex-basis: 104px; }
+  .align-phrase-toolbar .phrase-workbench-heading strong { display: none; }
+  .align-phrase-toolbar .word-strip { padding-bottom: 2px; }
+}
