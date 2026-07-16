@@ -693,10 +693,21 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
       setError("Enable at least one renderable track before generating a spectrogram video.");
       return;
     }
+    setBusy("Saving spectrogram layout");
     setError("");
     try {
+      const pendingDrafts = Object.entries(visualDraftsRef.current);
+      for (const [draftRole, draft] of pendingDrafts) {
+        await bridge({ command: "save_visual_layout", song, role: draftRole, position: draft.position, hsb: draft.hsb });
+      }
+      if (pendingDrafts.length) {
+        visualDraftsRef.current = {};
+        setVisualDrafts({});
+        await refresh();
+      }
       setJob(await startSpectrogramJob(song, enabledRoles));
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(""); }
   };
   const toggleRenderRole = (targetRole: string) => {
     onEnabledRolesChange(enabledRoles.includes(targetRole) ? enabledRoles.filter((item) => item !== targetRole) : [...enabledRoles, targetRole]);
@@ -757,7 +768,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     {panel !== "overview" && <nav className="review-panel-nav" aria-label="Review workspace">
       <button className="secondary" type="button" onClick={() => setPanel("overview")}><BarChart3 size={15} /> Review overview</button>
       {panel === "tune" && <span>Editing {role?.role ?? "the selected role"} tuning profile</span>}
-      {panel === "visuals" && <><span>{enabledVisualRoles.length} enabled render region{enabledVisualRoles.length === 1 ? "" : "s"}. Select one to edit its color and position.</span><div className="visual-header-actions"><button className="primary" type="button" onClick={() => void generate()} disabled={!enabledRoles.length || job?.state === "running"}>{job?.state === "running" ? "Generating video..." : <><BarChart3 size={16} /> Generate spectrograms</>}</button><button className="secondary" type="button" onClick={() => void openMedia(inspection!.animation_path!)} disabled={!!busy || !inspection?.animation_exists || !inspection.animation_path}><Play size={15} /> Open video</button></div></>}
+      {panel === "visuals" && <><span>{enabledVisualRoles.length} enabled render region{enabledVisualRoles.length === 1 ? "" : "s"}. Select one to edit its color and position.</span><div className="visual-header-actions"><button className="primary" type="button" onClick={() => void generate()} disabled={!!busy || !enabledRoles.length || job?.state === "running"}>{job?.state === "running" ? "Generating video..." : <><BarChart3 size={16} /> {Object.keys(visualDrafts).length ? "Save & generate" : "Generate spectrograms"}</>}</button><button className="secondary" type="button" onClick={() => void openMedia(inspection!.animation_path!)} disabled={!!busy || !inspection?.animation_exists || !inspection.animation_path}><Play size={15} /> Open video</button></div></>}
     </nav>}
     {panel === "tune" && <button className="tuning-modal-backdrop" type="button" onClick={() => setPanel("overview")} aria-label="Close track tuning" />}
     <section className="range-legend" aria-label="Register color legend"><strong>Register color</strong><span className="range-legend-blue">C2 low</span><span className="range-legend-green">C3 mid</span><span className="range-legend-yellow">C4 mid-high</span><span className="range-legend-orange">C5 weak</span><span className="range-legend-red">C6+ weakest</span></section>
