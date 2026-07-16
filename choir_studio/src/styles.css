@@ -338,6 +338,11 @@ button:disabled { cursor: wait; opacity: .55; }
 .align-phrase-toolbar .phrase-workbench-heading strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .align-phrase-toolbar .word-strip { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding: 6px 0 5px; }
 .align-phrase-toolbar .word-strip > * { flex: 0 0 auto; }
+:root[data-theme="light"] .align-phrase-toolbar { border-color: #c4d1cf; background: #edf4f2; }
+:root[data-theme="light"] .align-phrase-toolbar .phrase-workbench-heading strong { color: #293d39; }
+:root[data-theme="light"] .align-phrase-toolbar .word-strip button { border-color: var(--word-color, #91a7a1); background: #ffffff; color: #29403c; }
+:root[data-theme="light"] .align-phrase-toolbar .word-strip button.selected { background: var(--word-color); color: #17201e; }
+:root[data-theme="light"] .align-phrase-toolbar .word-strip small { color: #647875; }
 .align-roll-shell > .roll-wrap { display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; max-width: 100%; min-width: 0; min-height: 0; height: auto; margin: 0; overflow: hidden; contain: layout paint; }
 .align-roll-shell .roll-controls { flex: 0 0 auto; width: 100%; min-width: 0; overflow: hidden; }
 .align-roll-shell .roll-zoom { min-width: 0; }
