@@ -534,7 +534,12 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const [position, setPosition] = useState<[number, number, number]>([0.5, 0.25, 0.25]);
   const [hsb, setHsb] = useState<[number, number, number]>([0, 100, 100]);
   const [visualDrafts, setVisualDrafts] = useState<Record<string, { position: [number, number, number]; hsb: [number, number, number] }>>({});
+  const [visualDirtyRoles, setVisualDirtyRoles] = useState<string[]>([]);
+  const [visualSavedRoles, setVisualSavedRoles] = useState<string[]>([]);
+  const [visualSaving, setVisualSaving] = useState(false);
   const visualDraftsRef = useRef(visualDrafts);
+  const visualSaveTimers = useRef(new Map<string, number>());
+  const visualSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const [job, setJob] = useState<SpectrogramJobStatus | null>(null);
   const [renderJob, setRenderJob] = useState<RenderJobStatus | null>(null);
   const [tuning, setTuning] = useState<TrackTuning | null>(null);
@@ -545,9 +550,13 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const enabledVisualRoles = inspection?.roles.filter((item) => enabledRoles.includes(item.role)) ?? [];
   const visualRole = enabledVisualRoles.find((item) => item.role === visualRoleName) ?? null;
   useEffect(() => {
+    visualSaveTimers.current.forEach((timer) => window.clearTimeout(timer));
+    visualSaveTimers.current.clear();
     setPanel("overview");
     setVisualRoleName("");
     setVisualDrafts({});
+    setVisualDirtyRoles([]);
+    setVisualSavedRoles([]);
     visualDraftsRef.current = {};
   }, [song]);
   useEffect(() => { setRenderJob(null); }, [inspection?.song_name]);
@@ -596,23 +605,50 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     next[index] = Number(value);
     setValue(next);
   };
+  const persistVisualRole = (targetRole: string, targetSong = song) => {
+    const existingTimer = visualSaveTimers.current.get(targetRole);
+    if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+    visualSaveTimers.current.delete(targetRole);
+    visualSaveQueue.current = visualSaveQueue.current.then(async () => {
+      const draft = visualDraftsRef.current[targetRole];
+      if (!draft) return;
+      setVisualSaving(true);
+      try {
+        await bridge({ command: "save_visual_layout", song: targetSong, role: targetRole, position: draft.position, hsb: draft.hsb });
+        if (visualDraftsRef.current[targetRole] === draft) {
+          setVisualDirtyRoles((current) => current.filter((item) => item !== targetRole));
+          setVisualSavedRoles((current) => current.includes(targetRole) ? current : [...current, targetRole]);
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setVisualSaving(false);
+      }
+    });
+  };
+  const queueVisualAutosave = (targetRole: string) => {
+    const existingTimer = visualSaveTimers.current.get(targetRole);
+    if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+    setVisualDirtyRoles((current) => current.includes(targetRole) ? current : [...current, targetRole]);
+    const targetSong = song;
+    const timer = window.setTimeout(() => persistVisualRole(targetRole, targetSong), 450);
+    visualSaveTimers.current.set(targetRole, timer);
+  };
   const updateVisualPosition = (next: [number, number, number], targetRole = visualRoleName) => {
     if (targetRole === visualRoleName) setPosition(next);
     if (!targetRole) return;
-    setVisualDrafts((current) => {
-      const updated = { ...current, [targetRole]: { position: next, hsb: current[targetRole]?.hsb ?? (inspection?.roles.find((item) => item.role === targetRole)?.visual_hsb ?? hsb) } };
-      visualDraftsRef.current = updated;
-      return updated;
-    });
+    const updated = { ...visualDraftsRef.current, [targetRole]: { position: next, hsb: visualDraftsRef.current[targetRole]?.hsb ?? (inspection?.roles.find((item) => item.role === targetRole)?.visual_hsb ?? hsb) } };
+    visualDraftsRef.current = updated;
+    setVisualDrafts(updated);
+    queueVisualAutosave(targetRole);
   };
   const updateVisualHsb = (next: [number, number, number], targetRole = visualRoleName) => {
     if (targetRole === visualRoleName) setHsb(next);
     if (!targetRole) return;
-    setVisualDrafts((current) => {
-      const updated = { ...current, [targetRole]: { position: current[targetRole]?.position ?? (inspection?.roles.find((item) => item.role === targetRole)?.visual_position ?? position), hsb: next } };
-      visualDraftsRef.current = updated;
-      return updated;
-    });
+    const updated = { ...visualDraftsRef.current, [targetRole]: { position: visualDraftsRef.current[targetRole]?.position ?? (inspection?.roles.find((item) => item.role === targetRole)?.visual_position ?? position), hsb: next } };
+    visualDraftsRef.current = updated;
+    setVisualDrafts(updated);
+    queueVisualAutosave(targetRole);
   };
   const beginVisualDrag = (event: ReactPointerEvent<HTMLButtonElement | HTMLSpanElement>, item: Role, mode: "move" | "resize") => {
     const preview = event.currentTarget.closest(".visual-layout-preview");
@@ -644,27 +680,15 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     updateVisualPosition([Math.max(0.05, Math.min(1 - left, 1 - top, size + delta)), left, top], drag.role);
   };
   const finishVisualDrag = (event: ReactPointerEvent<HTMLButtonElement | HTMLSpanElement>) => {
-    if (visualDrag.current?.pointerId !== event.pointerId) return;
+    const drag = visualDrag.current;
+    if (drag?.pointerId !== event.pointerId) return;
     visualDrag.current = null;
     setVisualDragging(false);
+    persistVisualRole(drag.role);
   };
   const refresh = async () => {
     const next = await bridge<SongInspection>({ command: "inspect_song", song });
     setInspection(next);
-  };
-  const saveLayout = async () => {
-    if (!visualRole) return;
-    setBusy("Saving visualizer layout"); setError("");
-    try {
-      await bridge({ command: "save_visual_layout", song, role: visualRole.role, position, hsb });
-      await refresh();
-      setVisualDrafts((current) => {
-        const next = { ...current };
-        delete next[visualRole.role];
-        visualDraftsRef.current = next;
-        return next;
-      });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
   useEffect(() => {
     if (job?.state !== "running") return;
@@ -696,13 +720,16 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     setBusy("Saving spectrogram layout");
     setError("");
     try {
-      const pendingDrafts = Object.entries(visualDraftsRef.current);
-      for (const [draftRole, draft] of pendingDrafts) {
-        await bridge({ command: "save_visual_layout", song, role: draftRole, position: draft.position, hsb: draft.hsb });
+      visualSaveTimers.current.forEach((timer) => window.clearTimeout(timer));
+      visualSaveTimers.current.clear();
+      await visualSaveQueue.current;
+      const pendingLayouts = enabledVisualRoles.map((item) => ({ role: item.role, layout: visualDraftsRef.current[item.role] ?? { position: item.visual_position, hsb: item.visual_hsb } }));
+      for (const { role: draftRole, layout } of pendingLayouts) {
+        await bridge({ command: "save_visual_layout", song, role: draftRole, position: layout.position, hsb: layout.hsb });
       }
-      if (pendingDrafts.length) {
-        visualDraftsRef.current = {};
-        setVisualDrafts({});
+      if (pendingLayouts.length) {
+        setVisualDirtyRoles([]);
+        setVisualSavedRoles(pendingLayouts.map((item) => item.role));
         await refresh();
       }
       setJob(await startSpectrogramJob(song, enabledRoles));
@@ -768,7 +795,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     {panel !== "overview" && <nav className="review-panel-nav" aria-label="Review workspace">
       <button className="secondary" type="button" onClick={() => setPanel("overview")}><BarChart3 size={15} /> Review overview</button>
       {panel === "tune" && <span>Editing {role?.role ?? "the selected role"} tuning profile</span>}
-      {panel === "visuals" && <><span>{enabledVisualRoles.length} enabled render region{enabledVisualRoles.length === 1 ? "" : "s"}. Select one to edit its color and position.</span><div className="visual-header-actions"><button className="primary" type="button" onClick={() => void generate()} disabled={!!busy || !enabledRoles.length || job?.state === "running"}>{job?.state === "running" ? "Generating video..." : <><BarChart3 size={16} /> {Object.keys(visualDrafts).length ? "Save & generate" : "Generate spectrograms"}</>}</button><button className="secondary" type="button" onClick={() => void openMedia(inspection!.animation_path!)} disabled={!!busy || !inspection?.animation_exists || !inspection.animation_path}><Play size={15} /> Open video</button></div></>}
+      {panel === "visuals" && <><span>{enabledVisualRoles.length} enabled render region{enabledVisualRoles.length === 1 ? "" : "s"}. Select one to edit its color and position.</span><div className="visual-header-actions"><button className="primary" type="button" onClick={() => void generate()} disabled={!!busy || visualSaving || !enabledRoles.length || job?.state === "running"}>{job?.state === "running" ? "Generating video..." : <><BarChart3 size={16} /> Generate spectrograms</>}</button><button className="secondary" type="button" onClick={() => void openMedia(inspection!.animation_path!)} disabled={!!busy || !inspection?.animation_exists || !inspection.animation_path}><Play size={15} /> Open video</button></div></>}
     </nav>}
     {panel === "tune" && <button className="tuning-modal-backdrop" type="button" onClick={() => setPanel("overview")} aria-label="Close track tuning" />}
     <section className="range-legend" aria-label="Register color legend"><strong>Register color</strong><span className="range-legend-blue">C2 low</span><span className="range-legend-green">C3 mid</span><span className="range-legend-yellow">C4 mid-high</span><span className="range-legend-orange">C5 weak</span><span className="range-legend-red">C6+ weakest</span></section>
@@ -807,9 +834,9 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
       </div>}
     </details>
     <section className="review-visualizer">
-      <div className="visual-region-picker" role="listbox" aria-label="Spectrogram regions">{enabledVisualRoles.map((item) => { const draft = visualDrafts[item.role]; const visualHsb = draft?.hsb ?? item.visual_hsb; return <button key={item.role} type="button" role="option" aria-selected={item.role === visualRoleName} className={item.role === visualRoleName ? "selected" : ""} onClick={() => setVisualRoleName(item.role)}><i style={{ background: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${visualHsb[2]}%)` }} />{item.role}</button>; })}</div>
-      <div className={visualDragging ? "visual-layout-preview dragging" : "visual-layout-preview"} aria-label="Enabled spectrogram render regions">{enabledVisualRoles.map((item) => { const selected = item.role === visualRoleName; const draft = visualDrafts[item.role]; const visualPosition = draft?.position ?? item.visual_position; const visualHsb = draft?.hsb ?? item.visual_hsb; return <button key={item.role} type="button" className={selected ? "visual-region selected" : "visual-region"} title={`Drag ${item.role} to position it`} onPointerDown={(event) => beginVisualDrag(event, item, "move")} onPointerMove={updateVisualDrag} onPointerUp={finishVisualDrag} onPointerCancel={finishVisualDrag} onClick={() => setVisualRoleName(item.role)} style={{ left: `${visualPosition[1] * 100}%`, top: `${visualPosition[2] * 100}%`, width: `${visualPosition[0] * 100}%`, height: `${visualPosition[0] * 100}%`, background: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${Math.max(18, visualHsb[2] / 2)}%)`, borderColor: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${visualHsb[2]}%)` }}><span>{item.role}</span>{selected && <span className="visual-resize-handle" title={`Drag to resize ${item.role}`} onPointerDown={(event) => beginVisualDrag(event, item, "resize")} onPointerMove={updateVisualDrag} onPointerUp={finishVisualDrag} onPointerCancel={finishVisualDrag} />}</button>; })}</div>
-      <div className="visual-layout-controls"><div><p className="eyebrow">Spectrogram render layout</p><strong>{visualRole?.role ?? "Select an enabled region"}</strong><p>Drag a region to move it; drag its lower-right handle to resize. Numeric fields provide precise positioning.</p></div><div className="visual-fields"><label>Color<input type="color" value={hsbToHex(hsb)} onChange={(event) => updateVisualHsb(hexToHsb(event.target.value))} disabled={!visualRole} /></label><label>Size<input type="number" min="0.05" max={Math.min(1 - position[1], 1 - position[2])} step="0.01" value={position[0]} onChange={(event) => changeTriplet(updateVisualPosition, position, 0, event.target.value)} disabled={!visualRole} /></label><label>Left<input type="number" min="0" max={1 - position[0]} step="0.01" value={position[1]} onChange={(event) => changeTriplet(updateVisualPosition, position, 1, event.target.value)} disabled={!visualRole} /></label><label>Top<input type="number" min="0" max={1 - position[0]} step="0.01" value={position[2]} onChange={(event) => changeTriplet(updateVisualPosition, position, 2, event.target.value)} disabled={!visualRole} /></label><label>Hue<input type="number" min="0" max="360" step="1" value={hsb[0]} onChange={(event) => changeTriplet(updateVisualHsb, hsb, 0, event.target.value)} disabled={!visualRole} /></label><label>Sat<input type="number" min="0" max="100" step="1" value={hsb[1]} onChange={(event) => changeTriplet(updateVisualHsb, hsb, 1, event.target.value)} disabled={!visualRole} /></label><label>Bright<input type="number" min="0" max="100" step="1" value={hsb[2]} onChange={(event) => changeTriplet(updateVisualHsb, hsb, 2, event.target.value)} disabled={!visualRole} /></label></div><div className="review-actions"><button className="secondary" type="button" onClick={() => void saveLayout()} disabled={!visualRole || !!busy}>Save region</button></div></div>
+      <div className="visual-region-picker" role="listbox" aria-label="Spectrogram regions">{enabledVisualRoles.map((item) => { const draft = visualDrafts[item.role]; const visualHsb = draft?.hsb ?? item.visual_hsb; const unsaved = visualDirtyRoles.includes(item.role) || (!item.visual_configured && !visualSavedRoles.includes(item.role)); return <button key={item.role} type="button" role="option" aria-selected={item.role === visualRoleName} className={`${item.role === visualRoleName ? "selected " : ""}${unsaved ? "unsaved" : ""}`.trim()} title={unsaved ? `${item.role} layout has not been saved yet` : `${item.role} layout is saved`} onClick={() => setVisualRoleName(item.role)}><i style={{ background: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${visualHsb[2]}%)` }} />{item.role}</button>; })}</div>
+      <div className={visualDragging ? "visual-layout-preview dragging" : "visual-layout-preview"} aria-label="Enabled spectrogram render regions">{enabledVisualRoles.map((item) => { const selected = item.role === visualRoleName; const draft = visualDrafts[item.role]; const visualPosition = draft?.position ?? item.visual_position; const visualHsb = draft?.hsb ?? item.visual_hsb; const unsaved = visualDirtyRoles.includes(item.role) || (!item.visual_configured && !visualSavedRoles.includes(item.role)); return <button key={item.role} type="button" className={`visual-region${selected ? " selected" : ""}${unsaved ? " unsaved" : ""}`} title={unsaved ? `Drag ${item.role} to position it; this layout is not saved yet` : `Drag ${item.role} to position it`} onPointerDown={(event) => beginVisualDrag(event, item, "move")} onPointerMove={updateVisualDrag} onPointerUp={finishVisualDrag} onPointerCancel={finishVisualDrag} onClick={() => setVisualRoleName(item.role)} style={{ left: `${visualPosition[1] * 100}%`, top: `${visualPosition[2] * 100}%`, width: `${visualPosition[0] * 100}%`, height: `${visualPosition[0] * 100}%`, background: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${Math.max(18, visualHsb[2] / 2)}%)`, borderColor: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${visualHsb[2]}%)` }}><span>{item.role}</span>{unsaved && <small className="visual-unsaved-badge">Not saved</small>}{selected && <span className="visual-resize-handle" title={`Drag to resize ${item.role}`} onPointerDown={(event) => beginVisualDrag(event, item, "resize")} onPointerMove={updateVisualDrag} onPointerUp={finishVisualDrag} onPointerCancel={finishVisualDrag} />}</button>; })}</div>
+      <div className="visual-layout-controls"><div><p className="eyebrow">Spectrogram render layout</p><strong>{visualRole?.role ?? "Select an enabled region"}</strong><p>Drag a region to move it; drag its lower-right handle to resize. Numeric fields provide precise positioning.</p></div><div className="visual-fields"><label>Color<input type="color" value={hsbToHex(hsb)} onChange={(event) => updateVisualHsb(hexToHsb(event.target.value))} disabled={!visualRole} /></label><label>Size<input type="number" min="0.05" max={Math.min(1 - position[1], 1 - position[2])} step="0.01" value={position[0]} onChange={(event) => changeTriplet(updateVisualPosition, position, 0, event.target.value)} disabled={!visualRole} /></label><label>Left<input type="number" min="0" max={1 - position[0]} step="0.01" value={position[1]} onChange={(event) => changeTriplet(updateVisualPosition, position, 1, event.target.value)} disabled={!visualRole} /></label><label>Top<input type="number" min="0" max={1 - position[0]} step="0.01" value={position[2]} onChange={(event) => changeTriplet(updateVisualPosition, position, 2, event.target.value)} disabled={!visualRole} /></label><label>Hue<input type="number" min="0" max="360" step="1" value={hsb[0]} onChange={(event) => changeTriplet(updateVisualHsb, hsb, 0, event.target.value)} disabled={!visualRole} /></label><label>Sat<input type="number" min="0" max="100" step="1" value={hsb[1]} onChange={(event) => changeTriplet(updateVisualHsb, hsb, 1, event.target.value)} disabled={!visualRole} /></label><label>Bright<input type="number" min="0" max="100" step="1" value={hsb[2]} onChange={(event) => changeTriplet(updateVisualHsb, hsb, 2, event.target.value)} disabled={!visualRole} /></label></div><div className="visual-save-state" role="status" aria-live="polite">{visualSaving || visualDirtyRoles.length ? <><LoaderCircle size={14} /> Saving layout...</> : <><CircleCheck size={14} /> Layout saved automatically</>}</div></div>
     </section>
     {job && job.state !== "idle" && <details className="generated review-log" open={job.state !== "completed"}><summary>{job.message} <span>{job.state === "running" ? "background job" : `exit ${job.returncode ?? "--"}`}</span></summary><pre>{job.log || "The generator is still running; its completed log will appear here."}</pre></details>}
   </section>;

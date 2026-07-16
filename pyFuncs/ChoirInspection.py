@@ -129,6 +129,7 @@ class RoleInspection:
     loudness: AudioLoudness | None
     visual_hsb: tuple[float, float, float]
     visual_position: tuple[float, float, float]
+    visual_configured: bool
     render_enabled: bool
     render_eligible: bool
     status: str
@@ -631,6 +632,7 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
                 [0.5, 0.25, 0.25],
             )
         )
+        visual_configured = "VID_HSB" in config and "VID_Position" in config
         render_enabled = bool(config.get("RENDER_ENABLED", True))
         # choir.py deterministically truncates a note at the next note start. A
         # polyphonic source is therefore a fidelity warning, not a hard render block.
@@ -651,6 +653,7 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
                 loudness=loudness,
                 visual_hsb=visual_hsb,
                 visual_position=visual_position,
+                visual_configured=visual_configured,
                 render_enabled=render_enabled,
                 render_eligible=render_eligible,
                 status=status,

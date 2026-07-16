@@ -27,6 +27,7 @@ export type Role = {
   loudness: Loudness | null;
   visual_hsb: [number, number, number];
   visual_position: [number, number, number];
+  visual_configured: boolean;
   render_enabled: boolean;
   render_eligible: boolean;
   midi_track: MidiTrack | null;
