@@ -145,6 +145,36 @@ class AlignmentNoteCountTests(unittest.TestCase):
         self.assertEqual(phonemes[0][0], 2)
         self.assertEqual(phonemes[0][1:], ["d", "uw1"])
 
+    def test_virtual_split_can_fill_selected_zero_note_word(self) -> None:
+        report = _report([[2, 0, 1], [2, 2]])
+
+        updated, text = add_virtual_note_split(
+            report,
+            self.text,
+            1,
+            0.5,
+            target_line=1,
+            target_word_index=2,
+        )
+
+        self.assertEqual(_counts(updated, 1), [2, 1, 1])
+        self.assertEqual(text, "2*one two three\n2*four 2*five\n")
+
+    def test_virtual_split_does_not_cross_phrase_for_selected_target(self) -> None:
+        report = _report([[2, 0, 1], [0, 2]])
+
+        updated, _ = add_virtual_note_split(
+            report,
+            self.text,
+            1,
+            0.5,
+            target_line=2,
+            target_word_index=1,
+        )
+
+        self.assertEqual(_counts(updated, 1), [3, 0, 1])
+        self.assertEqual(_counts(updated, 2), [0, 2])
+
 
 if __name__ == "__main__":
     unittest.main()

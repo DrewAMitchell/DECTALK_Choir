@@ -897,16 +897,22 @@ def _write_candidate_alignment(song: str, role: str, report: dict[str, Any], tex
 def _load_candidate(song: str, role: str) -> dict[str, Any]:
     """Return the durable working alignment, rebuilding only missing review metadata."""
 
-    _, _, candidate_path, report_path = _role_paths(song, role)
-    if not candidate_path.is_file():
+    source_path, _, candidate_path, report_path = _role_paths(song, role)
+    candidate_has_content = _has_lyric_content(candidate_path)
+    if not candidate_has_content and not _has_lyric_content(source_path):
         return {"exists": False}
+    alignment_path = candidate_path if candidate_has_content else source_path
     try:
-        text = candidate_path.read_text(encoding="utf-8")
-        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else None
+        text = alignment_path.read_text(encoding="utf-8")
+        report = (
+            json.loads(report_path.read_text(encoding="utf-8"))
+            if candidate_has_content and report_path.is_file()
+            else None
+        )
     except (OSError, json.JSONDecodeError) as error:
         raise BridgeError(f"Could not load lyric candidate: {error}") from error
     if not isinstance(report, dict):
-        report, lines = build_alignment(song, role, candidate_path)
+        report, lines = build_alignment(song, role, alignment_path)
         text = "\n".join(lines).rstrip() + "\n"
         return {"exists": True, **_write_candidate_alignment(song, role, report, text)}
     return {"exists": True, "text": text, "path": str(candidate_path), "report": report, "report_path": str(report_path)}
@@ -1285,6 +1291,8 @@ def handle(request: dict[str, Any]) -> Any:
                 text,
                 int(request.get("note_index")),
                 float(request.get("fraction")),
+                target_line=request.get("target_line"),
+                target_word_index=request.get("target_word_index"),
             )
         except (TypeError, ValueError) as error:
             raise BridgeError(str(error)) from error

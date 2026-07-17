@@ -390,6 +390,8 @@ def add_virtual_note_split(
     aligned_text: str,
     note_index: int,
     fraction: float,
+    target_line: int | None = None,
+    target_word_index: int | None = None,
 ) -> tuple[dict, str]:
     """Split one source MIDI note for alignment without mutating the MIDI file."""
 
@@ -438,8 +440,20 @@ def add_virtual_note_split(
             owner_word = int(owner["word_index"])
         except (KeyError, TypeError, ValueError):
             owner_line = owner_word = 0
-        if 1 <= owner_line <= len(token_lines) and 1 <= owner_word <= len(token_lines[owner_line - 1]):
-            token_lines[owner_line - 1][owner_word - 1].note_count += 1
+        destination_line = owner_line
+        destination_word = owner_word
+        try:
+            requested_line = int(target_line) if target_line is not None else 0
+            requested_word = int(target_word_index) if target_word_index is not None else 0
+        except (TypeError, ValueError):
+            requested_line = requested_word = 0
+        if requested_line == owner_line and 1 <= requested_line <= len(token_lines):
+            requested_tokens = token_lines[requested_line - 1]
+            if 1 <= requested_word <= len(requested_tokens) and requested_tokens[requested_word - 1].note_count == 0:
+                destination_line = requested_line
+                destination_word = requested_word
+        if 1 <= destination_line <= len(token_lines) and 1 <= destination_word <= len(token_lines[destination_line - 1]):
+            token_lines[destination_line - 1][destination_word - 1].note_count += 1
 
     virtual_splits.append({"note_index": note_index, "fraction": round(fraction, 5)})
     summary = report.get("summary", {})
