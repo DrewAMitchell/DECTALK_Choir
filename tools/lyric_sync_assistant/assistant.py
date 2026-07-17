@@ -60,6 +60,7 @@ class NoteEvent:
 class LyricToken:
 	word: str
 	note_count: int
+	mode: str = "sing"
 
 
 @dataclass(frozen=True)
@@ -198,10 +199,14 @@ def parse_lyric_token(raw_token):
 			note_count = sum(int(part) for part in parts[:-1])
 			word = parts[-1]
 
+	mode = "speak" if word.startswith("~") else "sing"
+	if mode == "speak":
+		word = word[1:]
+
 	if len(word) == 0:
 		return None
 
-	return LyricToken(word=word, note_count=max(1, note_count))
+	return LyricToken(word=word, note_count=max(1, note_count), mode=mode)
 
 
 def sanitize_transcript_line(line):
@@ -214,7 +219,7 @@ def sanitize_transcript_line(line):
 	prefix = []
 	if parts and parts[0].startswith('[') and parts[0].endswith(']'):
 		prefix.append(parts.pop(0))
-	cleaned = re.sub(r"[^A-Za-z0-9'`*/|]+", ' ', ' '.join(parts))
+	cleaned = re.sub(r"[^A-Za-z0-9'`*/|~]+", ' ', ' '.join(parts))
 	cleaned = ' '.join(cleaned.split())
 	return ' '.join(prefix + ([cleaned] if cleaned else []))
 
@@ -248,7 +253,7 @@ def read_lyric_token_lines(path, sanitize=False):
 
 		if tokens:
 			for _ in range(lyric_repetitions):
-				lines.append([LyricToken(token.word, token.note_count) for token in tokens])
+				lines.append([LyricToken(token.word, token.note_count, token.mode) for token in tokens])
 		lyric_repetitions = 1
 
 	return lines
@@ -407,7 +412,8 @@ def distribute_counts(total_notes, vowel_count):
 	return counts
 
 
-def format_synced_word(word, note_count):
+def format_synced_word(word, note_count, mode="sing"):
+	word = f"~{word}" if mode == "speak" else word
 	if note_count <= 1:
 		return word
 
@@ -727,7 +733,7 @@ def render_draft(
 			prefix = format_timestamp_ms(start_ms)
 
 		output_lines.append(prefix + ' ' + ' '.join(
-			format_synced_word(token.word, token.note_count)
+			format_synced_word(token.word, token.note_count, token.mode)
 			for token in tokens
 		))
 

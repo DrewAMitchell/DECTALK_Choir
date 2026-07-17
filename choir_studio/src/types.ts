@@ -104,7 +104,7 @@ export type AlignmentEntry = {
 export type AlignmentReport = {
   summary: Record<string, string | number>;
   notes: AlignmentEntry[];
-  token_counts?: Array<{ line: number; word_index: number; word: string; note_count: number }>;
+  token_counts?: Array<{ line: number; word_index: number; word: string; note_count: number; mode?: "sing" | "speak" }>;
   virtual_splits?: Array<{ note_index: number; fraction: number }>;
   template?: { source_role: string; mode: string; source_note_count: number; target_note_count: number };
 };

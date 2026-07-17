@@ -66,6 +66,7 @@ class AlignmentToken:
     note_count: int
     line: int
     word_index: int
+    mode: str = "sing"
 
 
 def _tokens_from_lines(token_lines) -> list[AlignmentToken]:
@@ -78,6 +79,7 @@ def _tokens_from_lines(token_lines) -> list[AlignmentToken]:
                     note_count=max(0, int(token.note_count)),
                     line=line_index,
                     word_index=word_index,
+                    mode=getattr(token, "mode", "sing"),
                 )
             )
     return tokens
@@ -257,7 +259,7 @@ def render_aligned_lyrics(
 
         rendered_tokens: list[str] = []
         for token in line:
-            rendered_tokens.append(format_synced_word(token.word, token.note_count))
+            rendered_tokens.append(format_synced_word(token.word, token.note_count, getattr(token, "mode", "sing")))
             entry_index += token.note_count
         if not rendered_tokens:
             continue
@@ -309,11 +311,19 @@ def _token_lines_from_report(report: dict, text: str):
         for item in stored_counts
         if isinstance(item, dict)
     }
+    mode_map = {
+        (item.get("line"), item.get("word_index")): item.get("mode")
+        for item in stored_counts
+        if isinstance(item, dict)
+    }
     for line_index, tokens in enumerate(token_lines, start=1):
         for word_index, token in enumerate(tokens, start=1):
             count = count_map.get((line_index, word_index))
             if isinstance(count, int) and count >= 0:
                 token.note_count = count
+            mode = mode_map.get((line_index, word_index))
+            if mode in {"sing", "speak"}:
+                token.mode = mode
     return token_lines
 
 
@@ -324,6 +334,7 @@ def _token_counts(token_lines) -> list[dict[str, int | str]]:
             "word_index": word_index,
             "word": token.word,
             "note_count": token.note_count,
+            "mode": getattr(token, "mode", "sing"),
         }
         for line_index, tokens in enumerate(token_lines, start=1)
         for word_index, token in enumerate(tokens, start=1)
@@ -562,6 +573,50 @@ def adjust_alignment_token_note_count(
             entries,
             line_timings=report.get("line_timings"),
         )
+    ) + "\n"
+    return updated_report, updated_text
+
+
+def toggle_alignment_token_mode(
+    report: dict,
+    aligned_text: str,
+    line: int,
+    word_index: int,
+) -> tuple[dict, str]:
+    """Toggle one lyric unit between pitched singing and normal DECTALK speech."""
+
+    token_lines = _token_lines_from_report(report, aligned_text)
+    line_index = line - 1
+    token_index = word_index - 1
+    if line_index < 0 or line_index >= len(token_lines) or token_index < 0 or token_index >= len(token_lines[line_index]):
+        raise ValueError("The selected lyric unit is no longer present in the aligned text.")
+    token = token_lines[line_index][token_index]
+    token.mode = "sing" if getattr(token, "mode", "sing") == "speak" else "speak"
+
+    notes = [
+        NoteEvent(
+            pitch=int(note["midi_pitch"]),
+            velocity=int(note.get("velocity", 0)),
+            start_ms=float(note["start_ms"]),
+            end_ms=float(note["end_ms"]),
+        )
+        for note in report.get("notes", [])
+    ]
+    summary = report.get("summary", {})
+    entries, new_summary = align_tokens(
+        _tokens_from_lines(token_lines),
+        notes,
+        float(summary.get("phrase_gap_ms", 0)),
+        float(summary.get("word_gap_ms", 0)),
+        placeholder_word=summary.get("placeholder_word") or None,
+    )
+    updated_report = dict(report)
+    updated_report["summary"] = new_summary
+    updated_report["notes"] = [asdict(entry) for entry in entries]
+    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["version"] = max(4, int(report.get("version", 1)))
+    updated_text = "\n".join(
+        render_aligned_lyrics(token_lines, entries, line_timings=report.get("line_timings"))
     ) + "\n"
     return updated_report, updated_text
 

@@ -90,6 +90,8 @@ If the compiled line is shorter than the requested duration, silence is appended
 
 For a faster first pass, write plain lyrics in `songs/<Song>/inputs/lyrics/<Part>.raw.txt` or point the tool at any text file. The assistant reads the configured MIDI source track, detects lyric phrases from rests, and writes a draft using the existing `X*word` and `X|Y|word` syntax.
 
+Prefix an aligned word with `~` when it should use normal DECTALK speech instead of pitched singing while retaining its claimed MIDI time, for example `2*~hello`. Choir Studio exposes this as a compact toggle on the selected word.
+
 Example raw inputs live under `tools/lyric_sync_assistant/examples/`; they are seed inputs reverse-engineered from one curated track per original example song.
 
 ```powershell

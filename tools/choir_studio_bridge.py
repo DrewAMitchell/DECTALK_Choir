@@ -56,6 +56,7 @@ from alignment import (
     reorder_alignment_token,
     resize_alignment_phrase,
     resize_alignment_token,
+    toggle_alignment_token_mode,
 )
 from tools.split_polyphonic_midi import (
     MidiSplitError,
@@ -1220,6 +1221,13 @@ def handle(request: dict[str, Any]) -> Any:
                 word_index,
                 int(request.get("delta")),
             )
+        except (TypeError, ValueError) as error:
+            raise BridgeError(str(error)) from error
+        return _write_candidate_alignment(song, role, updated_report, updated_text)
+    if command == "toggle_word_mode":
+        report, text, line, word_index = _alignment_request(song, role, request)
+        try:
+            updated_report, updated_text = toggle_alignment_token_mode(report, text, line, word_index)
         except (TypeError, ValueError) as error:
             raise BridgeError(str(error)) from error
         return _write_candidate_alignment(song, role, updated_report, updated_text)

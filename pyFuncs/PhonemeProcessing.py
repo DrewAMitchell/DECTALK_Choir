@@ -210,6 +210,31 @@ def convertWordToPhonemes(fooWord, convertLowercase=True, DECTALK_check=True):
     return(outPhonemes)
 
 
+SPOKEN_WORD_MARKER = "__dectalk_spoken_word__"
+
+
+def parseSpokenWordToken(token):
+    """Return a normal-speech token and claimed note count, or None."""
+    word = token
+    noteCount = 1
+    if '*' in word:
+        prefix, remainder = word.split('*', 1)
+        if prefix.isdigit():
+            noteCount = int(prefix)
+            word = remainder
+    elif '|' in word:
+        parts = word.split('|')
+        if len(parts) > 1 and all(part.isdigit() for part in parts[:-1]):
+            noteCount = sum(int(part) for part in parts[:-1])
+            word = parts[-1]
+    if not word.startswith('~'):
+        return None
+    spokenWord = word[1:]
+    if len(spokenWord) == 0:
+        raise ValueError("Normal-speech lyric marker '~' must be followed by a word")
+    return [SPOKEN_WORD_MARKER, max(1, noteCount), spokenWord]
+
+
 def lyricsToPhonemes(lyricsFileName, printInfo=True, convertLowercase=True, DECTALK_check=True):
     outLyrics = []
     readLyrics = open(lyricsFileName, 'r')
@@ -244,6 +269,16 @@ def lyricsToPhonemes(lyricsFileName, printInfo=True, convertLowercase=True, DECT
                     print(f"Error converting \"{fooWord}\" to repeat lyrics   (line {currentLineIndex})")
                     exit()
                 continue
+
+            elif '~' in fooWord:
+                try:
+                    outPhonemes = parseSpokenWordToken(fooWord)
+                except ValueError as err:
+                    print(f"ERROR: {err} in {lyricsFileName}   (line {currentLineIndex})")
+                    exit()
+                if outPhonemes is None:
+                    print(f"ERROR: Invalid normal-speech lyric token \"{fooWord}\" in {lyricsFileName}   (line {currentLineIndex})")
+                    exit()
 
             elif fooWord[0] == '`':   # ` indicates to load syllable directly without modification
                 if len(convertDirectSyllableToPhonemes(fooWord)) == 0:

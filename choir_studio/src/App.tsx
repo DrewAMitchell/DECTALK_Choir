@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { ArrowLeft, BarChart3, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, FileAudio, FolderOpen, GitBranch, LoaderCircle, Minus, Moon, Music2, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
+import { ArrowLeft, BarChart3, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, FileAudio, FolderOpen, GitBranch, LoaderCircle, MessageSquareText, Minus, Moon, Music2, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
 import { bridge, deleteSong, media, openFfmpegDownload, openMedia, openSongFolder, renderJobStatus, spectrogramJobStatus, startRenderJob, startSpectrogramJob, type MediaStatus, type RenderJobStatus, type SpectrogramJobStatus } from "./bridge";
 import { PianoRoll } from "./PianoRoll";
 import type { AlignmentReport, Role, SongInspection } from "./types";
@@ -510,8 +510,8 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
   });
   const words = alignment?.report.token_counts
     ?.filter((item) => item.line === selectedPhrase)
-    .map((item) => ({ line: item.line, word_index: item.word_index, lyric: item.word, note_count: item.note_count, duration_ms: wordDurations.get(`${item.line}:${item.word_index}`) ?? 0 }))
-    ?? phraseEntries.filter((entry, index, items) => index === 0 || entry.word_index !== items[index - 1].word_index).map((entry) => ({ ...entry, note_count: entry.word_note_count ?? 1 }));
+    .map((item) => ({ line: item.line, word_index: item.word_index, lyric: item.word, note_count: item.note_count, mode: item.mode ?? "sing", duration_ms: wordDurations.get(`${item.line}:${item.word_index}`) ?? 0 }))
+    ?? phraseEntries.filter((entry, index, items) => index === 0 || entry.word_index !== items[index - 1].word_index).map((entry) => ({ ...entry, mode: "sing", note_count: entry.word_note_count ?? 1 }));
   const visibleWords = showAllWords ? words : words.slice(0, 10);
   const hiddenWordCount = words.length - visibleWords.length;
   useEffect(() => {
@@ -561,6 +561,14 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
     setBusy("Adjusting word notes"); setError("");
     try {
       const result = await bridge<{ report: AlignmentReport; text: string }>({ command: "adjust_word_note_count", song, role: role.role, report: alignment.report, text: alignment.text, line: selectedWord.line, word_index: selectedWord.wordIndex, delta });
+      setAlignment(result);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
+  };
+  const toggleWordMode = async () => {
+    if (!alignment || !selectedWord || !role) return;
+    setBusy("Changing word voice mode"); setError("");
+    try {
+      const result = await bridge<{ report: AlignmentReport; text: string }>({ command: "toggle_word_mode", song, role: role.role, report: alignment.report, text: alignment.text, line: selectedWord.line, word_index: selectedWord.wordIndex });
       setAlignment(result);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
@@ -629,7 +637,7 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
       return <div className={`word-token ${draggedWord === item.word_index ? "dragging" : ""} ${item.note_count === 0 ? "invalid" : ""}`} style={{ "--word-color": wordColor(item.line, item.word_index) } as CSSProperties} key={`${item.line}-${item.word_index}`} draggable={!busy} title="Drag this word onto another word to move it before that word" onDragStart={() => setDraggedWord(item.word_index!)} onDragEnd={() => setDraggedWord(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void reorderWord(item.word_index!); }}>
         <span className="word-note-count" aria-label={`${item.note_count} owned note${item.note_count === 1 ? "" : "s"}`}>{item.note_count}♩</span>
         <button className={isSelected ? "selected" : ""} onClick={() => { setSelectedWord({ line: item.line!, wordIndex: item.word_index! }); setInsertOpen(false); }} title={item.lyric ?? ""}>{item.lyric}<small>{item.note_count === 0 ? "Needs note" : `${item.duration_ms} ms`}</small></button>
-        {isSelected && <span className="word-quick-controls"><button type="button" title="Give one note back to this phrase" aria-label="Decrease this word's note count" disabled={!!busy || !canDecreaseWordNotes} onPointerDown={(event) => event.stopPropagation()} onClick={() => void adjustWordNoteCount(-1)}><Minus size={12} /></button><button type="button" title="Assign one more note from this phrase" aria-label="Increase this word's note count" disabled={!!busy || !canIncreaseWordNotes} onPointerDown={(event) => event.stopPropagation()} onClick={() => void adjustWordNoteCount(1)}><Plus size={12} /></button></span>}
+        {isSelected && <span className="word-quick-controls"><button type="button" className={item.mode === "speak" ? "active" : ""} title={item.mode === "speak" ? "Use pitched singing for this word" : "Speak this word normally within its claimed MIDI time"} aria-label={item.mode === "speak" ? "Switch this word to singing" : "Switch this word to normal speech"} disabled={!!busy} onPointerDown={(event) => event.stopPropagation()} onClick={() => void toggleWordMode()}><MessageSquareText size={12} /></button><button type="button" title="Give one note back to this phrase" aria-label="Decrease this word's note count" disabled={!!busy || !canDecreaseWordNotes} onPointerDown={(event) => event.stopPropagation()} onClick={() => void adjustWordNoteCount(-1)}><Minus size={12} /></button><button type="button" title="Assign one more note from this phrase" aria-label="Increase this word's note count" disabled={!!busy || !canIncreaseWordNotes} onPointerDown={(event) => event.stopPropagation()} onClick={() => void adjustWordNoteCount(1)}><Plus size={12} /></button></span>}
         <button className={deleteArmed ? "word-delete armed" : "word-delete"} type="button" title={deleteArmed ? `Ctrl-click to remove ${item.lyric}` : `Hold Ctrl to remove ${item.lyric}`} aria-label={deleteArmed ? `Remove ${item.lyric}` : `Hold Ctrl to remove ${item.lyric}`} draggable={false} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { if (!event.ctrlKey) return; void removeWord(item.line!, item.word_index!); }} disabled={!!busy || !deleteArmed}><Minus size={11} /></button>
       </div>;
     })}{hiddenWordCount > 0 && <button className="word-more" type="button" onClick={() => setShowAllWords(true)}>{hiddenWordCount} more</button>}{showAllWords && words.length > 10 && <button className="word-more" type="button" onClick={() => setShowAllWords(false)}>Collapse</button>}<div className="word-insert-anchor"><button className="add-word" type="button" title="Insert a word after the selected word" aria-label="Insert a word" onClick={() => { const anchor = selectedWord ?? (words.length ? { line: words[words.length - 1].line!, wordIndex: words[words.length - 1].word_index! } : null); if (anchor) { setSelectedWord(anchor); setInsertOpen(true); } }} disabled={!words.length || !!busy}><Plus size={15} /></button></div></div>}

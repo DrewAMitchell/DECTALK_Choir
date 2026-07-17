@@ -6,6 +6,8 @@ import sys
 import os
 import json
 import shutil
+import subprocess
+import tempfile
 import time
 import math as m
 import statistics as stats
@@ -527,6 +529,16 @@ for fooPartName in partNamesToOutput:
 
 # Iterate through parts, saving each line by line to dict
 compiledLyrics = {}
+
+
+def isSpokenCompiledLine(fooLine):
+	return (
+		len(fooLine) == 2
+		and type(fooLine[1]) == tuple
+		and fooLine[1][0] == pp.SPOKEN_WORD_MARKER
+	)
+
+
 for fooPartName in partNamesToOutput:
 	# # Actually write output
 	# lyricFileName = f"{songOutputDir}/phonemes/{fooPartName}.txt"
@@ -556,6 +568,43 @@ for fooPartName in partNamesToOutput:
 				fooCompiledLyrics.append([]) # Go to new complied line on newline character
 			lineStartOverrideMs = None
 			lineDurationOverrideMs = None
+			lyricIndex += 1
+			continue
+
+		if fooPhonemes[lyricIndex][0] == pp.SPOKEN_WORD_MARKER:
+			notesToClaim = max(1, int(fooPhonemes[lyricIndex][1]))
+			spokenWord = str(fooPhonemes[lyricIndex][2])
+			claimedNotes = []
+			while noteIndex < len(fooNotes) and len(claimedNotes) < notesToClaim:
+				candidateNote = fooNotes[noteIndex]
+				noteIndex += 1
+				if candidateNote[0] != -1:
+					claimedNotes.append(candidateNote)
+			if len(claimedNotes) == 0:
+				break
+			spokenStart = round(claimedNotes[0][3])
+			spokenEnd = round(claimedNotes[-1][3] + claimedNotes[-1][2])
+			spokenDuration = max(1, spokenEnd - spokenStart)
+			spokenVelocity = round(sum(note[1] for note in claimedNotes) / len(claimedNotes))
+
+			if len(fooCompiledLyrics[-1]) > 0:
+				fooCompiledLyrics.append([])
+			previousLine = fooCompiledLyrics[-2] if len(fooCompiledLyrics) >= 2 else None
+			if previousLine and isSpokenCompiledLine(previousLine) and spokenStart <= previousLine[0] + previousLine[1][1] + 1:
+				previousPhen = previousLine[1]
+				previousLine[1] = (
+					pp.SPOKEN_WORD_MARKER,
+					max(previousPhen[1], spokenEnd - previousLine[0]),
+					f"{previousPhen[2]} {spokenWord}",
+					round((previousPhen[3] + spokenVelocity) / 2),
+					None,
+				)
+			else:
+				fooCompiledLyrics[-1] = [
+					spokenStart,
+					(pp.SPOKEN_WORD_MARKER, spokenDuration, spokenWord, spokenVelocity, None),
+				]
+				fooCompiledLyrics.append([])
 			lyricIndex += 1
 			continue
 
@@ -739,6 +788,8 @@ if '-plt' in sys.argv[1]:
 		foo_OCTAVE_BOOST = settings_yaml['Tracks'][fooPartName]['OCTAVE_BOOST']
 
 		for fooLine in compiledLyrics[fooPartName]:
+			if isSpokenCompiledLine(fooLine):
+				continue
 
 			# Display Phoneme
 			for fooPhen in fooLine[1:]:
@@ -777,6 +828,8 @@ if '-plt' in sys.argv[1]:
 
 		print(f"{fooPartName} phoneme display   ii:{ii}   col:{fooCol}")
 		for fooLine in compiledLyrics[fooPartName]:
+			if isSpokenCompiledLine(fooLine):
+				continue
 			startTime = fooLine[0]
 
 			# Display Phoneme
@@ -838,7 +891,7 @@ if True:
 		for fooLine in compiledLyrics[fooPartName]:
 			startTime = fooLine[0]
 			partialTxtFile = f"{songOutputDir}/{fooPartName}/{startTime}.txt"
-			invalidPhonemes = pp.unsupportedDectalkPhonemes(
+			invalidPhonemes = [] if isSpokenCompiledLine(fooLine) else pp.unsupportedDectalkPhonemes(
 				fooPhen[0] for fooPhen in fooLine[1:] if fooPhen != ' '
 			)
 			if invalidPhonemes:
@@ -851,16 +904,18 @@ if True:
 
 			# Write partial text file
 			partialTxtFile = open(partialTxtFile, 'w')
-			partialTxtFile.write(f"[:phoneme arpabet speak on]{foo_DEC_SETUP}[")
-			for fooPhen in fooLine[1:]:
-				if fooPhen == ' ':
-					partialTxtFile.write(' ')
-				else:
-					noteLen = round(fooPhen[1]*pow(2, foo_OCTAVE_BOOST/12))
-					noteVal = getDectalkPitch(fooPhen[2], foo_OCTAVE_BOOST)
-					partialTxtFile.write(f"{fooPhen[0]}<{noteLen},{noteVal}>")
-
-			partialTxtFile.write("]")
+			if isSpokenCompiledLine(fooLine):
+				partialTxtFile.write(f"{foo_DEC_SETUP}{fooLine[1][2]}")
+			else:
+				partialTxtFile.write(f"[:phoneme arpabet speak on]{foo_DEC_SETUP}[")
+				for fooPhen in fooLine[1:]:
+					if fooPhen == ' ':
+						partialTxtFile.write(' ')
+					else:
+						noteLen = round(fooPhen[1]*pow(2, foo_OCTAVE_BOOST/12))
+						noteVal = getDectalkPitch(fooPhen[2], foo_OCTAVE_BOOST)
+						partialTxtFile.write(f"{fooPhen[0]}<{noteLen},{noteVal}>")
+				partialTxtFile.write("]")
 			partialTxtFile.close()
 
 		# Generate partial .wav files by calling DECtalk on each file
@@ -897,7 +952,42 @@ print(f"\n\nMixing partial wav files")
 
 
 from pydub import AudioSegment
-import pyrubberband as pyrb
+
+
+def fitSpokenAudioToWindow(audioSegment, targetDurationMs):
+	"""Pad or pitch-preservingly compress normal speech to its claimed MIDI window."""
+	targetDurationMs = max(1, round(targetDurationMs))
+	if len(audioSegment) <= targetDurationMs:
+		return audioSegment + AudioSegment.silent(
+			targetDurationMs-len(audioSegment),
+			frame_rate=audioSegment.frame_rate,
+		).set_channels(audioSegment.channels).set_sample_width(audioSegment.sample_width)
+
+	rate = len(audioSegment) / targetDurationMs
+	filters = []
+	while rate > 2.0:
+		filters.append("atempo=2.0")
+		rate /= 2.0
+	filters.append(f"atempo={rate:.8f}")
+	ffmpegPath = shutil.which("ffmpeg")
+	if ffmpegPath is None:
+		raise RuntimeError("FFmpeg is required to fit normal speech into a shorter MIDI window.")
+	with tempfile.TemporaryDirectory(prefix="dectalk-spoken-") as tempDirectory:
+		inputPath = os.path.join(tempDirectory, "input.wav")
+		outputPath = os.path.join(tempDirectory, "output.wav")
+		audioSegment.export(inputPath, format="wav")
+		result = subprocess.run(
+			[ffmpegPath, "-y", "-v", "error", "-i", inputPath, "-filter:a", ",".join(filters), outputPath],
+			capture_output=True,
+			text=True,
+		)
+		if result.returncode != 0 or not os.path.isfile(outputPath):
+			details = result.stderr.strip() or "unknown FFmpeg error"
+			raise RuntimeError(f"Could not time-fit normal speech: {details}")
+		fitted = AudioSegment.from_file(outputPath).set_sample_width(audioSegment.sample_width)
+	if len(fitted) < targetDurationMs:
+		fitted += AudioSegment.silent(targetDurationMs-len(fitted), frame_rate=fitted.frame_rate).set_channels(fitted.channels).set_sample_width(fitted.sample_width)
+	return fitted[:targetDurationMs]
 
 
 def getFinalAudiblePitch(fooPhen, octaveBoost):
@@ -1011,6 +1101,8 @@ def getNoteNormalizeTargetDbfs(lineAudioSet, octaveBoost, trackDict):
 	allLevels = []
 	referenceLevels = []
 	for fooLine, lineAudio in lineAudioSet:
+		if isSpokenCompiledLine(fooLine):
+			continue
 		for noteGroup in iterNoteAudioGroups(lineAudio, fooLine, octaveBoost, renderedDurations=False):
 			level = getNoteGroupLevel(lineAudio, noteGroup)
 			if level is None:
@@ -1115,10 +1207,13 @@ for fooPartName in partNamesToOutput:
 
 		# try:
 		nextAudio = AudioSegment.from_file(readWavFileName).set_sample_width(4) +meanVelocity +trackDict['VOLUME_ADJUST_DB']
-		nextAudio = applyPitchVolumeBoost(nextAudio, fooLine, foo_OCTAVE_BOOST, trackDict)
-		nextAudio = applySegmentNormalize(nextAudio, fooLine, foo_OCTAVE_BOOST, trackDict)
+		if isSpokenCompiledLine(fooLine):
+			nextAudio = fitSpokenAudioToWindow(nextAudio, fooLine[1][1])
+		else:
+			nextAudio = applyPitchVolumeBoost(nextAudio, fooLine, foo_OCTAVE_BOOST, trackDict)
+			nextAudio = applySegmentNormalize(nextAudio, fooLine, foo_OCTAVE_BOOST, trackDict)
 
-		if foo_OCTAVE_BOOST != 0: #  Multiply playback speed by OCTAVE_BOOST
+		if not isSpokenCompiledLine(fooLine) and foo_OCTAVE_BOOST != 0: #  Multiply playback speed by OCTAVE_BOOST
 			initRate = nextAudio.frame_rate
 			new_sample_rate = int(initRate * pow(2, foo_OCTAVE_BOOST/12))
 			print(f"initRate:{initRate}     new_sample_rate:{new_sample_rate}")
@@ -1136,7 +1231,8 @@ for fooPartName in partNamesToOutput:
 		print(f"{fooPartName} note normalize target:{noteNormalizeTargetDbfs:.1f} dBFS")
 
 	for fooLine, startTime, nextAudio in lineAudioSet:
-		nextAudio = applyNoteNormalize(nextAudio, fooLine, foo_OCTAVE_BOOST, noteNormalizeTargetDbfs, trackDict)
+		if not isSpokenCompiledLine(fooLine):
+			nextAudio = applyNoteNormalize(nextAudio, fooLine, foo_OCTAVE_BOOST, noteNormalizeTargetDbfs, trackDict)
 		phraseAudio = AudioSegment.silent(startTime + OUTPUT_LEAD_IN_MS, frame_rate=nextAudio.frame_rate).set_channels(nextAudio.channels).set_sample_width(4) + nextAudio
 		outputAudio = phraseAudio if outputAudio is None else phraseAudio.overlay(outputAudio)
 		# except:

@@ -9,8 +9,8 @@ import unittest
 ALIGNMENT_TOOLS = Path(__file__).resolve().parents[1] / "tools" / "lyric_sync_assistant"
 sys.path.insert(0, str(ALIGNMENT_TOOLS))
 
-from alignment import add_virtual_note_split, adjust_alignment_token_note_count, delete_alignment_token
-from pyFuncs.PhonemeProcessing import lyricsToPhonemes
+from alignment import add_virtual_note_split, adjust_alignment_token_note_count, delete_alignment_token, toggle_alignment_token_mode
+from pyFuncs.PhonemeProcessing import SPOKEN_WORD_MARKER, lyricsToPhonemes
 
 
 def _note(index: int) -> dict[str, int]:
@@ -174,6 +174,26 @@ class AlignmentNoteCountTests(unittest.TestCase):
 
         self.assertEqual(_counts(updated, 1), [3, 0, 1])
         self.assertEqual(_counts(updated, 2), [0, 2])
+
+    def test_normal_speech_mode_round_trips_through_alignment(self) -> None:
+        report = _report([[2, 1, 1], [2, 2]])
+
+        spoken, spoken_text = toggle_alignment_token_mode(report, self.text, 1, 2)
+        restored, restored_text = toggle_alignment_token_mode(spoken, spoken_text, 1, 2)
+
+        self.assertEqual(spoken_text, "2*one ~two three\n2*four 2*five\n")
+        self.assertEqual(spoken["token_counts"][1]["mode"], "speak")
+        self.assertEqual(restored_text, "2*one two three\n2*four 2*five\n")
+        self.assertEqual(restored["token_counts"][1]["mode"], "sing")
+
+    def test_counted_normal_speech_reaches_renderer_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            lyric_path = Path(directory) / "spoken.txt"
+            lyric_path.write_text("2*~hello ~world\n", encoding="utf-8")
+            phonemes = lyricsToPhonemes(str(lyric_path), printInfo=False)
+
+        self.assertEqual(phonemes[0], [SPOKEN_WORD_MARKER, 2, "hello"])
+        self.assertEqual(phonemes[1], [SPOKEN_WORD_MARKER, 1, "world"])
 
 
 if __name__ == "__main__":
