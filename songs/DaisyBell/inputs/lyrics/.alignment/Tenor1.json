@@ -1,0 +1,370 @@
+{
+  "virtual_splits": [],
+  "word_cues": [
+    {
+      "word": "`hxuw",
+      "start_ms": 364,
+      "end_ms": 710
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 727,
+      "end_ms": 1074
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 1455,
+      "end_ms": 1801
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 1818,
+      "end_ms": 2165
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 2545,
+      "end_ms": 2892
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 2909,
+      "end_ms": 3256
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 3636,
+      "end_ms": 3983
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 4000,
+      "end_ms": 4347
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 4727,
+      "end_ms": 5074
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 5091,
+      "end_ms": 5437
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 5818,
+      "end_ms": 6165
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 6182,
+      "end_ms": 6528
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 6545,
+      "end_ms": 7241
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 7273,
+      "end_ms": 7619
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 7636,
+      "end_ms": 8332
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 9091,
+      "end_ms": 9455
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 9455,
+      "end_ms": 9818
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 10182,
+      "end_ms": 10545
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 10545,
+      "end_ms": 10909
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 11273,
+      "end_ms": 11636
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 11636,
+      "end_ms": 11977
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 12364,
+      "end_ms": 12710
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 12727,
+      "end_ms": 13074
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 13455,
+      "end_ms": 13801
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 13818,
+      "end_ms": 14165
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 14545,
+      "end_ms": 14892
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 14909,
+      "end_ms": 15256
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 15636,
+      "end_ms": 15983
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 16000,
+      "end_ms": 16347
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 16727,
+      "end_ms": 17074
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 17091,
+      "end_ms": 17437
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 17818,
+      "end_ms": 18165
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 18182,
+      "end_ms": 18528
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 18909,
+      "end_ms": 19256
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 19273,
+      "end_ms": 19619
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 20000,
+      "end_ms": 20364
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 20364,
+      "end_ms": 20705
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 21091,
+      "end_ms": 21801
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 22182,
+      "end_ms": 22528
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 22545,
+      "end_ms": 22892
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 23273,
+      "end_ms": 23619
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 23636,
+      "end_ms": 23983
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 24364,
+      "end_ms": 24710
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 24727,
+      "end_ms": 25074
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 25455,
+      "end_ms": 25801
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 25818,
+      "end_ms": 26165
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 26545,
+      "end_ms": 26892
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 26909,
+      "end_ms": 27256
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 27636,
+      "end_ms": 27983
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 28000,
+      "end_ms": 28347
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 28727,
+      "end_ms": 29074
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 29091,
+      "end_ms": 29437
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 29818,
+      "end_ms": 30165
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 30182,
+      "end_ms": 30528
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 30909,
+      "end_ms": 31256
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 31273,
+      "end_ms": 31619
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 32000,
+      "end_ms": 32347
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 32364,
+      "end_ms": 32710
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 33091,
+      "end_ms": 33437
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 33455,
+      "end_ms": 33801
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 34182,
+      "end_ms": 34528
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 34545,
+      "end_ms": 34892
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 35273,
+      "end_ms": 35619
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 35636,
+      "end_ms": 35983
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 36000,
+      "end_ms": 36219
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 37455,
+      "end_ms": 37801
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 37818,
+      "end_ms": 38165
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 38182,
+      "end_ms": 38401
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 39636,
+      "end_ms": 39983
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 40000,
+      "end_ms": 40347
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 40727,
+      "end_ms": 41074
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 41091,
+      "end_ms": 41437
+    },
+    {
+      "word": "`hxuw",
+      "start_ms": 41455,
+      "end_ms": 42528
+    }
+  ]
+}

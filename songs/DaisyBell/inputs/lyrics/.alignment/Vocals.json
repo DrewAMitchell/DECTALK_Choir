@@ -1,0 +1,255 @@
+{
+  "virtual_splits": [],
+  "word_cues": [
+    {
+      "word": "Day",
+      "start_ms": 8727,
+      "end_ms": 9773
+    },
+    {
+      "word": "see",
+      "start_ms": 9818,
+      "end_ms": 10864
+    },
+    {
+      "word": "Day",
+      "start_ms": 10909,
+      "end_ms": 11955
+    },
+    {
+      "word": "see",
+      "start_ms": 12000,
+      "end_ms": 12696
+    },
+    {
+      "word": "Give",
+      "start_ms": 13091,
+      "end_ms": 13437
+    },
+    {
+      "word": "me",
+      "start_ms": 13455,
+      "end_ms": 13801
+    },
+    {
+      "word": "your",
+      "start_ms": 13818,
+      "end_ms": 14165
+    },
+    {
+      "word": "an",
+      "start_ms": 14182,
+      "end_ms": 14878
+    },
+    {
+      "word": "sir",
+      "start_ms": 14909,
+      "end_ms": 15256
+    },
+    {
+      "word": "true",
+      "start_ms": 15273,
+      "end_ms": 17060
+    },
+    {
+      "word": "I've",
+      "start_ms": 17455,
+      "end_ms": 18500
+    },
+    {
+      "word": "been",
+      "start_ms": 18545,
+      "end_ms": 19591
+    },
+    {
+      "word": "wait",
+      "start_ms": 19636,
+      "end_ms": 20682
+    },
+    {
+      "word": "ing",
+      "start_ms": 20727,
+      "end_ms": 21423
+    },
+    {
+      "word": "all",
+      "start_ms": 21818,
+      "end_ms": 22165
+    },
+    {
+      "word": "for",
+      "start_ms": 22182,
+      "end_ms": 22528
+    },
+    {
+      "word": "the",
+      "start_ms": 22545,
+      "end_ms": 22892
+    },
+    {
+      "word": "love",
+      "start_ms": 22909,
+      "end_ms": 23605
+    },
+    {
+      "word": "of",
+      "start_ms": 23636,
+      "end_ms": 23983
+    },
+    {
+      "word": "you",
+      "start_ms": 24000,
+      "end_ms": 25437
+    },
+    {
+      "word": "it",
+      "start_ms": 25818,
+      "end_ms": 26165
+    },
+    {
+      "word": "wont",
+      "start_ms": 26182,
+      "end_ms": 26528
+    },
+    {
+      "word": "be",
+      "start_ms": 26545,
+      "end_ms": 26892
+    },
+    {
+      "word": "a",
+      "start_ms": 26909,
+      "end_ms": 27256
+    },
+    {
+      "word": "style",
+      "start_ms": 27273,
+      "end_ms": 27969
+    },
+    {
+      "word": "ish",
+      "start_ms": 28000,
+      "end_ms": 28347
+    },
+    {
+      "word": "mare",
+      "start_ms": 28364,
+      "end_ms": 28727
+    },
+    {
+      "word": "edge",
+      "start_ms": 28727,
+      "end_ms": 30151
+    },
+    {
+      "word": "i",
+      "start_ms": 30182,
+      "end_ms": 30528
+    },
+    {
+      "word": "cant",
+      "start_ms": 30545,
+      "end_ms": 31241
+    },
+    {
+      "word": "uh",
+      "start_ms": 31273,
+      "end_ms": 31619
+    },
+    {
+      "word": "ford",
+      "start_ms": 31636,
+      "end_ms": 32332
+    },
+    {
+      "word": "a",
+      "start_ms": 32364,
+      "end_ms": 32710
+    },
+    {
+      "word": "care",
+      "start_ms": 32727,
+      "end_ms": 33074
+    },
+    {
+      "word": "edge",
+      "start_ms": 33091,
+      "end_ms": 34165
+    },
+    {
+      "word": "but",
+      "start_ms": 34545,
+      "end_ms": 34892
+    },
+    {
+      "word": "you'd",
+      "start_ms": 34909,
+      "end_ms": 35605
+    },
+    {
+      "word": "look",
+      "start_ms": 35636,
+      "end_ms": 35983
+    },
+    {
+      "word": "sweet",
+      "start_ms": 36000,
+      "end_ms": 36401
+    },
+    {
+      "word": "on",
+      "start_ms": 37091,
+      "end_ms": 37787
+    },
+    {
+      "word": "the",
+      "start_ms": 37818,
+      "end_ms": 38165
+    },
+    {
+      "word": "seat",
+      "start_ms": 38182,
+      "end_ms": 38401
+    },
+    {
+      "word": "of",
+      "start_ms": 38909,
+      "end_ms": 39082
+    },
+    {
+      "word": "`/ax",
+      "start_ms": 39091,
+      "end_ms": 39264
+    },
+    {
+      "word": "`bay",
+      "start_ms": 39273,
+      "end_ms": 39619
+    },
+    {
+      "word": "`sihk",
+      "start_ms": 39636,
+      "end_ms": 39983
+    },
+    {
+      "word": "`kahl",
+      "start_ms": 40000,
+      "end_ms": 40347
+    },
+    {
+      "word": "built",
+      "start_ms": 40364,
+      "end_ms": 41060
+    },
+    {
+      "word": "for",
+      "start_ms": 41091,
+      "end_ms": 41437
+    },
+    {
+      "word": "two",
+      "start_ms": 41455,
+      "end_ms": 42514
+    }
+  ]
+}

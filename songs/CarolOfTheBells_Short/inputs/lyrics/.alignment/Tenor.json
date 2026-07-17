@@ -1,0 +1,350 @@
+{
+  "virtual_splits": [],
+  "word_cues": [
+    {
+      "word": "ding",
+      "start_ms": 10286,
+      "end_ms": 11561
+    },
+    {
+      "word": "dong",
+      "start_ms": 11571,
+      "end_ms": 12847
+    },
+    {
+      "word": "ding",
+      "start_ms": 12857,
+      "end_ms": 14133
+    },
+    {
+      "word": "dong",
+      "start_ms": 14143,
+      "end_ms": 15419
+    },
+    {
+      "word": "one",
+      "start_ms": 15429,
+      "end_ms": 15847
+    },
+    {
+      "word": "seems",
+      "start_ms": 15857,
+      "end_ms": 15954
+    },
+    {
+      "word": "to",
+      "start_ms": 16071,
+      "end_ms": 16169
+    },
+    {
+      "word": "hear",
+      "start_ms": 16286,
+      "end_ms": 16490
+    },
+    {
+      "word": "words",
+      "start_ms": 16714,
+      "end_ms": 17133
+    },
+    {
+      "word": "of",
+      "start_ms": 17143,
+      "end_ms": 17240
+    },
+    {
+      "word": "good",
+      "start_ms": 17357,
+      "end_ms": 17454
+    },
+    {
+      "word": "cheer",
+      "start_ms": 17571,
+      "end_ms": 17776
+    },
+    {
+      "word": "from",
+      "start_ms": 18000,
+      "end_ms": 18419
+    },
+    {
+      "word": "every",
+      "start_ms": 18429,
+      "end_ms": 18847
+    },
+    {
+      "word": "where",
+      "start_ms": 18857,
+      "end_ms": 19276
+    },
+    {
+      "word": "filling",
+      "start_ms": 19286,
+      "end_ms": 19919
+    },
+    {
+      "word": "the",
+      "start_ms": 19929,
+      "end_ms": 20133
+    },
+    {
+      "word": "air",
+      "start_ms": 20143,
+      "end_ms": 20561
+    },
+    {
+      "word": "O",
+      "start_ms": 20571,
+      "end_ms": 21847
+    },
+    {
+      "word": "how",
+      "start_ms": 21857,
+      "end_ms": 23133
+    },
+    {
+      "word": "happy",
+      "start_ms": 23143,
+      "end_ms": 23990
+    },
+    {
+      "word": "are",
+      "start_ms": 24000,
+      "end_ms": 24419
+    },
+    {
+      "word": "there",
+      "start_ms": 24429,
+      "end_ms": 24633
+    },
+    {
+      "word": "tones",
+      "start_ms": 24643,
+      "end_ms": 24847
+    },
+    {
+      "word": "gay",
+      "start_ms": 24857,
+      "end_ms": 25276
+    },
+    {
+      "word": "lee",
+      "start_ms": 25286,
+      "end_ms": 25704
+    },
+    {
+      "word": "they",
+      "start_ms": 25714,
+      "end_ms": 26347
+    },
+    {
+      "word": "ring",
+      "start_ms": 26357,
+      "end_ms": 26776
+    },
+    {
+      "word": "while",
+      "start_ms": 26786,
+      "end_ms": 26990
+    },
+    {
+      "word": "people",
+      "start_ms": 27000,
+      "end_ms": 27633
+    },
+    {
+      "word": "sing",
+      "start_ms": 27643,
+      "end_ms": 28276
+    },
+    {
+      "word": "songs",
+      "start_ms": 28286,
+      "end_ms": 28704
+    },
+    {
+      "word": "of",
+      "start_ms": 28714,
+      "end_ms": 28918
+    },
+    {
+      "word": "good",
+      "start_ms": 28929,
+      "end_ms": 29133
+    },
+    {
+      "word": "cheer",
+      "start_ms": 29143,
+      "end_ms": 29561
+    },
+    {
+      "word": "christmas",
+      "start_ms": 29571,
+      "end_ms": 30204
+    },
+    {
+      "word": "is",
+      "start_ms": 30214,
+      "end_ms": 30418
+    },
+    {
+      "word": "here",
+      "start_ms": 30429,
+      "end_ms": 30847
+    },
+    {
+      "word": "ding",
+      "start_ms": 30857,
+      "end_ms": 31276
+    },
+    {
+      "word": "dong",
+      "start_ms": 31286,
+      "end_ms": 31490
+    },
+    {
+      "word": "ding",
+      "start_ms": 31500,
+      "end_ms": 31704
+    },
+    {
+      "word": "dong",
+      "start_ms": 31714,
+      "end_ms": 32133
+    },
+    {
+      "word": "that",
+      "start_ms": 32143,
+      "end_ms": 32561
+    },
+    {
+      "word": "is",
+      "start_ms": 32571,
+      "end_ms": 32776
+    },
+    {
+      "word": "their",
+      "start_ms": 32786,
+      "end_ms": 32990
+    },
+    {
+      "word": "song",
+      "start_ms": 33000,
+      "end_ms": 33418
+    },
+    {
+      "word": "with",
+      "start_ms": 33429,
+      "end_ms": 33847
+    },
+    {
+      "word": "joyful",
+      "start_ms": 33857,
+      "end_ms": 34276
+    },
+    {
+      "word": "ring",
+      "start_ms": 34286,
+      "end_ms": 34704
+    },
+    {
+      "word": "all",
+      "start_ms": 34714,
+      "end_ms": 35133
+    },
+    {
+      "word": "carrol",
+      "start_ms": 35143,
+      "end_ms": 35561
+    },
+    {
+      "word": "ling",
+      "start_ms": 35571,
+      "end_ms": 35990
+    },
+    {
+      "word": "ding",
+      "start_ms": 36000,
+      "end_ms": 37276
+    },
+    {
+      "word": "dong",
+      "start_ms": 37286,
+      "end_ms": 38561
+    },
+    {
+      "word": "ding",
+      "start_ms": 38571,
+      "end_ms": 39847
+    },
+    {
+      "word": "ding",
+      "start_ms": 39857,
+      "end_ms": 41133
+    },
+    {
+      "word": "on",
+      "start_ms": 41143,
+      "end_ms": 41561
+    },
+    {
+      "word": "on",
+      "start_ms": 41571,
+      "end_ms": 41776
+    },
+    {
+      "word": "they",
+      "start_ms": 41786,
+      "end_ms": 41990
+    },
+    {
+      "word": "send",
+      "start_ms": 42000,
+      "end_ms": 42418
+    },
+    {
+      "word": "on",
+      "start_ms": 42429,
+      "end_ms": 42847
+    },
+    {
+      "word": "without",
+      "start_ms": 42857,
+      "end_ms": 43276
+    },
+    {
+      "word": "end",
+      "start_ms": 43286,
+      "end_ms": 43704
+    },
+    {
+      "word": "their",
+      "start_ms": 43714,
+      "end_ms": 44133
+    },
+    {
+      "word": "joyful",
+      "start_ms": 44143,
+      "end_ms": 44561
+    },
+    {
+      "word": "tone",
+      "start_ms": 44571,
+      "end_ms": 44990
+    },
+    {
+      "word": "to",
+      "start_ms": 45000,
+      "end_ms": 45418
+    },
+    {
+      "word": "every",
+      "start_ms": 45429,
+      "end_ms": 45633
+    },
+    {
+      "word": "home",
+      "start_ms": 45643,
+      "end_ms": 46276
+    }
+  ]
+}
