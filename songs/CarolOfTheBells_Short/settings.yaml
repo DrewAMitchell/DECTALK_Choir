@@ -36,13 +36,17 @@ Tracks:
       COLOR_HSB: [328, 70, 97]
       POSITION: [0.5, 0, 0]
       LABEL: "Soprano"
-      LABEL_ENABLED: false
+      LABEL_ENABLED: true
       LABEL_POSITION: "top-left"
-      LABEL_SHOW_VOICE: false
-      LABEL_SHOW_HEAD_SIZE: false
-      CURRENT_WORD_ENABLED: false
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
       CURRENT_WORD_POSITION: "bottom-center"
-
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: false
   Alto:
     DEC_SETUP: "[:nk][:dv hs 100]"
     VOLUME_ADJUST_DB: -2
@@ -64,12 +68,17 @@ Tracks:
       COLOR_HSB: [154, 27, 79]
       POSITION: [0.5, 0.5, 0]
       LABEL: "Alto"
-      LABEL_ENABLED: false
+      LABEL_ENABLED: true
       LABEL_POSITION: "top-left"
-      LABEL_SHOW_VOICE: false
-      LABEL_SHOW_HEAD_SIZE: false
-      CURRENT_WORD_ENABLED: false
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
       CURRENT_WORD_POSITION: "bottom-center"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: false
 
   Tenor:
     DEC_SETUP: "[:np][:dv hs 110]"
@@ -92,12 +101,17 @@ Tracks:
       COLOR_HSB: [210, 49, 100]
       POSITION: [0.5, 0, 0.5]
       LABEL: "Tenor"
-      LABEL_ENABLED: false
+      LABEL_ENABLED: true
       LABEL_POSITION: "top-left"
-      LABEL_SHOW_VOICE: false
-      LABEL_SHOW_HEAD_SIZE: false
-      CURRENT_WORD_ENABLED: false
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
       CURRENT_WORD_POSITION: "bottom-center"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: false
 
   Bass:
     DEC_SETUP: "[:np][:dv hs 130]"
@@ -119,9 +133,14 @@ Tracks:
       COLOR_HSB: [258, 33, 47]
       POSITION: [0.5, 0.5, 0.5]
       LABEL: "Bass"
-      LABEL_ENABLED: false
+      LABEL_ENABLED: true
       LABEL_POSITION: "top-left"
-      LABEL_SHOW_VOICE: false
-      LABEL_SHOW_HEAD_SIZE: false
-      CURRENT_WORD_ENABLED: false
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
       CURRENT_WORD_POSITION: "bottom-center"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: false

@@ -28,9 +28,22 @@ songs/*
 !songs/AuldLangSyne*
 !songs/DaisyBell*
 !songs/OctaveBoostReference*
+!songs/HeadSizePitchReference*
 
 # Generated artifacts remain co-located with each song but are never source.
 songs/*/outputs/
+!songs/HeadSizePitchReference/outputs/
+songs/HeadSizePitchReference/outputs/*
+!songs/HeadSizePitchReference/outputs/_finished/
+!songs/HeadSizePitchReference/outputs/_finished/*.wav
+!songs/HeadSizePitchReference/outputs/_tracks/
+!songs/HeadSizePitchReference/outputs/_tracks/*.wav
+!songs/OctaveBoostReference/outputs/
+songs/OctaveBoostReference/outputs/*
+!songs/OctaveBoostReference/outputs/_finished/
+!songs/OctaveBoostReference/outputs/_finished/*.wav
+!songs/OctaveBoostReference/outputs/_tracks/
+!songs/OctaveBoostReference/outputs/_tracks/*.wav
 songs/*/inputs/lyrics/*.raw.txt
 songs/*/inputs/lyrics/*.original.txt
 songs/*/inputs/lyrics/*.before-alignment.txt
