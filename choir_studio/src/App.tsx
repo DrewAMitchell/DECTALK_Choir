@@ -39,7 +39,8 @@ const storedUiState = readStoredUiState();
 type ReviewSegment = { line: number; word_index: number; word: string; note_count: number; start_ms: number; end_ms: number; largest_internal_gap_ms: number };
 type DraftState = { text: string; path: string; warnings: string[]; review_segments: ReviewSegment[]; tight_gap_ms: number };
 type TranscriptState = { text: string };
-type CandidateState = { exists: boolean; text?: string; path?: string; report?: AlignmentReport };
+type AlignmentState = { report: AlignmentReport; text: string; source_in_sync?: boolean };
+type CandidateState = { exists: boolean; text?: string; path?: string; report?: AlignmentReport; source_in_sync?: boolean };
 type AlignmentWorkspace = { candidate: CandidateState; templates: AlignmentTemplate[] };
 type NoteSkeleton = { text: string; note_count: number };
 type AlignmentTemplate = { role: string; path: string };
@@ -174,7 +175,7 @@ export default function App() {
   const [validation, setValidation] = useState<{ invalid_words: string[]; normalized_lines: string[]; ok: boolean } | null>(null);
   const [draftState, setDraftState] = useState<DraftState | null>(null);
   const [draftRole, setDraftRole] = useState("");
-  const [alignment, setAlignment] = useState<{ report: AlignmentReport; text: string } | null>(null);
+  const [alignment, setAlignment] = useState<AlignmentState | null>(null);
   const [alignmentRole, setAlignmentRole] = useState("");
   const [lyricsPrompt, setLyricsPrompt] = useState("");
   const [templateSources, setTemplateSources] = useState<AlignmentTemplate[]>([]);
@@ -254,7 +255,7 @@ export default function App() {
           return;
         }
         setDraftState({ text: candidate.text, path: candidate.path, warnings: [], review_segments: [], tight_gap_ms: 0 });
-        setDraftRole(roleName); setAlignment({ text: candidate.text, report: candidate.report }); setAlignmentRole(roleName); setSelectedPhrase(firstPhraseLine(candidate.report));
+        setDraftRole(roleName); setAlignment({ text: candidate.text, report: candidate.report, source_in_sync: candidate.source_in_sync }); setAlignmentRole(roleName); setSelectedPhrase(firstPhraseLine(candidate.report));
         setAlignmentLoading(false);
       });
     }).catch((cause) => { if (!cancelled && requestId === alignmentRequestRef.current) { setTemplateSources([]); setAlignmentLoading(false); setError(String(cause)); } });
@@ -283,7 +284,7 @@ export default function App() {
     try {
       const draft = await bridge<DraftState>({ command: "draft", song, role: roleName, text: transcript, auto_lines: false });
       setDraftState(draft); setDraftRole(roleName); setTranscript(draft.text); setSavedTranscript(draft.text); setLyricsPrompt("");
-      const pending = await bridge<{ report: AlignmentReport; text: string; path: string }>({ command: "align", song, role: roleName });
+      const pending = await bridge<AlignmentState & { path: string }>({ command: "align", song, role: roleName });
       setDraftState({ ...draft, text: pending.text, path: pending.path }); setTranscript(pending.text); setSavedTranscript(pending.text); setAlignment(pending); setAlignmentRole(roleName); setSelectedPhrase(firstPhraseLine(pending.report)); setLyricsModalOpen(false); setStage("align");
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
@@ -327,7 +328,7 @@ export default function App() {
     invalidateAlignmentLoad();
     setBusy(`Copying ${sourceRole} alignment`); setError("");
     try {
-      const result = await bridge<{ report: AlignmentReport; text: string; path: string }>({ command: "copy_alignment_template", song, role: roleName, source_role: sourceRole });
+      const result = await bridge<AlignmentState & { path: string }>({ command: "copy_alignment_template", song, role: roleName, source_role: sourceRole });
       setDraftState({ text: result.text, path: result.path, warnings: [], review_segments: [], tight_gap_ms: 0 }); setDraftRole(roleName);
       setAlignment(result); setAlignmentRole(roleName); setSelectedPhrase(firstPhraseLine(result.report)); setStage("align");
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
@@ -484,7 +485,7 @@ function LyricsTipBoard() {
   </aside>;
 }
 
-function AlignStage({ role, inspection, song, alignment, loading, templateSources, onAdoptTemplate, onOpenLyrics, setAlignment, selectedPhrase, setSelectedPhrase, busy, setBusy, setError }: { role: Role | null; inspection: SongInspection | null; song: string; alignment: { report: AlignmentReport; text: string } | null; loading: boolean; templateSources: AlignmentTemplate[]; onAdoptTemplate(sourceRole: string): void; onOpenLyrics(): void; setAlignment(value: { report: AlignmentReport; text: string } | null): void; selectedPhrase: number | null; setSelectedPhrase(value: number): void; busy: string; setBusy(value: string): void; setError(value: string): void }) {
+function AlignStage({ role, inspection, song, alignment, loading, templateSources, onAdoptTemplate, onOpenLyrics, setAlignment, selectedPhrase, setSelectedPhrase, busy, setBusy, setError }: { role: Role | null; inspection: SongInspection | null; song: string; alignment: AlignmentState | null; loading: boolean; templateSources: AlignmentTemplate[]; onAdoptTemplate(sourceRole: string): void; onOpenLyrics(): void; setAlignment(value: AlignmentState | null): void; selectedPhrase: number | null; setSelectedPhrase(value: number): void; busy: string; setBusy(value: string): void; setError(value: string): void }) {
   const [selectedWord, setSelectedWord] = useState<{ line: number; wordIndex: number } | null>(null);
   const [insertWord, setInsertWord] = useState("");
   const [insertOpen, setInsertOpen] = useState(false);
@@ -492,13 +493,14 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
   const [showAllWords, setShowAllWords] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [applyArmed, setApplyArmed] = useState(false);
-  const [applied, setApplied] = useState<{ path: string; backup_path: string | null } | null>(null);
+  const [applied, setApplied] = useState<{ backupCreated: boolean } | null>(null);
   const [templateRole, setTemplateRole] = useState("");
   const [cursorMs, setCursorMs] = useState(0);
   const [mediaState, setMediaState] = useState<MediaStatus | null>(null);
   const [mediaLabel, setMediaLabel] = useState("Preview this role while you align its lyrics.");
   const active = Boolean(mediaState && !["stopped", "not ready"].includes(mediaState.mode));
   const missingNoteWords = Number(alignment?.report.summary.zero_note_tokens ?? 0);
+  const sourceInSync = alignment?.source_in_sync === true;
   const invalidPhraseLines = alignment?.report.token_counts?.filter((item) => item.note_count === 0).map((item) => item.line) ?? [];
   const phraseEntries = alignment?.report.notes.filter((entry) => entry.line === selectedPhrase) ?? [];
   const wordDurations = new Map<string, number>();
@@ -618,8 +620,8 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
     if (!alignment || !role) return;
     setBusy("Applying aligned lyrics"); setError("");
     try {
-      const result = await bridge<{ path: string; backup_path: string | null }>({ command: "apply_alignment", song, role: role.role, text: alignment.text });
-      setApplied(result); setApplyArmed(false);
+      const result = await bridge<{ backup_path: string | null; source_in_sync: boolean }>({ command: "apply_alignment", song, role: role.role, text: alignment.text });
+      setAlignment({ ...alignment, source_in_sync: result.source_in_sync }); setApplied({ backupCreated: Boolean(result.backup_path) }); setApplyArmed(false);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
   const selectedWordPosition = words.findIndex((item) => item.line === selectedWord?.line && item.word_index === selectedWord?.wordIndex);
@@ -646,10 +648,10 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
   return (
     <section className="align-workspace">
       {applyArmed && alignment && <section className="apply-confirm"><div><strong>Replace configured lyric input?</strong><span>`choir.py` will use this alignment on the next render. A backup is created beside the lyric file.</span></div><button className="secondary" onClick={() => setApplyArmed(false)} disabled={!!busy}>Cancel</button><button className="primary" onClick={() => void apply()} disabled={!!busy}>Apply alignment</button></section>}
-      {applied && <div className="notice alignment-applied"><CircleAlert size={17} /><div><strong>Configured lyric input updated.</strong> {applied.path}{applied.backup_path && <> Backup: {applied.backup_path}</>}</div></div>}
+      {applied && sourceInSync && <div className="notice alignment-applied"><CircleCheck size={17} /><div><strong>Track lyrics are synchronized.</strong>{applied.backupCreated && <> The original source was preserved once as a backup.</>}</div></div>}
       <section className="midi-transport align-transport">
         <div className="transport-group"><button className="primary" onClick={() => void playMidi()} disabled={!role?.midi_track}><Play size={15} /> Play MIDI</button><button className="secondary icon-command" title={mediaState?.paused ? "Resume preview" : "Pause preview"} onClick={() => void togglePause()} disabled={!active}>{mediaState?.paused ? <Play size={15} /> : <Pause size={15} />}</button><button className="secondary icon-command" title="Stop playback" onClick={() => void stop()} disabled={!mediaState}><Square size={14} /></button><button className="secondary align-lyrics-command" type="button" title="Edit the working lyric draft without leaving Align" onClick={onOpenLyrics}><PenLine size={15} /> Edit track lyrics</button><span>{mediaLabel}</span></div>
-        <div className="transport-group align-actions"><span className={missingNoteWords ? "save-state dirty" : "save-state"}>{loading ? "Loading alignment..." : alignment?.report.template?.source_role ? `Template: ${alignment.report.template.source_role}` : alignment ? missingNoteWords ? `${missingNoteWords} word${missingNoteWords === 1 ? "" : "s"} need a note` : "Pending source update" : "Not drafted"}</span>{templateSources.length > 0 && <label className="template-picker" title="Copy a saved same-lyrics alignment and remap it to this track by time"><select value={templateRole} onChange={(event) => setTemplateRole(event.target.value)}><option value="">Aligned template</option>{templateSources.map((source) => <option key={source.role} value={source.role}>{source.role}</option>)}</select><button type="button" className="secondary" onClick={() => onAdoptTemplate(templateRole)} disabled={!!busy || !templateRole}>Use</button></label>}{alignment && <button className="secondary" title={missingNoteWords ? "Resolve words without MIDI notes before applying" : "Validate and replace the configured lyric input used by choir.py"} onClick={() => setApplyArmed(true)} disabled={!!busy || missingNoteWords > 0}>Apply to source</button>}</div>
+        <div className="transport-group align-actions"><span className={missingNoteWords ? "save-state dirty" : "save-state"}>{loading ? "Loading alignment..." : alignment ? missingNoteWords ? `${missingNoteWords} word${missingNoteWords === 1 ? "" : "s"} need a note` : sourceInSync ? "Source in sync" : alignment.report.template?.source_role ? `Template: ${alignment.report.template.source_role}` : "Pending source update" : "Not drafted"}</span>{templateSources.length > 0 && <label className="template-picker" title="Copy a saved same-lyrics alignment and remap it to this track by time"><select value={templateRole} onChange={(event) => setTemplateRole(event.target.value)}><option value="">Aligned template</option>{templateSources.map((source) => <option key={source.role} value={source.role}>{source.role}</option>)}</select><button type="button" className="secondary" onClick={() => onAdoptTemplate(templateRole)} disabled={!!busy || !templateRole}>Use</button></label>}{alignment && <button className="secondary" title={sourceInSync ? "The configured lyric source already matches this alignment" : missingNoteWords ? "Resolve words without MIDI notes before applying" : "Validate and replace the configured lyric input used by choir.py"} onClick={() => setApplyArmed(true)} disabled={!!busy || missingNoteWords > 0 || sourceInSync}>Apply to source</button>}</div>
       </section>
       <div className="align-roll-shell">{overlay && <div className="align-phrase-toolbar">{overlay}</div>}<PianoRoll track={role?.midi_track ?? null} durationSeconds={inspection?.midi?.duration_seconds ?? 0} durationTicks={inspection?.midi?.duration_ticks} alignment={alignment?.report.notes} virtualSplits={alignment?.report.virtual_splits} selectedPhrase={selectedPhrase} selectedWord={selectedWord} invalidPhraseLines={invalidPhraseLines} playheadMs={active ? mediaState?.position_ms : null} playbackPaused={Boolean(mediaState?.paused)} onCursorChange={(milliseconds) => void seek(milliseconds)} onSelectPhrase={(line) => { setSelectedPhrase(line); setSelectedWord(null); setShowAllWords(false); }} onPlaybackPhraseChange={(line) => { setSelectedPhrase(line); setSelectedWord(null); setShowAllWords(false); }} onSelectWord={(line, wordIndex) => { setSelectedPhrase(line); setSelectedWord({ line, wordIndex }); setShowAllWords(wordIndex >= 10); }} onResizeWord={(edge, movement) => void adjust(edge, movement)} onResizePhrase={(edge, movement) => void adjustPhrase(edge, movement)} onAddVirtualSplit={(noteIndex, fraction) => void addVirtualSplit(noteIndex, fraction)} />{loading && <div className="align-loading" role="status" aria-live="polite"><LoaderCircle size={17} /><span>Loading alignment and phrase map...</span></div>}</div>
     </section>
@@ -675,6 +677,18 @@ function parseSpectrogramStageTimings(log: string | undefined): SpectrogramStage
     if (Number.isFinite(seconds)) timings.set(match[1], { stage: match[1], seconds, details: match[3] ?? "" });
   }
   return [...timings.values()];
+}
+
+function parseActiveSpectrogramStage(log: string | undefined): string | null {
+  if (!log) return null;
+  let active: string | null = null;
+  for (const line of log.split(/\r?\n/)) {
+    const started = line.match(/^PROGRESS stage=([a-z_]+) state=started$/);
+    if (started) active = started[1];
+    const completed = line.match(/^TIMING stage=([a-z_]+) seconds=/);
+    if (completed?.[1] === active) active = null;
+  }
+  return active;
 }
 
 function formatStageDuration(seconds: number) {
@@ -733,6 +747,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const visualSaveTimers = useRef(new Map<string, number>());
   const visualSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const [job, setJob] = useState<SpectrogramJobStatus | null>(null);
+  const [spectrogramStageClock, setSpectrogramStageClock] = useState({ stage: "", startedAt: 0, now: 0 });
   const [renderJob, setRenderJob] = useState<RenderJobStatus | null>(null);
   const [tuning, setTuning] = useState<TrackTuning | null>(null);
   const [autoNormalize, setAutoNormalize] = useState<AutoNormalizeTuning | null>(null);
@@ -926,6 +941,21 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     }, 750);
     return () => window.clearInterval(timer);
   }, [job?.state, setError]);
+  const activeSpectrogramStage = job?.state === "running" ? parseActiveSpectrogramStage(job.log) : null;
+  useEffect(() => {
+    if (!activeSpectrogramStage) {
+      setSpectrogramStageClock({ stage: "", startedAt: 0, now: 0 });
+      return;
+    }
+    setSpectrogramStageClock((current) => current.stage === activeSpectrogramStage
+      ? current
+      : { stage: activeSpectrogramStage, startedAt: performance.now(), now: performance.now() });
+  }, [activeSpectrogramStage]);
+  useEffect(() => {
+    if (!activeSpectrogramStage) return;
+    const timer = window.setInterval(() => setSpectrogramStageClock((current) => ({ ...current, now: performance.now() })), 250);
+    return () => window.clearInterval(timer);
+  }, [activeSpectrogramStage]);
   useEffect(() => {
     if (renderJob?.state !== "running") return;
     const timer = window.setInterval(() => {
@@ -1020,14 +1050,16 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const renderStatusMessage = renderJob?.message ?? "Settings are saved in settings.yaml";
   const renderStatusIcon = renderState === "completed" ? <CircleCheck size={17} /> : renderState === "failed" ? <CircleAlert size={17} /> : renderState === "running" ? <LoaderCircle size={17} /> : <FileAudio size={17} />;
   const spectrogramTimings = parseSpectrogramStageTimings(job?.log);
-  const spectrogramTotal = spectrogramTimings.find((timing) => timing.stage === "total");
   const spectrogramStageLabels: Record<string, string> = { setup: "Setup", parallel_tracks: "Track clips", composition: "Composite", cleanup: "Cleanup", total: "Total" };
+  const activeSpectrogramElapsed = spectrogramStageClock.stage === activeSpectrogramStage
+    ? Math.max(0, (spectrogramStageClock.now - spectrogramStageClock.startedAt) / 1000)
+    : 0;
   return <section className={`review-stage ${panel}-panel`}>
     <header className="surface-header review-header"><div className="review-identity"><p className="eyebrow">Output review</p><h1>{song || "Select a song"}<span>{role?.role ?? "Select a role"}</span></h1><p>Enable renderable tracks in the table; tune an individual role from its cog.</p></div><section className={`review-render ${renderState}`} aria-label="Render selected tracks"><div className="render-status"><div className="render-status-state">{renderStatusIcon}<span>{renderStatusLabel}</span></div><strong>{enabledRoles.length} tracks enabled</strong><span className="render-status-message" title={renderStatusMessage}>{renderStatusMessage}</span></div><div className="review-render-actions"><button className="primary" type="button" onClick={() => void render()} disabled={renderState === "running" || !enabledRoles.length}>{renderState === "running" ? "Rendering in background..." : <><FileAudio size={16} /> Render enabled tracks <span className="render-duration">{formatDuration(inspection?.midi?.duration_seconds)}</span></>}</button><button className="secondary spectrogram-layout-command" type="button" onClick={() => { const initialRole = enabledVisualRoles.some((item) => item.role === visualRoleName) ? visualRoleName : enabledVisualRoles[0]?.role ?? ""; setVisualRoleName(initialRole); setPanel("visuals"); }} disabled={!hasFinishedRender || !enabledVisualRoles.length}><BarChart3 size={15} /> Spectrogram layout</button></div></section></header>
     {panel !== "overview" && <nav className="review-panel-nav" aria-label="Render audio workspace">
       <button className="secondary review-panel-back" type="button" onClick={() => setPanel("overview")}><ArrowLeft size={15} /><BarChart3 size={15} /> Output overview</button>
       {panel === "tune" && <span>Editing {role?.role ?? "the selected role"} tuning profile</span>}
-      {panel === "visuals" && <><span>{enabledVisualRoles.length} enabled render region{enabledVisualRoles.length === 1 ? "" : "s"}. Select regions directly on the canvas.</span>{job && job.state !== "idle" && <div className={`spectrogram-job-status ${job.state}`} role="status" aria-live="polite" title={job.message}>{job.state === "completed" ? <CircleCheck size={15} /> : job.state === "failed" ? <CircleAlert size={15} /> : <LoaderCircle size={15} />}<strong>{job.state === "completed" ? "Video complete" : job.state === "failed" ? "Video failed" : "Generating video"}{spectrogramTotal ? ` · ${formatStageDuration(spectrogramTotal.seconds)}` : ""}</strong></div>}<div className="visual-header-actions"><button className="primary" type="button" onClick={() => void generate()} disabled={!!busy || visualSaving || !enabledRoles.length || job?.state === "running"}>{job?.state === "running" ? "Generating video..." : <><BarChart3 size={16} /> Generate spectrograms</>}</button><button className="secondary" type="button" onClick={() => void openMedia(inspection!.animation_path!)} disabled={!!busy || !inspection?.animation_exists || !inspection.animation_path}><Play size={15} /> Open video</button></div></>}
+      {panel === "visuals" && <><span>{enabledVisualRoles.length} enabled render region{enabledVisualRoles.length === 1 ? "" : "s"}. Select regions directly on the canvas.</span><div className="visual-header-actions"><div className="spectrogram-stage-progress" role="status" aria-live="polite">{spectrogramTimings.map((timing) => <span key={timing.stage} className={timing.stage === "total" ? "total" : "complete"} title={timing.details || undefined}><small>{spectrogramStageLabels[timing.stage] ?? timing.stage.replace(/_/g, " ")}</small>{formatStageDuration(timing.seconds)}</span>)}{activeSpectrogramStage && <span className="running"><LoaderCircle size={12} /><small>{spectrogramStageLabels[activeSpectrogramStage] ?? activeSpectrogramStage.replace(/_/g, " ")}</small>{formatStageDuration(activeSpectrogramElapsed)}</span>}</div><button className="primary" type="button" onClick={() => void generate()} disabled={!!busy || visualSaving || !enabledRoles.length || job?.state === "running"}>{job?.state === "running" ? "Generating video..." : <><BarChart3 size={16} /> Generate spectrograms</>}</button><button className="secondary" type="button" onClick={() => void openMedia(inspection!.animation_path!)} disabled={!!busy || !inspection?.animation_exists || !inspection.animation_path}><Play size={15} /> Open video</button></div></>}
     </nav>}
     {panel === "tune" && <button className="tuning-modal-backdrop" type="button" onClick={() => setPanel("overview")} aria-label="Close track tuning" />}
     <section className="range-legend" aria-label="Register color legend"><strong>Register color</strong><span className="range-legend-blue">C2 low</span><span className="range-legend-green">C3 mid</span><span className="range-legend-yellow">C4 mid-high</span><span className="range-legend-orange">C5 weak</span><span className="range-legend-red">C6+ weakest</span></section>
@@ -1098,7 +1130,6 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
         <div className="visual-save-state" role="status" aria-live="polite">{visualSaving || visualDirtyRoles.length ? <><LoaderCircle size={14} /> Saving layout...</> : <><CircleCheck size={14} /> Layout saved automatically</>}</div>
       </div>
     </section>
-    {job && job.state !== "idle" && <section className="spectrogram-timing-summary" aria-label="Spectrogram render stage durations" aria-live="polite"><strong>Stage duration</strong><div>{spectrogramTimings.length ? spectrogramTimings.map((timing) => <span key={timing.stage} className={timing.stage === "total" ? "total" : ""} title={timing.details || undefined}><small>{spectrogramStageLabels[timing.stage] ?? timing.stage.replace(/_/g, " ")}</small>{formatStageDuration(timing.seconds)}</span>) : <span className="pending"><LoaderCircle size={13} /><small>Waiting for renderer timing...</small></span>}</div></section>}
-    {job && job.state !== "idle" && <details className="generated review-log" open={job.state !== "completed"}><summary>{job.message} <span>{job.state === "running" ? "background job" : `exit ${job.returncode ?? "--"}`} · timing and process log</span></summary><pre>{job.log || "The generator is still running; live timing and process output will appear here."}</pre></details>}
+    {job && job.state !== "idle" && <details className="generated review-log spectrogram-log" open><summary>{job.message} <span>{job.state === "running" ? "background job" : `exit ${job.returncode ?? "--"}`} - process log</span></summary><pre>{job.log || "The generator is starting; live process output will appear here."}</pre></details>}
   </section>;
 }

@@ -401,6 +401,7 @@ def _compose_clips(clips, output_path, audio_path, video_dims, frames_per_second
 
 def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 1440), freqRange=(100, 5000), divisionFactor=500, framesPerSecond=30, barCount=100, back_color=(0, 0, 0), barGapFrac=0.5):
     total_started = perf_counter()
+    print("PROGRESS stage=setup state=started", flush=True)
     del divisionFactor
     song_output_dir = _output_song_dir(songTitle)
     tracks_dir = song_output_dir / "_tracks"
@@ -454,6 +455,7 @@ def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 144
     print(f"TIMING stage=setup seconds={setup_seconds:.3f}", flush=True)
 
     worker_count = min(len(payloads), max(1, min(4, os.cpu_count() or 1)))
+    print("PROGRESS stage=parallel_tracks state=started", flush=True)
     print(f"Rendering {len(payloads)} lossless track clips across {worker_count} workers", flush=True)
     parallel_started = perf_counter()
     clips_by_track = {}
@@ -485,10 +487,12 @@ def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 144
 
     clips = [clips_by_track[track_name] for track_name in trackNames]
     output_path = finished_dir / f"{songTitle}.mp4"
+    print("PROGRESS stage=composition state=started", flush=True)
     print(f"Compositing {len(clips)} track clips and final audio", flush=True)
     composition_started = perf_counter()
     _compose_clips(clips, output_path, audio_path, videoDims, framesPerSecond, duration, background)
     print(f"TIMING stage=composition seconds={perf_counter() - composition_started:.3f} encoder=libx264", flush=True)
+    print("PROGRESS stage=cleanup state=started", flush=True)
     cleanup_started = perf_counter()
     for clip in clips:
         Path(clip["path"]).unlink(missing_ok=True)

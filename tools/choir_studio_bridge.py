@@ -887,12 +887,16 @@ def _export_polyphonic_split(
 
 
 def _write_candidate_alignment(song: str, role: str, report: dict[str, Any], text: str) -> dict[str, Any]:
-    _, _, candidate_path, report_path = _role_paths(song, role)
+    source_path, _, candidate_path, report_path = _role_paths(song, role)
     candidate_path.parent.mkdir(parents=True, exist_ok=True)
     normalized_text = text.rstrip() + "\n"
     candidate_path.write_text(normalized_text, encoding="utf-8")
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    return {"text": normalized_text, "path": str(candidate_path), "report": report, "report_path": str(report_path)}
+    try:
+        source_in_sync = source_path.is_file() and source_path.read_text(encoding="utf-8").rstrip() == normalized_text.rstrip()
+    except OSError:
+        source_in_sync = False
+    return {"text": normalized_text, "path": str(candidate_path), "report": report, "report_path": str(report_path), "source_in_sync": source_in_sync}
 
 
 def _load_candidate(song: str, role: str) -> dict[str, Any]:
@@ -916,7 +920,11 @@ def _load_candidate(song: str, role: str) -> dict[str, Any]:
         report, lines = build_alignment(song, role, alignment_path)
         text = "\n".join(lines).rstrip() + "\n"
         return {"exists": True, **_write_candidate_alignment(song, role, report, text)}
-    return {"exists": True, "text": text, "path": str(candidate_path), "report": report, "report_path": str(report_path)}
+    try:
+        source_in_sync = source_path.is_file() and source_path.read_text(encoding="utf-8").rstrip() == text.rstrip()
+    except OSError:
+        source_in_sync = False
+    return {"exists": True, "text": text, "path": str(candidate_path), "report": report, "report_path": str(report_path), "source_in_sync": source_in_sync}
 
 
 def _alignment_template_sources(song: str, role: str) -> list[dict[str, str]]:
@@ -1037,7 +1045,7 @@ def _word_cues_from_report(report: dict[str, Any]) -> list[dict[str, int | str]]
     return cues
 
 
-def _apply_alignment(song: str, role: str, text: object) -> dict[str, str | None]:
+def _apply_alignment(song: str, role: str, text: object) -> dict[str, Any]:
     """Validate and apply a saved alignment to the compiler's configured input."""
 
     _, _, candidate_path, report_path = _role_paths(song, role)
@@ -1100,7 +1108,7 @@ def _apply_alignment(song: str, role: str, text: object) -> dict[str, str | None
         )
     except OSError as error:
         raise BridgeError(f"Could not apply virtual note splits: {error}") from error
-    return {"path": str(source), "backup_path": str(backup) if backup else None, "alignment_path": str(sidecar)}
+    return {"path": str(source), "backup_path": str(backup) if backup else None, "alignment_path": str(sidecar), "source_in_sync": True}
 
 
 def _alignment_request(song: str, role: str, request: dict[str, Any]) -> tuple[dict[str, Any], str, int, int]:
