@@ -955,6 +955,13 @@ fn main() {
         .manage(Mutex::new(MediaPlayer::default()))
         .manage(SpectrogramJob::default())
         .manage(RenderJob::default())
+        .on_page_load(|webview, payload| {
+            if webview.label() == "splashscreen"
+                && matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
+            {
+                let _ = webview.window().show();
+            }
+        })
         .setup(|app| {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
