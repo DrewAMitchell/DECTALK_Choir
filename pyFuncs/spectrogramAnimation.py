@@ -29,6 +29,7 @@ TEXT_ANCHORS = {
     "center-left", "center", "center-right",
     "bottom-left", "bottom-center", "bottom-right",
 }
+FINAL_VIDEO_CRF = 23
 
 
 def _output_song_dir(song_title):
@@ -384,7 +385,7 @@ def _compose_clips(clips, output_path, audio_path, video_dims, frames_per_second
     args.extend([
         "-filter_complex", ";".join(filters),
         "-map", prior,
-        "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+        "-c:v", "libx264", "-preset", "medium", "-crf", str(FINAL_VIDEO_CRF), "-pix_fmt", "yuv420p",
     ])
     if audio_index is not None:
         args.extend(["-map", f"{audio_index}:a:0", "-c:a", "aac", "-b:a", "192k"])
@@ -393,6 +394,29 @@ def _compose_clips(clips, output_path, audio_path, video_dims, frames_per_second
     if not temporary.is_file() or temporary.stat().st_size <= 0:
         raise RuntimeError("FFmpeg did not produce the composite spectrogram video.")
     temporary.replace(output_path)
+
+
+def _should_delete_intermediate_animations(settings_yaml):
+    video_settings = settings_yaml.get("spectrogramVideo") or {}
+    if not isinstance(video_settings, dict):
+        return True
+    return video_settings.get("deleteIntermediateAnimations", True) is not False
+
+
+def _cleanup_intermediate_animations(clips, finished_dir, enabled):
+    if not enabled:
+        return []
+    removed = []
+    for clip in clips:
+        path = Path(clip["path"])
+        if path.is_file():
+            path.unlink()
+            removed.append(path)
+    legacy_animation = Path(finished_dir) / "animation.mp4"
+    if legacy_animation.is_file():
+        legacy_animation.unlink()
+        removed.append(legacy_animation)
+    return removed
 
 
 def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 1440), freqRange=(100, 5000), divisionFactor=500, framesPerSecond=30, barCount=100, back_color=(0, 0, 0), barGapFrac=0.5):
@@ -487,12 +511,19 @@ def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 144
     print(f"Compositing {len(clips)} track clips and final audio", flush=True)
     composition_started = perf_counter()
     _compose_clips(clips, output_path, audio_path, videoDims, framesPerSecond, duration, background)
-    print(f"TIMING stage=composition seconds={perf_counter() - composition_started:.3f} encoder=libx264", flush=True)
+    print(
+        f"TIMING stage=composition seconds={perf_counter() - composition_started:.3f} "
+        f"encoder=libx264 crf={FINAL_VIDEO_CRF}",
+        flush=True,
+    )
     print("PROGRESS stage=cleanup state=started", flush=True)
     cleanup_started = perf_counter()
-    for clip in clips:
-        Path(clip["path"]).unlink(missing_ok=True)
-    print(f"Removed {len(clips)} intermediate track clips", flush=True)
+    delete_intermediates = _should_delete_intermediate_animations(settings_yaml)
+    removed = _cleanup_intermediate_animations(clips, finished_dir, delete_intermediates)
+    if delete_intermediates:
+        print(f"Removed {len(removed)} intermediate animation videos", flush=True)
+    else:
+        print(f"Kept {len(clips)} intermediate animation videos by song setting", flush=True)
     print(f"TIMING stage=cleanup seconds={perf_counter() - cleanup_started:.3f}", flush=True)
     print(f"TIMING stage=total seconds={perf_counter() - total_started:.3f}", flush=True)
     print(f"DONE: {output_path}", flush=True)

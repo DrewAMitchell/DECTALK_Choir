@@ -176,6 +176,14 @@ There are a ton of other settings to play with that I haven't taken the time to 
 
 ### Per-track spectrogram settings
 
+Final spectrogram videos are encoded as H.264 at CRF 23 with AAC audio. The
+song-level `spectrogramVideo.deleteIntermediateAnimations` setting defaults to
+`true`: after a successful final MP4 composition it removes the much larger
+lossless per-track clips and any legacy `animation.mp4`. Choir Studio exposes
+this policy as a checkbox in the spectrogram layout view. Disable it only when
+the intermediate clips are needed for debugging or external editing; failed
+video composition never triggers cleanup.
+
 Spectrogram layout and text overlays belong to a nested `SPECTROGRAM` mapping under each track. Choir Studio edits this mapping directly:
 
 ```yaml

@@ -443,6 +443,68 @@ def _replace_role_mapping(
         raise BridgeError(f"Could not save visualizer settings: {error}") from error
 
 
+def _replace_top_level_mapping(path: Path, key: str, values: dict[str, object]) -> None:
+    """Replace one top-level YAML mapping without reformatting the song profile."""
+
+    try:
+        with path.open("r", encoding="utf-8", newline="") as settings_file:
+            text = settings_file.read()
+    except OSError as error:
+        raise BridgeError(f"Could not read settings.yaml: {error}") from error
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(keepends=True)
+    mapping_pattern = re.compile(rf"^{re.escape(key)}:\s*(?:#.*)?(?:\r?\n)?$")
+    mapping_index = next((index for index, line in enumerate(lines) if mapping_pattern.match(line)), None)
+    rendered = [f"{key}:{newline}"] + [
+        f"  {child_key}: {_format_setting_value(value)}{newline}"
+        for child_key, value in values.items()
+    ] + [newline]
+    if mapping_index is None:
+        if lines and not lines[-1].endswith(("\n", "\r")):
+            lines[-1] += newline
+        if lines and lines[-1].strip():
+            lines.append(newline)
+        lines.extend(rendered)
+    else:
+        mapping_end = next(
+            (index for index in range(mapping_index + 1, len(lines)) if re.match(r"^\S", lines[index])),
+            len(lines),
+        )
+        lines[mapping_index:mapping_end] = rendered
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="") as settings_file:
+            settings_file.write("".join(lines))
+        temporary.replace(path)
+    except OSError as error:
+        with contextlib.suppress(OSError):
+            temporary.unlink()
+        raise BridgeError(f"Could not save spectrogram video settings: {error}") from error
+
+
+def _spectrogram_video_settings(song: str) -> dict[str, Any]:
+    _, settings = load_settings(song)
+    video_settings = settings.get("spectrogramVideo") or {}
+    if not isinstance(video_settings, dict):
+        video_settings = {}
+    return {
+        "delete_intermediate_animations": video_settings.get("deleteIntermediateAnimations", True) is not False,
+    }
+
+
+def _update_spectrogram_video_settings(song: str, delete_intermediate_animations: object) -> dict[str, Any]:
+    if not isinstance(delete_intermediate_animations, bool):
+        raise BridgeError("Delete intermediate animations must be on or off.")
+    song_dir, settings = load_settings(song)
+    existing = settings.get("spectrogramVideo") or {}
+    if not isinstance(existing, dict):
+        existing = {}
+    updated = dict(existing)
+    updated["deleteIntermediateAnimations"] = delete_intermediate_animations
+    _replace_top_level_mapping(song_dir / "settings.yaml", "spectrogramVideo", updated)
+    return {"delete_intermediate_animations": delete_intermediate_animations}
+
+
 VISUAL_TEXT_POSITIONS = frozenset({
     "top-left", "top-center", "top-right",
     "center-left", "center", "center-right",
@@ -1200,6 +1262,10 @@ def handle(request: dict[str, Any]) -> Any:
     song = _song_name(request.get("song"))
     if command == "inspect_song":
         return _jsonable(inspect_song(REPO_ROOT, song))
+    if command == "get_spectrogram_video_settings":
+        return _spectrogram_video_settings(song)
+    if command == "update_spectrogram_video_settings":
+        return _update_spectrogram_video_settings(song, request.get("delete_intermediate_animations"))
     role = _role(song, request.get("role"))
     if command == "save_visual_layout":
         return _save_visual_layout(song, role, request.get("position"), request.get("hsb"), request.get("options"))

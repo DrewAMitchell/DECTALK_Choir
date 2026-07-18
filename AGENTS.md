@@ -56,6 +56,7 @@ Top-level settings include:
 - `gapMendMs`: folds tiny MIDI gaps into the previous note instead of emitting a rest. Tracks can override with `GAP_MEND_MS`.
 - `RENDER_ENABLED`: persisted render participation. Defaults to `true`; Studio disables it for roles excluded from rendering and uses the same set for spectrogram video generation.
 - `SPECTROGRAM`: per-track visual ownership boundary. Its children contain `COLOR_HSB`, fractional `[size, left, top]` `POSITION`, optional label/voice/head-size fields, independent label/current-word font and size controls, and current-word color/display settings. Do not add new flat `VID_*` settings; legacy flat values are read only for migration.
+- `spectrogramVideo.deleteIntermediateAnimations`: song-level output policy, defaulting to `true`. Final videos use H.264 CRF 23 with AAC audio. Cleanup runs only after successful composition and removes lossless `_animation` clips plus any legacy `animation.mp4`; Studio exposes the policy in the spectrogram layout view.
 
 Under `Tracks:`, the YAML key is the output part name. It controls output folders, partial text files, stems, and final mix labels.
 

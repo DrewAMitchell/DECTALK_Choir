@@ -83,6 +83,7 @@ type VisualTextOptions = {
   current_word_use_track_color: boolean;
 };
 type VisualDraft = { position: [number, number, number]; hsb: [number, number, number]; options: VisualTextOptions };
+type SpectrogramVideoSettings = { delete_intermediate_animations: boolean };
 type SpectrogramStageTiming = { stage: string; seconds: number; details: string };
 const visualTextPositions = [
   ["top-left", "Top left"], ["top-center", "Top center"], ["top-right", "Top right"],
@@ -746,6 +747,8 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const [visualDirtyRoles, setVisualDirtyRoles] = useState<string[]>([]);
   const [visualSavedRoles, setVisualSavedRoles] = useState<string[]>([]);
   const [visualSaving, setVisualSaving] = useState(false);
+  const [spectrogramVideoSettings, setSpectrogramVideoSettings] = useState<SpectrogramVideoSettings | null>(null);
+  const [spectrogramVideoSettingsSaving, setSpectrogramVideoSettingsSaving] = useState(false);
   const visualDraftsRef = useRef(visualDrafts);
   const visualSaveTimers = useRef(new Map<string, number>());
   const visualSaveQueue = useRef<Promise<void>>(Promise.resolve());
@@ -778,8 +781,17 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     setVisualDirtyRoles([]);
     setVisualSavedRoles([]);
     setJob(null);
+    setSpectrogramVideoSettings(null);
     visualDraftsRef.current = {};
   }, [song]);
+  useEffect(() => {
+    if (!song) return;
+    let cancelled = false;
+    bridge<SpectrogramVideoSettings>({ command: "get_spectrogram_video_settings", song }).then((next) => {
+      if (!cancelled) setSpectrogramVideoSettings(next);
+    }).catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause)); });
+    return () => { cancelled = true; };
+  }, [song, setError]);
   useEffect(() => { setRenderJob(null); }, [inspection?.song_name]);
   useEffect(() => {
     const frame = visualPreviewFrameRef.current;
@@ -1005,6 +1017,26 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(""); }
   };
+  const updateDeleteIntermediateAnimations = async (enabled: boolean) => {
+    if (!song || !spectrogramVideoSettings) return;
+    const previous = spectrogramVideoSettings;
+    setSpectrogramVideoSettings({ delete_intermediate_animations: enabled });
+    setSpectrogramVideoSettingsSaving(true);
+    setError("");
+    try {
+      const saved = await bridge<SpectrogramVideoSettings>({
+        command: "update_spectrogram_video_settings",
+        song,
+        delete_intermediate_animations: enabled,
+      });
+      setSpectrogramVideoSettings(saved);
+    } catch (cause) {
+      setSpectrogramVideoSettings(previous);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSpectrogramVideoSettingsSaving(false);
+    }
+  };
   const toggleRenderRole = (targetRole: string) => {
     onEnabledRolesChange(enabledRoles.includes(targetRole) ? enabledRoles.filter((item) => item !== targetRole) : [...enabledRoles, targetRole]);
   };
@@ -1142,6 +1174,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
           <div className="visual-overlay-row"><label className="visual-overlay-toggle"><input type="checkbox" checked={visualOptions.current_word_enabled} onChange={(event) => updateVisualOptions({ ...visualOptions, current_word_enabled: event.target.checked })} disabled={!visualRole} /><span>Current word</span></label><span className="visual-overlay-note">Uses applied alignment timing</span><select value={visualOptions.current_word_position} onChange={(event) => updateVisualOptions({ ...visualOptions, current_word_position: event.target.value })} disabled={!visualRole || !visualOptions.current_word_enabled} aria-label="Current word position">{visualTextPositions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
           <div className="visual-overlay-row text-style"><label className="visual-overlay-toggle"><input type="checkbox" checked={visualOptions.current_word_use_track_color} onChange={(event) => updateVisualOptions({ ...visualOptions, current_word_use_track_color: event.target.checked })} disabled={!visualRole || !visualOptions.current_word_enabled} /><span>Track color</span></label><select value={visualOptions.current_word_font} onChange={(event) => updateVisualOptions({ ...visualOptions, current_word_font: event.target.value })} disabled={!visualRole || !visualOptions.current_word_enabled} aria-label="Current word font">{visualFonts.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label className="visual-percent-input"><input type="number" min="2" max="25" step="0.5" value={visualOptions.current_word_font_size_percent} onChange={(event) => updateVisualOptions({ ...visualOptions, current_word_font_size_percent: Number(event.target.value) })} disabled={!visualRole || !visualOptions.current_word_enabled} aria-label="Current word font size percentage" /><span>% height</span></label></div>
         </section>
+        <label className="visual-output-policy" title="The final song MP4 is always kept. Disable this only when you need the lossless per-track animation clips for debugging or further editing."><input type="checkbox" checked={spectrogramVideoSettings?.delete_intermediate_animations ?? true} onChange={(event) => void updateDeleteIntermediateAnimations(event.target.checked)} disabled={!spectrogramVideoSettings || spectrogramVideoSettingsSaving || job?.state === "running"} /><span><strong>Delete intermediate animation videos after success</strong><small>Keep the compressed final MP4 and remove the much larger lossless working clips.</small></span>{spectrogramVideoSettingsSaving && <LoaderCircle size={14} />}</label>
         <div className="visual-save-state" role="status" aria-live="polite">{visualSaving || visualDirtyRoles.length ? <><LoaderCircle size={14} /> Saving layout...</> : <><CircleCheck size={14} /> Layout saved automatically</>}</div>
       </div>
     </section>
