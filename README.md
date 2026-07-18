@@ -131,6 +131,8 @@ Pitch classes are preserved as integers. There is no `#` spelling in the DECTALK
 
 **ignoreMidiVelocity / velocityVolumeScaleDb**: MIDI velocity is ignored by default (`ignoreMidiVelocity: true`), independent of the configured scale. Set `ignoreMidiVelocity: false` and choose a positive `velocityVolumeScaleDb` only when a MIDI performance intentionally encodes dynamics that should survive normalization.
 
+**minimumNoteDurationMs**: Optional song-wide pronunciation floor for short MIDI notes. The renderer extends a short note only into silence before the next note; it never moves later note onsets or changes the MIDI file. A track can override this with `MINIMUM_NOTE_DURATION_MS`. `0` disables the floor. The render log reports how many notes were extended and how many remained short because no rest was available.
+
 Consonants are played as separate phonemes. How long each consonant is played for can be tweaked with the following.
 **consonantFractionTarget**: The maximum time taken up by consonants across the whole word.
 **consonantMinMs**: Minimum time per consonant (mS)
@@ -142,6 +144,8 @@ The key under `Tracks:` is the output name used for folders, text chunks, WAV st
 **LYRICS_FILENAME**: Name of file to read lyrics from. Defaults to the output name. Allows different parts to read from the same lyrics file for simplicity.
 
 **TRACK_FILENAME**: Name of the MIDI track to read. Defaults to the output name. Allows an output stem to use a differently named MIDI track, or multiple output stems to share the same MIDI source.
+
+**MINIMUM_NOTE_DURATION_MS**: Per-track override for `minimumNoteDurationMs`. It consumes only available following silence, so tightly adjacent notes remain unchanged rather than shifting the song out of sync.
 
 **PITCH_SHIFT**: Per-track musical transposition in semitones after the song-level `noteOffset`. Use this when two tracks share the same MIDI notes but should sing at different octaves or intervals.
 

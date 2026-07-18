@@ -10,6 +10,9 @@ consonantFractionTarget: 0.15
 consonantMinMs: 5
 consonantMaxMs: 75
 
+# Give very short articulations more pronunciation time without moving later note onsets.
+minimumNoteDurationMs: 200
+
 # Set Specific settings for each track
 # Make sure each track is listed here, included in the MIDI file, and has a .txt file in lyrics all with the same title
 Tracks:

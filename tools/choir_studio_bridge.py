@@ -606,6 +606,7 @@ TRACK_TUNING_DEFAULTS = {
     "NOTE_NORMALIZE_PEAK_CEILING_DBFS": -1.0,
     "STEM_PEAK_CEILING_DBFS": -1.0,
     "GAP_MEND_MS": 0.0,
+    "MINIMUM_NOTE_DURATION_MS": 0.0,
 }
 DECTALK_VOICE_CODES = frozenset({"np", "nb", "nh", "nd", "nf", "nu", "nr", "nw", "nk"})
 TRACK_TUNING_TOP_LEVEL_KEYS = {
@@ -619,6 +620,7 @@ TRACK_TUNING_TOP_LEVEL_KEYS = {
     "IGNORE_MIDI_VELOCITY": "ignoreMidiVelocity",
     "VELOCITY_VOLUME_SCALE_DB": "velocityVolumeScaleDb",
     "GAP_MEND_MS": "gapMendMs",
+    "MINIMUM_NOTE_DURATION_MS": "minimumNoteDurationMs",
 }
 
 # Measured from the raw [:np] head-size reference at pitches G3 through E4.
@@ -821,6 +823,8 @@ def _update_track_tuning(song: str, role: str, requested: object) -> dict[str, A
                 values[key] = _number_setting(value, key, -60.0, -1.0)
         elif key == "GAP_MEND_MS":
             values[key] = _number_setting(value, key, 0.0, 100.0)
+        elif key == "MINIMUM_NOTE_DURATION_MS":
+            values[key] = _number_setting(value, key, 0.0, 1000.0)
 
     song_dir, _ = load_settings(song)
     settings_path = song_dir / "settings.yaml"

@@ -111,6 +111,9 @@ else: maxDectalkPitch = settings_yaml['maxDectalkPitch']
 if not 'gapMendMs' in settings_yaml: gapMendMs = 0.0
 else: gapMendMs = float(settings_yaml['gapMendMs'])
 
+if not 'minimumNoteDurationMs' in settings_yaml: minimumNoteDurationMs = 0.0
+else: minimumNoteDurationMs = max(0.0, float(settings_yaml['minimumNoteDurationMs']))
+
 pitchVolumeBoostStart = settings_yaml.get('pitchVolumeBoostStart', 0)
 pitchVolumeBoostDbPerSemitone = settings_yaml.get('pitchVolumeBoostDbPerSemitone', 0.0)
 pitchVolumeBoostMaxDb = settings_yaml.get('pitchVolumeBoostMaxDb', 6.0)
@@ -191,6 +194,7 @@ for fooTrack in settings_yaml['Tracks']:
 	if 'PITCH_SHIFT' not in trackDict: trackDict['PITCH_SHIFT'] = 0
 	if 'OCTAVE_BOOST' not in trackDict: trackDict['OCTAVE_BOOST'] = 0
 	if 'GAP_MEND_MS' not in trackDict: trackDict['GAP_MEND_MS'] = gapMendMs
+	if 'MINIMUM_NOTE_DURATION_MS' not in trackDict: trackDict['MINIMUM_NOTE_DURATION_MS'] = minimumNoteDurationMs
 	if 'PITCH_VOLUME_BOOST_START' not in trackDict: trackDict['PITCH_VOLUME_BOOST_START'] = pitchVolumeBoostStart
 	if 'PITCH_VOLUME_BOOST_DB_PER_SEMITONE' not in trackDict: trackDict['PITCH_VOLUME_BOOST_DB_PER_SEMITONE'] = pitchVolumeBoostDbPerSemitone
 	if 'PITCH_VOLUME_BOOST_MAX_DB' not in trackDict: trackDict['PITCH_VOLUME_BOOST_MAX_DB'] = pitchVolumeBoostMaxDb
@@ -261,12 +265,17 @@ def applyVirtualNoteSplits(outputPartName, notes):
 
 
 gapMendMsByMidiPart = {}
+minimumNoteDurationMsByMidiPart = {}
 for outputPartName in settings_yaml['Tracks']:
 	trackDict = settings_yaml['Tracks'][outputPartName]
 	sourceName = trackDict['TRACK_FILENAME']
 	gapMendMsByMidiPart[sourceName] = max(
 		gapMendMsByMidiPart.get(sourceName, gapMendMs),
 		float(trackDict['GAP_MEND_MS'])
+	)
+	minimumNoteDurationMsByMidiPart[sourceName] = max(
+		minimumNoteDurationMsByMidiPart.get(sourceName, 0.0),
+		float(trackDict['MINIMUM_NOTE_DURATION_MS'])
 	)
 
 
@@ -390,11 +399,17 @@ for fooMidi in midiData:
 
 	ticksPerBeat = fooMidi['ticks_per_beat']
 	trackGapMendMs = gapMendMsByMidiPart.get(midiPartName, gapMendMs)
+	trackMinimumNoteDurationMs = minimumNoteDurationMsByMidiPart.get(midiPartName, minimumNoteDurationMs)
 
 	# Prevent overlapping notes
 	for ii in range(len(fooMidi['note']) -1):
 		if fooMidi['end'][ii] >= fooMidi['start'][ii+1]:
 			fooMidi['end'][ii] = fooMidi['start'][ii+1]
+
+	minimumDurationTicks = trackMinimumNoteDurationMs * ticksPerBeat / tempo_ms
+	fooMidi['end'], extendedNoteCount, constrainedNoteCount = pymidi.enforceMinimumNoteDuration(
+		fooMidi['start'], fooMidi['end'], minimumDurationTicks
+	)
 
 
 	# Convert midi track into notes array
@@ -418,7 +433,7 @@ for fooMidi in midiData:
 	if len(notes) > 0:
 		noteSet[midiPartName] = notes
 		justPitches = list(zip(*notes))[0]
-		print(f"\n{midiPartName}:\n   tempo_ms:{tempo_ms}\n   gapMendMs:{trackGapMendMs}\n   Range:{min((foo for foo in justPitches if foo >= 0))} -> {max(justPitches)}")
+		print(f"\n{midiPartName}:\n   tempo_ms:{tempo_ms}\n   gapMendMs:{trackGapMendMs}\n   minimumNoteDurationMs:{trackMinimumNoteDurationMs:g} ({extendedNoteCount} extended, {constrainedNoteCount} still short)\n   Range:{min((foo for foo in justPitches if foo >= 0))} -> {max(justPitches)}")
 	else:
 		print(f"MIDI Track {midiPartName} has no notes data, ignoring")
 

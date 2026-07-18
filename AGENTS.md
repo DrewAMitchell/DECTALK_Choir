@@ -54,6 +54,7 @@ Top-level settings include:
 - `ignoreMidiVelocity`: defaults to `true`, so MIDI velocity never changes rendered loudness unless explicitly enabled. `velocityVolumeScaleDb` controls the opt-in dynamic range.
 - `consonantFractionTarget`, `consonantMinMs`, `consonantMaxMs`: control consonant timing.
 - `gapMendMs`: folds tiny MIDI gaps into the previous note instead of emitting a rest. Tracks can override with `GAP_MEND_MS`.
+- `minimumNoteDurationMs`: extends short notes only into available following rests, preserving every later onset and cross-track synchronization. Tracks can override with `MINIMUM_NOTE_DURATION_MS`; render logs distinguish extended notes from notes that remain constrained.
 - `RENDER_ENABLED`: persisted render participation. Defaults to `true`; Studio disables it for roles excluded from rendering and uses the same set for spectrogram video generation.
 - `SPECTROGRAM`: per-track visual ownership boundary. Its children contain `COLOR_HSB`, fractional `[size, left, top]` `POSITION`, optional label/voice/head-size fields, independent label/current-word font and size controls, and current-word color/display settings. Do not add new flat `VID_*` settings; legacy flat values are read only for migration.
 - `spectrogramVideo.intermediateAnimationMode`: song-level output policy with `delete`, `compress`, and `keep` modes, defaulting to `delete`. Final videos use H.264 CRF 23 with AAC audio. Post-composition handling runs only after the final video succeeds; `compress` archives clips in parallel and retains any source whose conversion fails.

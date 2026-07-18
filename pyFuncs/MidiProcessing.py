@@ -1,5 +1,30 @@
 import mido
 
+
+def enforceMinimumNoteDuration(starts, ends, minimumDurationTicks):
+	"""Extend short notes into following rests without moving any note onset."""
+	adjustedEnds = list(ends)
+	minimumDurationTicks = max(0.0, float(minimumDurationTicks))
+	extendedCount = 0
+	constrainedCount = 0
+
+	for index, (start, end) in enumerate(zip(starts, adjustedEnds)):
+		if end - start >= minimumDurationTicks:
+			continue
+		if index + 1 >= len(starts):
+			constrainedCount += 1
+			continue
+
+		availableEnd = starts[index + 1]
+		targetEnd = min(start + minimumDurationTicks, availableEnd)
+		if targetEnd > end:
+			adjustedEnds[index] = targetEnd
+			extendedCount += 1
+		if targetEnd - start < minimumDurationTicks:
+			constrainedCount += 1
+
+	return adjustedEnds, extendedCount, constrainedCount
+
 def loadMidiData(midiFileName, printInfo=True):
 	fileTitle = midiFileName.split('/')[-1].split('.')[0]
 
