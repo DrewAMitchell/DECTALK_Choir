@@ -59,7 +59,7 @@ def test_word_cues_merge_all_notes_owned_by_one_word():
 
 
 def test_spectrogram_word_cues_include_renderer_lead_in(tmp_path: Path, monkeypatch):
-    report_path = tmp_path / "songs" / "TestSong" / "outputs" / "lyrics_drafts" / "Lead.json"
+    report_path = tmp_path / "songs" / "TestSong" / "inputs" / "lyrics" / ".alignment" / "Lead.json"
     report_path.parent.mkdir(parents=True)
     report_path.write_text(
         json.dumps({"word_cues": [{"word": "hello", "start_ms": 250, "end_ms": 700}]}),

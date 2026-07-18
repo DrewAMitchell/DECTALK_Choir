@@ -218,12 +218,9 @@ def getTrackSourceName(outputPartName):
 	return settings_yaml['Tracks'][outputPartName]['TRACK_FILENAME']
 
 
-def applyVirtualNoteSplits(outputPartName, notes, lyricPath):
+def applyVirtualNoteSplits(outputPartName, notes):
 	"""Apply Studio's per-role virtual lyric splits without changing source MIDI."""
-	if lyricPath.parent.name == 'lyrics_drafts':
-		path = lyricPath.with_suffix('.json')
-	else:
-		path = Path(songLyricsDir) / '.alignment' / f"{outputPartName}.json"
+	path = Path(songLyricsDir) / '.alignment' / f"{outputPartName}.json"
 	try:
 		with open(path, 'r', encoding='utf-8') as splitFile:
 			virtualSplits = json.load(splitFile).get('virtual_splits', [])
@@ -291,15 +288,11 @@ def hasRenderableLyricContent(lyricFileName):
 
 
 phonemeSet = {}
-renderLyricPaths = {}
 for trackName in settings_yaml['Tracks']:
 	lyricsFileStem = settings_yaml['Tracks'][trackName]['LYRICS_FILENAME']
-	lyricPath = render_lyrics_path(Path(songDir), trackName, lyricsFileStem)
+	lyricPath = render_lyrics_path(Path(songDir), lyricsFileStem)
 	lyricFileName = str(lyricPath)
-	if lyricPath.parent.name == 'lyrics_drafts':
-		print(f"   Converting /outputs/lyrics_drafts/{trackName}.txt for  {trackName}")
-	else:
-		print(f"   Converting /inputs/lyrics/{lyricsFileStem}.txt for  {trackName}")
+	print(f"   Converting /inputs/lyrics/{lyricsFileStem}.txt for  {trackName}")
 	if not hasRenderableLyricContent(lyricFileName):
 		print(f"   Skipping {trackName}: lyric or note-skeleton input is empty or comment-only")
 		continue
@@ -313,7 +306,6 @@ for trackName in settings_yaml['Tracks']:
 		continue
 	print(phonemes)
 	phonemeSet[trackName] = phonemes
-	renderLyricPaths[trackName] = lyricPath
 
 
 
@@ -543,7 +535,7 @@ for fooPartName in partNamesToOutput:
 	# # Actually write output
 	# lyricFileName = f"{songOutputDir}/phonemes/{fooPartName}.txt"
 	fooPhonemes = phonemeSet[fooPartName]
-	fooNotes = applyVirtualNoteSplits(fooPartName, noteSet[getTrackSourceName(fooPartName)], renderLyricPaths[fooPartName])
+	fooNotes = applyVirtualNoteSplits(fooPartName, noteSet[getTrackSourceName(fooPartName)])
 	fooCompiledLyrics = [[]]
 
 	# outputFile = open(lyricFileName, 'w')

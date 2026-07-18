@@ -109,28 +109,24 @@ def _role_paths(song: str, role: str) -> tuple[Path, Path, Path, Path]:
     track = resolve_track(settings, role)
     lyric_dir = lyrics_directory(song_dir)
     source = lyric_dir / f"{track['lyrics_filename']}.txt"
-    raw = lyric_dir / f"{track['lyrics_filename']}.raw.txt"
+    transcript = lyric_dir / f"{track['lyrics_filename']}.transcript.txt"
     draft_dir = outputs_directory(song_dir) / "lyrics_drafts"
     candidate = draft_dir / f"{role}.txt"
     report = draft_dir / f"{role}.json"
-    return source, raw, candidate, report
-
-
-def _legacy_transcript_path(song: str, role: str) -> Path:
-    return outputs_directory(REPO_ROOT / "songs" / song) / "lyrics_drafts" / f"{role}.transcript.txt"
+    return source, transcript, candidate, report
 
 
 def _read_source(song: str, role: str) -> dict[str, Any]:
-    source, raw, candidate, _ = _role_paths(song, role)
-    # The Studio editor is the active lyric draft. Prefer its aligned candidate so
-    # returning to Lyrics always shows the text that Review and rendering use.
+    source, transcript, candidate, _ = _role_paths(song, role)
+    # Published alignment is authoritative in the editor. The transcript is the
+    # fallback only before a track has completed its first alignment.
     active = next(
         (
             path
-            for path in (candidate, raw, _legacy_transcript_path(song, role), source)
-            if path.is_file() and (path != candidate or _has_lyric_content(path))
+            for path in (source, transcript)
+            if path.is_file()
         ),
-        source,
+        transcript,
     )
     try:
         text = active.read_text(encoding="utf-8") if active.is_file() else ""
@@ -139,17 +135,45 @@ def _read_source(song: str, role: str) -> dict[str, Any]:
     return {
         "text": text,
         "path": str(active),
-        "kind": "candidate" if active == candidate else "transcript",
+        "kind": "alignment" if active == source else "transcript",
+        "transcript_exists": transcript.is_file(),
         "candidate_exists": _has_lyric_content(candidate),
     }
 
 
-def _write_transcript(song: str, role: str, text: object) -> dict[str, str]:
-    _, raw, _, _ = _role_paths(song, role)
+def _normalized_lyric_text(text: object) -> str:
     cleaned = str(text or "").replace("\r\n", "\n")
-    raw.parent.mkdir(parents=True, exist_ok=True)
-    raw.write_text(cleaned.rstrip() + "\n" if cleaned.strip() else "", encoding="utf-8")
-    return {"path": str(raw), "text": cleaned}
+    return cleaned.rstrip() + "\n" if cleaned.strip() else ""
+
+
+def _capture_transcript(song: str, role: str, text: object) -> dict[str, Any]:
+    _, transcript, _, _ = _role_paths(song, role)
+    if transcript.is_file():
+        return {"path": str(transcript), "created": False}
+    try:
+        transcript.parent.mkdir(parents=True, exist_ok=True)
+        transcript.write_text(_normalized_lyric_text(text), encoding="utf-8")
+    except OSError as error:
+        raise BridgeError(f"Could not preserve the original lyric transcript: {error}") from error
+    return {"path": str(transcript), "created": True}
+
+
+def _write_transcript(song: str, role: str, text: object) -> dict[str, Any]:
+    _, transcript, _, _ = _role_paths(song, role)
+    normalized = _normalized_lyric_text(text)
+    if transcript.is_file():
+        try:
+            existing = transcript.read_text(encoding="utf-8")
+        except OSError as error:
+            raise BridgeError(f"Could not read the preserved lyric transcript: {error}") from error
+        if existing != normalized:
+            raise BridgeError(
+                f"{transcript.name} is preserved and cannot be replaced. "
+                "Delete it manually before saving a different original transcript."
+            )
+        return {"path": str(transcript), "text": existing, "created": False}
+    result = _capture_transcript(song, role, text)
+    return {**result, "text": normalized}
 
 
 def _words_for_validation(text: str) -> tuple[list[str], list[str]]:
@@ -209,10 +233,10 @@ def _create_note_skeleton(song: str, role: str, placeholder: object) -> dict[str
 
 
 def _draft(song: str, role: str, text: object, auto_lines: object) -> dict[str, Any]:
-    _, raw, draft_path, report_path = _role_paths(song, role)
-    # Keep the editable pre-draft text as a recovery source, then write the
-    # generated timing as the one active candidate used by Review and choir.py.
-    _write_transcript(song, role, text)
+    _, transcript, draft_path, _ = _role_paths(song, role)
+    # Capture the original input once, then keep generated timing and alignment
+    # edits in working state until the user explicitly applies them.
+    _capture_transcript(song, role, text)
     song_dir, settings = load_settings(song)
     track = resolve_track(settings, role)
     notes, beat_ms, _, _ = load_track_notes(song_dir, settings, track["track_filename"])
@@ -220,7 +244,10 @@ def _draft(song: str, role: str, text: object, auto_lines: object) -> dict[str, 
     phrase_gap_ms, word_gap_ms, tight_gap_ms = resolve_thresholds(args, settings, beat_ms)
     phrases = split_note_phrases(notes, phrase_gap_ms)
     warnings: list[str] = []
-    transcript_lines = read_transcript_lines(raw)
+    with tempfile.TemporaryDirectory(prefix="dectalk-choir-transcript-") as temporary_dir:
+        working_transcript = Path(temporary_dir) / transcript.name
+        working_transcript.write_text(_normalized_lyric_text(text), encoding="utf-8")
+        transcript_lines = read_transcript_lines(working_transcript)
     source_lines = [list(line.words) for line in transcript_lines]
     if not source_lines:
         raise BridgeError("Transcript has no usable lyric words after normalization.")
@@ -270,7 +297,7 @@ def _draft(song: str, role: str, text: object, auto_lines: object) -> dict[str, 
         "warnings": warnings,
         "review_segments": review_segments,
         "tight_gap_ms": round(tight_gap_ms),
-        "source_path": str(raw),
+        "source_path": str(transcript),
     }
 
 
@@ -887,13 +914,17 @@ def _export_polyphonic_split(
 
 
 def _write_candidate_alignment(song: str, role: str, report: dict[str, Any], text: str) -> dict[str, Any]:
-    source_path, _, candidate_path, report_path = _role_paths(song, role)
+    source_path, transcript_path, candidate_path, report_path = _role_paths(song, role)
     candidate_path.parent.mkdir(parents=True, exist_ok=True)
     normalized_text = text.rstrip() + "\n"
     candidate_path.write_text(normalized_text, encoding="utf-8")
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     try:
-        source_in_sync = source_path.is_file() and source_path.read_text(encoding="utf-8").rstrip() == normalized_text.rstrip()
+        source_in_sync = (
+            transcript_path.is_file()
+            and source_path.is_file()
+            and source_path.read_text(encoding="utf-8").rstrip() == normalized_text.rstrip()
+        )
     except OSError:
         source_in_sync = False
     return {"text": normalized_text, "path": str(candidate_path), "report": report, "report_path": str(report_path), "source_in_sync": source_in_sync}
@@ -902,7 +933,7 @@ def _write_candidate_alignment(song: str, role: str, report: dict[str, Any], tex
 def _load_candidate(song: str, role: str) -> dict[str, Any]:
     """Return the durable working alignment, rebuilding only missing review metadata."""
 
-    source_path, _, candidate_path, report_path = _role_paths(song, role)
+    source_path, transcript_path, candidate_path, report_path = _role_paths(song, role)
     candidate_has_content = _has_lyric_content(candidate_path)
     if not candidate_has_content and not _has_lyric_content(source_path):
         return {"exists": False}
@@ -921,7 +952,11 @@ def _load_candidate(song: str, role: str) -> dict[str, Any]:
         text = "\n".join(lines).rstrip() + "\n"
         return {"exists": True, **_write_candidate_alignment(song, role, report, text)}
     try:
-        source_in_sync = source_path.is_file() and source_path.read_text(encoding="utf-8").rstrip() == text.rstrip()
+        source_in_sync = (
+            transcript_path.is_file()
+            and source_path.is_file()
+            and source_path.read_text(encoding="utf-8").rstrip() == text.rstrip()
+        )
     except OSError:
         source_in_sync = False
     return {"exists": True, "text": text, "path": str(candidate_path), "report": report, "report_path": str(report_path), "source_in_sync": source_in_sync}
@@ -1082,16 +1117,11 @@ def _apply_alignment(song: str, role: str, text: object) -> dict[str, Any]:
     if issue:
         raise BridgeError(f"Aligned lyrics were not applied: {issue}")
 
-    source, _, _, _ = _role_paths(song, role)
+    source, transcript, _, _ = _role_paths(song, role)
     source.parent.mkdir(parents=True, exist_ok=True)
-    backup: Path | None = None
-    if source.is_file():
-        backup = source.with_name(f"{source.stem}.original.txt")
-        if not backup.exists():
-            try:
-                backup.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
-            except OSError as error:
-                raise BridgeError(f"Could not back up configured lyric input: {error}") from error
+    transcript_created = False
+    if not transcript.is_file():
+        transcript_created = bool(_capture_transcript(song, role, normalized_text).get("created"))
     try:
         source.write_text(normalized_text + "\n", encoding="utf-8")
     except OSError as error:
@@ -1108,7 +1138,13 @@ def _apply_alignment(song: str, role: str, text: object) -> dict[str, Any]:
         )
     except OSError as error:
         raise BridgeError(f"Could not apply virtual note splits: {error}") from error
-    return {"path": str(source), "backup_path": str(backup) if backup else None, "alignment_path": str(sidecar), "source_in_sync": True}
+    return {
+        "path": str(source),
+        "transcript_path": str(transcript),
+        "transcript_created": transcript_created,
+        "alignment_path": str(sidecar),
+        "source_in_sync": True,
+    }
 
 
 def _alignment_request(song: str, role: str, request: dict[str, Any]) -> tuple[dict[str, Any], str, int, int]:

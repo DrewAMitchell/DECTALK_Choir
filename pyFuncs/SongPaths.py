@@ -33,12 +33,9 @@ def has_lyric_content(path: Path) -> bool:
         return False
 
 
-def render_lyrics_path(song_dir: Path, role: str, lyric_stem: str) -> Path:
-    """Return the Studio candidate when present, otherwise the configured lyric input."""
+def render_lyrics_path(song_dir: Path, lyric_stem: str) -> Path:
+    """Return the configured, published lyric input used for rendering."""
 
-    candidate = outputs_directory(song_dir) / "lyrics_drafts" / f"{role}.txt"
-    if has_lyric_content(candidate):
-        return candidate
     return lyrics_directory(song_dir) / f"{lyric_stem}.txt"
 
 

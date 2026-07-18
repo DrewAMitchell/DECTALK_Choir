@@ -17,9 +17,9 @@ the same treatment of multiline untimestamped input.
 .\.venv\Scripts\python.exe tools\lyric_sync_assistant\assistant.py DaisyBell Vocals --auto-lines --overwrite
 ```
 
-By default, drafts are written under `songs/<Song>/outputs/lyrics_drafts/<Part>.txt`.
+By default, working drafts are written under `songs/<Song>/outputs/lyrics_drafts/<Part>.txt`. They are not render sources; rendering requires the configured aligned file under `inputs/lyrics/`.
 
-Use `--apply --overwrite` only when you intentionally want to replace `songs/<Song>/inputs/lyrics/<LYRICS_FILENAME>.txt`.
+The drafter cannot replace `songs/<Song>/inputs/lyrics/<LYRICS_FILENAME>.txt`. Publish only through Studio **Apply to source** or the aligner's `--apply --overwrite` after review.
 
 For a track with no lyrics yet, create an editable note-level scaffold:
 
@@ -50,14 +50,14 @@ the configured lyric input after intentional review.
 
 ## Examples
 
-The `examples/` files are raw lyric inputs reverse-engineered from one curated track in each original example song by stripping note-count syntax such as `2*word` and `1|2|word`.
+The `examples/` files are transcript inputs reverse-engineered from one curated track in each original example song by stripping note-count syntax such as `2*word` and `1|2|word`.
 
 ```powershell
-.\.venv\Scripts\python.exe tools\lyric_sync_assistant\assistant.py DaisyBell Vocals --text-file tools\lyric_sync_assistant\examples\DaisyBell_Vocals.raw.txt --output songs\DaisyBell\outputs\lyrics_drafts\Vocals.example.txt --overwrite
+.\.venv\Scripts\python.exe tools\lyric_sync_assistant\assistant.py DaisyBell Vocals --text-file tools\lyric_sync_assistant\examples\DaisyBell_Vocals.transcript.txt --output songs\DaisyBell\outputs\lyrics_drafts\Vocals.example.txt --overwrite
 
-.\.venv\Scripts\python.exe tools\lyric_sync_assistant\assistant.py AuldLangSyne Soprano --text-file tools\lyric_sync_assistant\examples\AuldLangSyne_Soprano.raw.txt --output songs\AuldLangSyne\outputs\lyrics_drafts\Soprano.example.txt --overwrite
+.\.venv\Scripts\python.exe tools\lyric_sync_assistant\assistant.py AuldLangSyne Soprano --text-file tools\lyric_sync_assistant\examples\AuldLangSyne_Soprano.transcript.txt --output songs\AuldLangSyne\outputs\lyrics_drafts\Soprano.example.txt --overwrite
 
-.\.venv\Scripts\python.exe tools\lyric_sync_assistant\assistant.py CarolOfTheBells_Short Soprano --text-file tools\lyric_sync_assistant\examples\CarolOfTheBells_Short_Soprano.raw.txt --output songs\CarolOfTheBells_Short\outputs\lyrics_drafts\Soprano.example.txt --overwrite
+.\.venv\Scripts\python.exe tools\lyric_sync_assistant\assistant.py CarolOfTheBells_Short Soprano --text-file tools\lyric_sync_assistant\examples\CarolOfTheBells_Short_Soprano.transcript.txt --output songs\CarolOfTheBells_Short\outputs\lyrics_drafts\Soprano.example.txt --overwrite
 ```
 
 ## Validate

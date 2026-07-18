@@ -192,26 +192,22 @@ def _word_cues_from_payload(payload):
 
 def _load_word_cues(song_title, track_name):
     song_dir = Path("songs") / song_title
-    paths = [
-        song_dir / "inputs" / "lyrics" / ".alignment" / f"{track_name}.json",
-        song_dir / "outputs" / "lyrics_drafts" / f"{track_name}.json",
-    ]
-    for path in paths:
-        if not path.is_file():
-            continue
-        try:
-            cues = _word_cues_from_payload(json.loads(path.read_text(encoding="utf-8")))
-        except (OSError, ValueError, TypeError):
-            continue
-        if cues:
-            return [
-                {
-                    **cue,
-                    "start_ms": cue["start_ms"] + OUTPUT_LEAD_IN_MS,
-                    "end_ms": cue["end_ms"] + OUTPUT_LEAD_IN_MS,
-                }
-                for cue in cues
-            ], str(path)
+    path = song_dir / "inputs" / "lyrics" / ".alignment" / f"{track_name}.json"
+    if not path.is_file():
+        return [], None
+    try:
+        cues = _word_cues_from_payload(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError):
+        return [], None
+    if cues:
+        return [
+            {
+                **cue,
+                "start_ms": cue["start_ms"] + OUTPUT_LEAD_IN_MS,
+                "end_ms": cue["end_ms"] + OUTPUT_LEAD_IN_MS,
+            }
+            for cue in cues
+        ], str(path)
     return [], None
 
 

@@ -88,7 +88,7 @@ If the compiled line is shorter than the requested duration, silence is appended
 
 ### Lyric Sync Assistant
 
-For a faster first pass, write plain lyrics in `songs/<Song>/inputs/lyrics/<Part>.raw.txt` or point the tool at any text file. The assistant reads the configured MIDI source track, detects lyric phrases from rests, and writes a draft using the existing `X*word` and `X|Y|word` syntax.
+For a faster first pass, write plain lyrics in `songs/<Song>/inputs/lyrics/<Part>.transcript.txt` or point the tool at any text file. A transcript is immutable once captured by Studio; delete it manually before intentionally replacing the original input. The assistant reads the configured MIDI source track, detects lyric phrases from rests, and writes a working draft using the existing `X*word` and `X|Y|word` syntax.
 
 Prefix an aligned word with `~` when it should use normal DECTALK speech instead of pitched singing while retaining its claimed MIDI time, for example `2*~hello`. Choir Studio exposes this as a compact toggle on the selected word.
 
@@ -96,12 +96,14 @@ Example raw inputs live under `tools/lyric_sync_assistant/examples/`; they are s
 
 ```powershell
 .\.venv\Scripts\python.exe tools\lyric_sync_assistant\assistant.py DaisyBell Vocals --auto-lines --overwrite
-.\.venv\Scripts\python.exe tools\lyric_sync_assistant\assistant.py DaisyBell Vocals --text-file songs\DaisyBell\inputs\lyrics\Vocals.raw.txt --output songs\DaisyBell\outputs\lyrics_drafts\Vocals.txt --overwrite
+.\.venv\Scripts\python.exe tools\lyric_sync_assistant\assistant.py DaisyBell Vocals --text-file songs\DaisyBell\inputs\lyrics\Vocals.transcript.txt --output songs\DaisyBell\outputs\lyrics_drafts\Vocals.txt --overwrite
 ```
 
-Drafts are written to `songs/<Song>/outputs/lyrics_drafts/<Part>.txt` by default. Transcript drafts use renderer-valid timestamped lyric lines, preserving pasted `[timestamp]` or `[timestamp|duration]` prefixes and deriving starts from MIDI for plain input. A single untimestamped bulk block is automatically split at MIDI phrase rests. Diagnostic comments are opt-in with `--comments`. Use `--apply --overwrite` only when you want to replace the configured lyrics file.
+Drafts are written to `songs/<Song>/outputs/lyrics_drafts/<Part>.txt` by default and are never render inputs. Transcript drafts use renderer-valid timestamped lyric lines, preserving pasted `[timestamp]` or `[timestamp|duration]` prefixes and deriving starts from MIDI for plain input. A single untimestamped bulk block is automatically split at MIDI phrase rests. Diagnostic comments are opt-in with `--comments`. Only the aligned `songs/<Song>/inputs/lyrics/<Part>.txt` configured by `LYRICS_FILENAME` is rendered. Publish it through Studio **Apply to source** or `alignment.py --apply --overwrite` after review.
 
 The phrase and word-boundary thresholds are BPM-relative by default, and can be overridden with `--phrase-gap-ms`, `--word-gap-ms`, and `--tight-gap-ms`. Without `--auto-lines`, source line breaks are preserved as lyric-phrase hints while note counts are aligned globally to the MIDI track. With `--auto-lines`, source words are flattened and aligned globally, then the output is split at detected MIDI rest phrases.
+
+Legacy workspaces can migrate their earlier transcript artifacts safely with `python tools/migrate_lyric_transcripts.py --apply --remove-raw`. The command creates each missing immutable transcript from the best recoverable pre-alignment source, verifies the copy, and only then removes the obsolete artifact.
 
 The assistant can benchmark itself against the perfected example lyric files:
 

@@ -13,9 +13,10 @@ in the [DECTALK Choir README](../README.md#choir-renderer).
 - Tauri owns the local desktop window and invokes a single JSON command.
 - `tools/choir_studio_bridge.py` owns only safe workspace artifacts and calls
   the established inspector, lyric drafter, and alignment code.
-- `choir.py` remains the only renderer. Studio keeps one generated working
-  candidate at `songs/<Song>/outputs/lyrics_drafts/<Role>.txt`, while pasted raw
-  transcript input is preserved at `songs/<Song>/inputs/lyrics/<Part>.raw.txt`.
+- `choir.py` remains the only renderer. Studio keeps generated working state at
+  `songs/<Song>/outputs/lyrics_drafts/<Role>.txt` and `.json`, but rendering
+  requires the published `songs/<Song>/inputs/lyrics/<Part>.txt`. The original
+  user input is captured once at `<Part>.transcript.txt` and is never replaced.
 
 The Studio lifecycle is **MIDI -> Lyrics -> Align -> Review**. MIDI is a
 read-only source preview; Align owns lyric-to-note editing. The track rail
@@ -71,14 +72,16 @@ before publishing an installer.
 
 - MIDI view: inspect a selected role, preview only its source MIDI track, seek,
   pause, stop, and play its existing stem or final mix.
-- Lyrics view: paste or edit the active lyric text, or generate a direct-phoneme
-  note skeleton in place. Draft timing preserves the pre-draft text as recovery
-  input, writes the timed candidate, and returns that candidate to the same editor.
+- Lyrics view: load the published aligned lyric when present, otherwise load the
+  original transcript. Paste or edit text, or generate a direct-phoneme note
+  skeleton in place. Draft timing captures a missing transcript once, writes the
+  working candidate, and returns that candidate to the same editor.
 - Align view: reopen the existing note-backed candidate, select phrase and word
   spans in the piano roll, and use note-snapped start/end nudges or insertion.
   Every edit is saved directly to `songs/<Song>/outputs/lyrics_drafts/<Role>.txt`;
-  **Apply to source** validates that candidate, creates a backup beside the
-  configured input, then updates the `LYRICS_FILENAME` consumed by `choir.py`.
+  **Apply to source** validates and publishes that candidate to the configured
+  `LYRICS_FILENAME` consumed by `choir.py`. It creates the immutable transcript
+  only when one has not already been captured.
 - Render view: invokes the established `choir.py <Song>` contract and returns
   its compiler log and failure status.
 - Render Audio view: enables renderable roles, opens per-role tuning, and exposes

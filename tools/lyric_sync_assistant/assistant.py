@@ -995,16 +995,11 @@ def build_arg_parser():
 	parser.add_argument('part', nargs='?', help="Output part name under Tracks:")
 	parser.add_argument(
 		'--text-file',
-		help="Plain lyric source. Defaults to the configured lyrics file if no .raw.txt exists.",
+		help="Plain lyric source. Defaults to <LYRICS_FILENAME>.transcript.txt, then the configured aligned lyric file.",
 	)
 	parser.add_argument(
 		'--output',
 		help="Draft output path. Defaults to songs/<song>/outputs/lyrics_drafts/<part>.txt",
-	)
-	parser.add_argument(
-		'--apply',
-		action='store_true',
-		help="Write directly to songs/<song>/inputs/lyrics/<LYRICS_FILENAME>.txt instead of generated outputs.",
 	)
 	parser.add_argument(
 		'--overwrite',
@@ -1094,12 +1089,12 @@ def main():
 		warnings = []
 	else:
 		lyrics_dir = lyrics_directory(song_dir)
-		raw_source = lyrics_dir / f"{track['lyrics_filename']}.raw.txt"
+		transcript_source = lyrics_dir / f"{track['lyrics_filename']}.transcript.txt"
 		configured_source = lyrics_dir / f"{track['lyrics_filename']}.txt"
 		if args.text_file:
 			source_path = Path(args.text_file)
-		elif raw_source.exists():
-			source_path = raw_source
+		elif transcript_source.exists():
+			source_path = transcript_source
 		else:
 			source_path = configured_source
 
@@ -1127,9 +1122,7 @@ def main():
 			transcript_lines=transcript_lines,
 		)
 
-	if args.apply:
-		output_path = configured_source
-	elif args.output:
+	if args.output:
 		output_path = Path(args.output)
 	else:
 		output_path = outputs_directory(song_dir) / 'lyrics_drafts' / f"{args.part}.txt"

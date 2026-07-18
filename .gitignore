@@ -44,6 +44,5 @@ songs/OctaveBoostReference/outputs/*
 !songs/OctaveBoostReference/outputs/_finished/*.wav
 !songs/OctaveBoostReference/outputs/_tracks/
 !songs/OctaveBoostReference/outputs/_tracks/*.wav
-songs/*/inputs/lyrics/*.raw.txt
 songs/*/inputs/lyrics/*.original.txt
 songs/*/inputs/lyrics/*.before-alignment.txt

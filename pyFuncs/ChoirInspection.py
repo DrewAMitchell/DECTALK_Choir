@@ -560,8 +560,7 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
         role_name = str(role)
         source_name = str(config.get("TRACK_FILENAME", role_name))
         lyric_stem = str(config.get("LYRICS_FILENAME", role_name))
-        configured_lyric_path = lyrics_directory(song_dir) / f"{lyric_stem}.txt"
-        lyric_path = render_lyrics_path(song_dir, role_name, lyric_stem)
+        lyric_path = render_lyrics_path(song_dir, lyric_stem)
         matching_tracks = tracks_by_name.get(source_name, [])
         source_track = matching_tracks[0] if len(matching_tracks) == 1 else None
         details: list[str] = []
@@ -589,8 +588,6 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
             details.append(
                 f"Ignored {source_track.duplicate_note_spans} exact duplicate MIDI note span(s) for polyphony assessment."
             )
-        if lyric_path != configured_lyric_path:
-            details.append(f"Using Studio lyric candidate: outputs/lyrics_drafts/{role_name}.txt")
         if not lyric_path.is_file():
             status = "Missing lyric input" if status == "Ready" else status
             details.append(f"Lyric file not found: inputs/lyrics/{lyric_stem}.txt")
