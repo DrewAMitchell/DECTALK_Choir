@@ -28,7 +28,6 @@ merry merry 2|2|merry
 1|1|merry 1|1|christmas
 on on they send
 on with out end
-their joyful 2*tone
+their 1|1|joyful tone
 to every 2*home
-dong
-ding dong ding dong
+ding dong 2*ding dong

@@ -519,11 +519,11 @@
     {
       "word": "joyful",
       "start_ms": 39000,
-      "end_ms": 39204
+      "end_ms": 39418
     },
     {
       "word": "tone",
-      "start_ms": 39214,
+      "start_ms": 39429,
       "end_ms": 39847
     },
     {
@@ -542,23 +542,18 @@
       "end_ms": 41133
     },
     {
-      "word": "dong",
+      "word": "ding",
       "start_ms": 41143,
       "end_ms": 46276
     },
     {
-      "word": "ding",
+      "word": "dong",
       "start_ms": 46286,
       "end_ms": 46704
     },
     {
-      "word": "dong",
-      "start_ms": 46714,
-      "end_ms": 46918
-    },
-    {
       "word": "ding",
-      "start_ms": 46929,
+      "start_ms": 46714,
       "end_ms": 47133
     },
     {

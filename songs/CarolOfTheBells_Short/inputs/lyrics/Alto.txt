@@ -27,4 +27,4 @@ dong
 ding
 ding
 dong
-ding dong ding 3*dong
+ding dong 2*ding 2*dong

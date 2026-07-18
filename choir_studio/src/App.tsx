@@ -596,6 +596,8 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
   const [insertWord, setInsertWord] = useState("");
   const [insertOpen, setInsertOpen] = useState(false);
   const [draggedWord, setDraggedWord] = useState<number | null>(null);
+  const [dragTargetWord, setDragTargetWord] = useState<number | null>(null);
+  const suppressWordClickRef = useRef(false);
   const [showAllWords, setShowAllWords] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [applyArmed, setApplyArmed] = useState(false);
@@ -714,13 +716,64 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
       setAlignment(result); setSelectedPhrase(result.selected.line); setSelectedWord({ line: result.selected.line, wordIndex: result.selected.word_index });
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
-  const reorderWord = async (targetWordIndex: number) => {
-    if (!alignment || !role || selectedPhrase === null || draggedWord === null || draggedWord === targetWordIndex) return;
+  const reorderWord = async (sourceWordIndex: number, targetWordIndex: number) => {
+    if (!alignment || !role || selectedPhrase === null || sourceWordIndex === targetWordIndex) return;
     setBusy("Reordering lyric"); setError("");
     try {
-      const result = await bridge<{ report: AlignmentReport; text: string; selected: { line: number; word_index: number } }>({ command: "reorder_alignment", song, role: role.role, report: alignment.report, text: alignment.text, line: selectedPhrase, word_index: draggedWord, target_word_index: targetWordIndex });
+      const result = await bridge<{ report: AlignmentReport; text: string; selected: { line: number; word_index: number } }>({ command: "reorder_alignment", song, role: role.role, report: alignment.report, text: alignment.text, line: selectedPhrase, word_index: sourceWordIndex, target_word_index: targetWordIndex });
       setAlignment(result); setSelectedWord({ line: result.selected.line, wordIndex: result.selected.word_index });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); setDraggedWord(null); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); setDraggedWord(null); setDragTargetWord(null); }
+  };
+  const beginWordPointerDrag = (event: ReactPointerEvent<HTMLDivElement>, line: number, sourceWordIndex: number) => {
+    if (busy || event.button !== 0) return;
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragging = false;
+    let targetWordIndex: number | null = null;
+    suppressWordClickRef.current = false;
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+    };
+    const move = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      const horizontalDelta = pointerEvent.clientX - startX;
+      if (!dragging && Math.abs(horizontalDelta) < 4) return;
+      if (!dragging) {
+        dragging = true;
+        suppressWordClickRef.current = true;
+        setDraggedWord(sourceWordIndex);
+      }
+      pointerEvent.preventDefault();
+      const direction = horizontalDelta < 0 ? -1 : 1;
+      const candidates = [...document.querySelectorAll<HTMLElement>(`.word-token[data-line="${line}"][data-word-index]`)]
+        .map((element) => ({ element, index: Number.parseInt(element.dataset.wordIndex ?? "", 10) }))
+        .filter(({ index }) => Number.isInteger(index) && (direction < 0 ? index < sourceWordIndex : index > sourceWordIndex))
+        .map(({ element, index }) => {
+          const bounds = element.getBoundingClientRect();
+          return { index, distance: Math.abs(pointerEvent.clientX - (bounds.left + bounds.width / 2)) + Math.abs(pointerEvent.clientY - (bounds.top + bounds.height / 2)) * 0.5 };
+        })
+        .sort((left, right) => left.distance - right.distance);
+      targetWordIndex = candidates[0]?.index ?? null;
+      setDragTargetWord(targetWordIndex);
+    };
+    const finish = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      cleanup();
+      if (dragging && targetWordIndex !== null) void reorderWord(sourceWordIndex, targetWordIndex);
+      else { setDraggedWord(null); setDragTargetWord(null); }
+      window.setTimeout(() => { suppressWordClickRef.current = false; }, 0);
+    };
+    const cancel = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      cleanup(); setDraggedWord(null); setDragTargetWord(null); suppressWordClickRef.current = false;
+    };
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", cancel);
   };
   const apply = async () => {
     if (!alignment || !role) return;
@@ -743,9 +796,9 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
       if (item.line === null || item.word_index === null) return null;
       const isSelected = selectedWord?.line === item.line && selectedWord.wordIndex === item.word_index;
       const wordTooltip = `${item.lyric ?? "Word"}\n${item.note_count} ♩ | ${item.note_count === 0 ? "Needs a note" : `${item.duration_ms} ms`}\nDrag to reorder within this phrase`;
-      return <div className={`word-token ${draggedWord === item.word_index ? "dragging" : ""} ${item.note_count === 0 ? "invalid" : ""}`} style={{ "--word-color": wordColor(item.line, item.word_index) } as CSSProperties} key={`${item.line}-${item.word_index}`} draggable={!busy} title={wordTooltip} onDragStart={() => setDraggedWord(item.word_index!)} onDragEnd={() => setDraggedWord(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void reorderWord(item.word_index!); }}>
+      return <div className={`word-token ${draggedWord === item.word_index ? "dragging" : ""} ${dragTargetWord === item.word_index && draggedWord !== item.word_index ? "drop-target" : ""} ${item.note_count === 0 ? "invalid" : ""}`} style={{ "--word-color": wordColor(item.line, item.word_index) } as CSSProperties} key={`${item.line}-${item.word_index}`} data-line={item.line} data-word-index={item.word_index} title={wordTooltip} onPointerDown={(event) => beginWordPointerDrag(event, item.line!, item.word_index!)}>
         <span className="word-note-count" aria-label={`${item.note_count} owned note${item.note_count === 1 ? "" : "s"}`}>{item.note_count}♩</span>
-        <button className={isSelected ? "selected" : ""} onClick={() => { setSelectedWord({ line: item.line!, wordIndex: item.word_index! }); setInsertOpen(false); }}>{item.lyric}<small>{item.note_count === 0 ? "Needs note" : `${item.duration_ms} ms`}</small></button>
+        <button className={isSelected ? "selected" : ""} onClick={() => { if (suppressWordClickRef.current) return; setSelectedWord({ line: item.line!, wordIndex: item.word_index! }); setInsertOpen(false); }}>{item.lyric}<small>{item.note_count === 0 ? "Needs note" : `${item.duration_ms} ms`}</small></button>
         {isSelected && <span className="word-quick-controls"><button type="button" className={item.mode === "speak" ? "active" : ""} title={item.mode === "speak" ? "Use pitched singing for this word" : "Speak this word normally within its claimed MIDI time"} aria-label={item.mode === "speak" ? "Switch this word to singing" : "Switch this word to normal speech"} disabled={!!busy} onPointerDown={(event) => event.stopPropagation()} onClick={() => void toggleWordMode()}><MessageSquareText size={12} /></button><button type="button" title="Give one note back to this phrase" aria-label="Decrease this word's note count" disabled={!!busy || !canDecreaseWordNotes} onPointerDown={(event) => event.stopPropagation()} onClick={() => void adjustWordNoteCount(-1)}><Minus size={12} /></button><button type="button" title="Assign one more note from this phrase" aria-label="Increase this word's note count" disabled={!!busy || !canIncreaseWordNotes} onPointerDown={(event) => event.stopPropagation()} onClick={() => void adjustWordNoteCount(1)}><Plus size={12} /></button></span>}
         <button className={deleteArmed ? "word-delete armed" : "word-delete"} type="button" title={deleteArmed ? `Ctrl-click to remove ${item.lyric}` : `Hold Ctrl to remove ${item.lyric}`} aria-label={deleteArmed ? `Remove ${item.lyric}` : `Hold Ctrl to remove ${item.lyric}`} draggable={false} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { if (!event.ctrlKey) return; void removeWord(item.line!, item.word_index!); }} disabled={!!busy || !deleteArmed}><Minus size={11} /></button>
       </div>;
@@ -828,6 +881,13 @@ function hexToHsb(value: string): [number, number, number] {
   return [Math.round((hue + 360) % 360), Math.round((highest ? delta / highest : 0) * 100), Math.round(highest * 100)];
 }
 
+function LoudnessValues({ loudness }: { loudness: Role["loudness"] }) {
+  if (!loudness) return <>No stem</>;
+  if (loudness.error) return <>{loudness.error}</>;
+  const minimumWarning = loudness.minimum_dbfs !== null && loudness.minimum_dbfs > -40;
+  return <><span className={minimumWarning ? "loudness-minimum is-high" : "loudness-minimum"} title={minimumWarning ? "Minimum active loudness is above -40 dBFS" : undefined}>{formatDb(loudness.minimum_dbfs)}</span> / {formatDb(loudness.median_dbfs)} / {formatDb(loudness.average_dbfs)} / {formatDb(loudness.maximum_dbfs)}</>;
+}
+
 function ReviewTrackTable({ roles, selectedRole, enabledRoles, onToggleRole, onSelectRole, onTuneRole, final, setError }: { roles: Role[]; selectedRole: string | undefined; enabledRoles: string[]; onToggleRole(role: string): void; onSelectRole(role: string): void; onTuneRole(role: string): void; final: SongInspection["final_loudness"] | undefined; setError(value: string): void }) {
   return <section className="review-stats review-track-table" aria-label="Track review statistics"><table><colgroup><col className="review-col-controls" /><col className="review-col-role" /><col className="review-col-status" /><col className="review-col-midi" /><col className="review-col-pitch" /><col className="review-col-short" /><col /><col className="review-col-peak" /></colgroup><thead><tr><th>Render</th><th>Role</th><th>Status</th><th>MIDI</th><th>DECtalk / audible</th><th className="review-short-note-count" title="Raw MIDI notes shorter than 150 milliseconds, before minimum-note tuning">&lt;150 ms</th><th>Active loudness min / median / avg / max</th><th>Peak</th></tr></thead><tbody>{roles.map((item) => {
     const enabled = enabledRoles.includes(item.role);
@@ -836,9 +896,9 @@ function ReviewTrackTable({ roles, selectedRole, enabledRoles, onToggleRole, onS
       : item.details[0] ?? `${item.role} needs valid MIDI plus lyrics before it can render`;
     return <tr key={item.role} className={item.role === selectedRole ? "selected" : ""} onClick={() => onSelectRole(item.role)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectRole(item.role); } }} tabIndex={0} role="button" aria-pressed={item.role === selectedRole}>
       <td className="review-row-controls" onClick={(event) => event.stopPropagation()}><label title={eligibilityMessage}><input type="checkbox" checked={enabled} disabled={!item.render_eligible} onChange={() => onToggleRole(item.role)} /><span className="sr-only">{enabled ? "Enabled" : "Disabled"}</span></label><button className="review-stem-play" type="button" disabled={!item.stem_exists} title={item.stem_exists ? `Open ${item.role} stem in the default media player` : `${item.role} has no rendered stem yet`} aria-label={item.stem_exists ? `Open ${item.role} stem in the default media player` : `${item.role} has no rendered stem yet`} onClick={() => void openMedia(item.stem_path).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))}><Play size={12} /></button><button className="review-tune-control" type="button" title={`Tune ${item.role}`} aria-label={`Tune ${item.role}`} onClick={() => onTuneRole(item.role)}><Settings2 size={13} /></button></td>
-      <th>{item.role}</th><td>{item.status}</td><td><PitchRange value={item.midi_range} /></td><td><div className="pitch-range-stack"><PitchRange label="render" value={item.render_range} /><PitchRange label="heard" value={item.audible_range} /></div></td><td className="review-short-note-count" title={`${item.notes_below_150ms} of ${item.note_count} raw MIDI notes are shorter than 150 ms`}>{item.notes_below_150ms}</td><td>{item.loudness ? item.loudness.error ?? `${formatDb(item.loudness.minimum_dbfs)} / ${formatDb(item.loudness.median_dbfs)} / ${formatDb(item.loudness.average_dbfs)} / ${formatDb(item.loudness.maximum_dbfs)}` : "No stem"}</td><td>{formatDb(item.loudness?.peak_dbfs)}</td>
+      <th>{item.role}</th><td>{item.status}</td><td><PitchRange value={item.midi_range} /></td><td><div className="pitch-range-stack"><PitchRange label="render" value={item.render_range} /><PitchRange label="heard" value={item.audible_range} /></div></td><td className="review-short-note-count" title={`${item.notes_below_150ms} of ${item.note_count} raw MIDI notes are shorter than 150 ms`}>{item.notes_below_150ms}</td><td><LoudnessValues loudness={item.loudness} /></td><td>{formatDb(item.loudness?.peak_dbfs)}</td>
     </tr>;
-  })}</tbody></table><div className="mix-loudness"><strong>Final mix</strong><span>{final ? final.error ?? `${formatDb(final.minimum_dbfs)} min / ${formatDb(final.median_dbfs)} median / ${formatDb(final.average_dbfs)} average / ${formatDb(final.maximum_dbfs)} max / ${formatDb(final.peak_dbfs)} peak` : "No completed mix available"}</span></div></section>;
+  })}</tbody></table><div className="mix-loudness"><strong>Final mix</strong><span>{final ? final.error ?? <><span className={final.minimum_dbfs !== null && final.minimum_dbfs > -40 ? "loudness-minimum is-high" : "loudness-minimum"} title={final.minimum_dbfs !== null && final.minimum_dbfs > -40 ? "Minimum active loudness is above -40 dBFS" : undefined}>{formatDb(final.minimum_dbfs)} min</span> / {formatDb(final.median_dbfs)} median / {formatDb(final.average_dbfs)} average / {formatDb(final.maximum_dbfs)} max / {formatDb(final.peak_dbfs)} peak</> : "No completed mix available"}</span></div></section>;
 }
 
 function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChange, onSelectRole, setInspection, busy, setBusy, setError }: { song: string; role: Role | null; inspection: SongInspection | null; enabledRoles: string[]; onEnabledRolesChange(roles: string[]): void; onSelectRole(role: string): void; setInspection(value: SongInspection | null): void; busy: string; setBusy(value: string): void; setError(value: string): void }) {
