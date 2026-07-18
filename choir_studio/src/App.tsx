@@ -65,6 +65,8 @@ type TrackTuning = {
   STEM_PEAK_CEILING_DBFS: number;
   GAP_MEND_MS: number;
 };
+const trackTuningMatches = (left: TrackTuning | null, right: TrackTuning | null) =>
+  left !== null && right !== null && JSON.stringify(left) === JSON.stringify(right);
 type AutoNormalizeTuning = { supported: boolean; head_size: number | null; message: string; values: TrackTuning | null };
 type VisualTextOptions = {
   label: string;
@@ -751,6 +753,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const [spectrogramStageClock, setSpectrogramStageClock] = useState({ stage: "", startedAt: 0, now: 0 });
   const [renderJob, setRenderJob] = useState<RenderJobStatus | null>(null);
   const [tuning, setTuning] = useState<TrackTuning | null>(null);
+  const [savedTuning, setSavedTuning] = useState<TrackTuning | null>(null);
   const [autoNormalize, setAutoNormalize] = useState<AutoNormalizeTuning | null>(null);
   const tuningCache = useRef(new Map<string, TrackTuning>());
   const visualDrag = useRef<{ pointerId: number; role: string; mode: "move" | "resize"; startX: number; startY: number; bounds: DOMRect; position: [number, number, number] } | null>(null);
@@ -805,20 +808,26 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   useEffect(() => {
     if (!song || !role) {
       setTuning(null);
+      setSavedTuning(null);
       return;
     }
     const cacheKey = `${song}:${role.role}`;
     const cached = tuningCache.current.get(cacheKey);
     if (cached) {
       setTuning(cached);
+      setSavedTuning(cached);
       return;
     }
     let cancelled = false;
     setTuning(null);
+    setSavedTuning(null);
     // Let the selected table row paint before requesting role-specific settings.
     const timer = window.setTimeout(() => bridge<TrackTuning>({ command: "get_track_tuning", song, role: role.role }).then((next) => {
       tuningCache.current.set(cacheKey, next);
-      if (!cancelled) setTuning(next);
+      if (!cancelled) {
+        setTuning(next);
+        setSavedTuning(next);
+      }
     }).catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause)); }), 80);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [song, role?.role, setError]);
@@ -1002,6 +1011,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const changeTuning = (key: keyof TrackTuning, value: TrackTuning[keyof TrackTuning]) => {
     setTuning((current) => current ? { ...current, [key]: value } : current);
   };
+  const tuningDirty = !trackTuningMatches(tuning, savedTuning);
   const applyAutoNormalize = async () => {
     if (!song || !role || !tuning?.HEAD_SIZE) return;
     setError("");
@@ -1016,11 +1026,13 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   };
   const saveTuning = async () => {
-    if (!song || !role || !tuning) return;
+    if (!song || !role || !tuning || !tuningDirty) return;
     setBusy(`Saving ${role.role} tuning`); setError("");
     try {
       const result = await bridge<{ values: TrackTuning }>({ command: "update_track_tuning", song, role: role.role, values: tuning });
-      tuningCache.current.set(`${song}:${role.role}`, result.values); setTuning(result.values);
+      tuningCache.current.set(`${song}:${role.role}`, result.values);
+      setTuning(result.values);
+      setSavedTuning(result.values);
       await refresh();
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
@@ -1031,7 +1043,9 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
       const cacheKey = `${song}:${role.role}`;
       tuningCache.current.delete(cacheKey);
       const next = await bridge<TrackTuning>({ command: "get_track_tuning", song, role: role.role });
-      tuningCache.current.set(cacheKey, next); setTuning(next);
+      tuningCache.current.set(cacheKey, next);
+      setTuning(next);
+      setSavedTuning(next);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
   const render = async () => {
@@ -1095,7 +1109,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
           <label className="tuning-field" title="Final peak ceiling for the completed role stem after all phrases are assembled."><span>Stem peak ceiling <small>final role guard</small></span><div className="tuning-input"><input type="number" min="-60" max="0" step="0.5" value={tuning.STEM_PEAK_CEILING_DBFS} onChange={(event) => changeTuning("STEM_PEAK_CEILING_DBFS", Number(event.target.value))} /><output>dBFS</output></div><em>Last safety pass for this output track. -1 dBFS is the default.</em></label>
           <label className="tuning-field" title="Folds MIDI gaps at or below this duration into the preceding note."><span>Mend gaps <small>timing threshold</small></span><div className="tuning-input"><input type="number" min="0" max="100" step="1" value={tuning.GAP_MEND_MS} onChange={(event) => changeTuning("GAP_MEND_MS", Number(event.target.value))} /><output>ms</output></div><em>0 preserves every MIDI gap. Positive values close only short gaps.</em></label>
         </section>
-        <div className="tuning-actions"><button className="secondary" type="button" title={autoNormalize?.message ?? "Set a calibrated [:np] head size, then load the measured baseline."} onClick={() => void applyAutoNormalize()} disabled={!tuning.HEAD_SIZE || !!busy}>Auto-normalize</button><button className="secondary" type="button" title="Discard unsaved fields and reload this role's settings.yaml profile" onClick={() => void resetTuning()} disabled={!!busy}>Reset</button><button className="primary" type="button" onClick={() => void saveTuning()} disabled={!!busy}><Sparkles size={15} /> Save track tuning</button><span>{autoNormalize?.supported ? `${autoNormalize.message} Review the staged values, then save.` : autoNormalize?.message ?? "Set head size to enable the measured baseline."}</span></div>
+        <div className="tuning-actions"><button className="secondary" type="button" title={autoNormalize?.message ?? "Set a calibrated [:np] head size, then load the measured baseline."} onClick={() => void applyAutoNormalize()} disabled={!tuning.HEAD_SIZE || !!busy}>Auto-normalize</button><button className="secondary" type="button" title="Discard unsaved fields and reload this role's settings.yaml profile" onClick={() => void resetTuning()} disabled={!!busy || !tuningDirty}>Reset</button><button className="primary" type="button" title={tuningDirty ? "Save these tuning changes to settings.yaml" : "No tuning changes to save"} onClick={() => void saveTuning()} disabled={!!busy || !tuningDirty}><Sparkles size={15} /> Save track tuning</button><span>{autoNormalize?.supported ? `${autoNormalize.message} Review the staged values, then save.` : autoNormalize?.message ?? "Set head size to enable the measured baseline."}</span></div>
       </div>}
     </details>
     <section className="review-visualizer">

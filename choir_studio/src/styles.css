@@ -284,7 +284,7 @@ button:disabled { cursor: wait; opacity: .55; }
 }
 
 /* Review keeps result ownership on the right and only shows actionable track data. */
-.review-header .review-render { margin-left: auto; }.review-render .primary { white-space: nowrap; }.render-duration { margin-left: 3px; padding-left: 7px; border-left: 1px solid #17473966; color: #173e31; font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; }.review-row-controls input:disabled { cursor: not-allowed; opacity: .3; }
+.review-header .review-render { margin-left: auto; }.review-render .primary { white-space: nowrap; }.review-render .render-duration { margin-left: 3px; padding-left: 7px; border-left: 1px solid #17473966; color: #10271f; font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; }.review-row-controls input:disabled { cursor: not-allowed; opacity: .3; }
 :root[data-theme="light"] .range-legend { color: #263d38; }:root[data-theme="light"] .range-legend strong { color: #1a2d29; }:root[data-theme="light"] .range-legend-blue { color: #1e579d; }:root[data-theme="light"] .range-legend-green { color: #1c7447; }:root[data-theme="light"] .range-legend-yellow { color: #7d6500; }:root[data-theme="light"] .range-legend-orange { color: #a44525; }:root[data-theme="light"] .range-legend-red { color: #982a38; }
 
 /* The role's existing MIDI remains usable while its phrase map is loading. */
