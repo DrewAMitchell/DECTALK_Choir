@@ -403,8 +403,8 @@ button:disabled { cursor: wait; opacity: .55; }
 .review-track-table .review-col-pitch { width: 220px; }
 .review-track-table .review-col-peak { width: 80px; }
 .review-track-table th, .review-track-table td { overflow-wrap: anywhere; }
-.review-track-table .review-short-note-count { color: #d8e4e0; font-variant-numeric: tabular-nums; text-align: right; }
-:root[data-theme="light"] .review-track-table .review-short-note-count { color: #263f37; }
+.review-track-table .review-short-note-count { color: #d8e4e0; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }.review-track-table .review-short-note-count strong { color: inherit; font-size: 11px; }.review-track-table .review-short-note-count span { color: #82938f; font-size: 10px; font-weight: 500; }
+:root[data-theme="light"] .review-track-table .review-short-note-count { color: #263f37; }:root[data-theme="light"] .review-track-table .review-short-note-count span { color: #647a73; }
 .loudness-minimum.is-high { color: #f0c45f; font-weight: 700; }
 :root[data-theme="light"] .loudness-minimum.is-high { color: #8a6500; }
 
