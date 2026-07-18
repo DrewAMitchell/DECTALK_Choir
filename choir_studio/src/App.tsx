@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { ArrowLeft, BarChart3, Check, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, FileAudio, FolderOpen, GitBranch, Info, LoaderCircle, MessageSquareText, Minus, Moon, Music2, Music3, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { ArrowLeft, BarChart3, Check, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, FileAudio, FileInput, FolderOpen, GitBranch, Info, LoaderCircle, MessageSquareText, Minus, Moon, Music2, Music3, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
 import { bridge, deleteSong, media, openFfmpegDownload, openMedia, openSongFolder, renderJobStatus, spectrogramJobStatus, startRenderJob, startSpectrogramJob, type MediaStatus, type RenderJobStatus, type SpectrogramJobStatus } from "./bridge";
 import { PianoRoll } from "./PianoRoll";
 import type { AlignmentReport, Role, SongInspection } from "./types";
@@ -47,6 +47,7 @@ type AlignmentTemplate = { role: string; path: string };
 type SplitLane = { number: number; name: string; note_count: number; minimum_pitch: number | null; maximum_pitch: number | null };
 type SplitPreview = { source_path: string; source_name: string; track_index: number; note_count: number; max_polyphony: number; default_filename: string; lanes: SplitLane[]; splittable: boolean };
 type SplitResult = { path: string; summary_path: string; backup_path: string | null; replaced_source: boolean; lanes: SplitLane[]; warning: string | null };
+type DectalkImportResult = { role: string; note_count: number; duration_ms: number; midi_path: string; source_path: string; alignment_path: string };
 type TrackTuning = {
   VOICE: string | null;
   HEAD_SIZE: number | null;
@@ -199,6 +200,7 @@ export default function App() {
   const [templateSources, setTemplateSources] = useState<AlignmentTemplate[]>([]);
   const [selectedPhrase, setSelectedPhrase] = useState<number | null>(null);
   const [deleteSongArmed, setDeleteSongArmed] = useState(false);
+  const [dectalkImportOpen, setDectalkImportOpen] = useState(false);
   const [lyricsModalOpen, setLyricsModalOpen] = useState(false);
   const [splitRoleName, setSplitRoleName] = useState("");
   const [busy, setBusy] = useState("");
@@ -379,11 +381,16 @@ export default function App() {
     const refreshed = await bridge<SongInspection>({ command: "inspect_song", song });
     setInspection(refreshed); setAlignment(null); setAlignmentRole(""); setSelectedPhrase(null);
   }, [song, invalidateAlignmentLoad]);
+  const finishDectalkImport = useCallback(async (result: DectalkImportResult) => {
+    invalidateAlignmentLoad();
+    const refreshed = await bridge<SongInspection>({ command: "inspect_song", song });
+    setInspection(refreshed); setRoleName(result.role); setDraftState(null); setDraftRole(""); setAlignment(null); setAlignmentRole(""); setSelectedPhrase(null); setDectalkImportOpen(false); setStage("align");
+  }, [song, invalidateAlignmentLoad]);
 
   return <main className="studio-shell">
     <header className="app-header">
       <div className="brand"><img className="brand-mark" src={choirStudioMark} alt="" /><span>DECTALK Choir</span><strong>Studio</strong></div>
-      <div className="header-song-cluster"><label className="song-select"><span>Song</span><select value={song} onChange={(event) => void loadSong(event.target.value)}>{songs.map((item) => <option key={item}>{item}</option>)}</select></label><div className="selection-actions"><button className="header-command" type="button" onClick={() => void playRender()} disabled={!inspection?.final_mix} title="Open the completed song mix in your default media player" aria-label="Open render in default media player"><Play size={15} /></button><button className="header-command" type="button" onClick={() => void openOutputs()} disabled={!song} title="Open this song's generated output folder" aria-label="Open output folder"><FolderOpen size={16} /></button><button className="header-command destructive-command" type="button" onClick={() => setDeleteSongArmed(true)} disabled={!song} title="Delete this song and all of its outputs" aria-label="Delete selected song"><Trash2 size={15} /></button></div></div>
+      <div className="header-song-cluster"><label className="song-select"><span>Song</span><select value={song} onChange={(event) => void loadSong(event.target.value)}>{songs.map((item) => <option key={item}>{item}</option>)}</select></label><div className="selection-actions"><button className="header-command" type="button" onClick={() => void playRender()} disabled={!inspection?.final_mix} title="Open the completed song mix in your default media player" aria-label="Open render in default media player"><Play size={15} /></button><button className="header-command" type="button" onClick={() => void openOutputs()} disabled={!song} title="Open this song's generated output folder" aria-label="Open output folder"><FolderOpen size={16} /></button><button className="header-command" type="button" onClick={() => setDectalkImportOpen(true)} disabled={!song} title="Import a timed DECTalk phoneme string as a new MIDI track with an applied lyric alignment" aria-label="Import timed DECTalk phonemes"><FileInput size={16} /></button><button className="header-command destructive-command" type="button" onClick={() => setDeleteSongArmed(true)} disabled={!song} title="Delete this song and all of its outputs" aria-label="Delete selected song"><Trash2 size={15} /></button></div></div>
       <nav className="lifecycle" aria-label="Track design phases">
         {stages.map(([id, label, Icon], index) => <button key={id} className={stage === id ? "active" : ""} onClick={() => selectStage(id)}><span className="stage-index">{index + 1}</span><Icon size={16} />{label}</button>)}
       </nav>
@@ -400,8 +407,38 @@ export default function App() {
       </section>
     </section>
     {lyricsModalOpen && <section className="lyrics-modal-backdrop" role="presentation" onMouseDown={() => setLyricsModalOpen(false)}><section className="lyrics-modal" role="dialog" aria-modal="true" aria-label={`Edit ${roleName} lyrics`} onMouseDown={(event) => event.stopPropagation()}><button className="lyrics-modal-close" type="button" title="Close lyric editor" aria-label="Close lyric editor" onClick={() => setLyricsModalOpen(false)}><X size={17} /></button><LyricsStage transcript={transcript} transcriptLoaded={transcriptLoadedKey === transcriptKey} transcriptLocked={transcriptLocked} setTranscript={setTranscript} validation={validation} onDraft={runDraft} onNoteSkeleton={runNoteSkeleton} onSave={saveTranscript} busy={busy} draftState={hasDraft ? draftState : null} dirty={transcript !== savedTranscript} prompt={lyricsPrompt} /></section></section>}
+    {dectalkImportOpen && <DectalkImportModal song={song} onClose={() => setDectalkImportOpen(false)} onImported={finishDectalkImport} setError={setError} />}
     {splitRole && <PolyphonicSplitModal song={song} role={splitRole} onClose={closeSplitModal} onSourceChanged={refreshAfterMidiSplit} setError={setError} />}
   </main>;
+}
+
+function DectalkImportModal({ song, onClose, onImported, setError }: { song: string; onClose(): void; onImported(result: DectalkImportResult): Promise<void>; setError(value: string): void }) {
+  const [role, setRole] = useState("Imported Voice");
+  const [text, setText] = useState("");
+  const [working, setWorking] = useState(false);
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape" && !working) onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [working, onClose]);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!role.trim() || !text.trim()) return;
+    setWorking(true); setError("");
+    try {
+      const result = await bridge<DectalkImportResult>({ command: "import_dectalk_track", song, role: role.trim(), text });
+      await onImported(result);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setWorking(false); }
+  };
+  return <section className="split-modal-backdrop" role="presentation" onMouseDown={() => { if (!working) onClose(); }}><form className="split-modal dectalk-import-modal" role="dialog" aria-modal="true" aria-labelledby="dectalk-import-title" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void submit(event)}>
+    <button className="split-modal-close" type="button" onClick={onClose} disabled={working} title="Close DECTalk import" aria-label="Close DECTalk import"><X size={17} /></button>
+    <header><p className="eyebrow">Current song: {song}</p><h2 id="dectalk-import-title">Import timed DECTalk phonemes</h2><p>Create a new MIDI role and publish its direct-phoneme alignment in one operation.</p></header>
+    <label><span>Track name</span><input autoFocus value={role} onChange={(event) => setRole(event.target.value)} placeholder="Imported Voice" disabled={working} /></label>
+    <label className="dectalk-import-source"><span>DECTalk command string</span><textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="[:np][d&lt;80,12&gt;ao&lt;500,12&gt;ng&lt;80,12&gt;][:tone 440,500]" disabled={working} /></label>
+    <p className="dectalk-import-note">Contiguous phonemes at one pitch become one MIDI note. Timed underscores become rests; rests of 250 ms or longer start a new phrase. Tone events use <code>[:tone frequency_hz,duration_ms]</code>; Studio retains that exact command and maps its frequency to the nearest MIDI note for alignment.</p>
+    <div className="split-actions"><button type="button" className="secondary" onClick={onClose} disabled={working}>Cancel</button><button type="submit" className="primary" disabled={working || !role.trim() || !text.trim()}>{working ? <><LoaderCircle size={15} /> Importing...</> : <><FileInput size={15} /> Import and open Align</>}</button></div>
+  </form></section>;
 }
 
 function PolyphonicSplitModal({ song, role, onClose, onSourceChanged, setError }: { song: string; role: Role; onClose(): void; onSourceChanged(): Promise<void>; setError(value: string): void }) {
@@ -799,6 +836,14 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     visualDraftsRef.current = {};
   }, [song]);
   useEffect(() => {
+    if (panel !== "tune") return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPanel("overview");
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [panel]);
+  useEffect(() => {
     if (!song) return;
     let cancelled = false;
     bridge<SpectrogramVideoSettings>({ command: "get_spectrogram_video_settings", song }).then((next) => {
@@ -1101,8 +1146,8 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     <ReviewTrackTable roles={inspection?.roles ?? []} selectedRole={role?.role} enabledRoles={enabledRoles} onToggleRole={toggleRenderRole} onSelectRole={onSelectRole} onTuneRole={(nextRole) => { onSelectRole(nextRole); setPanel("tune"); }} final={final} setError={setError} />
     <section className="review-stats" aria-label="Track review statistics"><table><thead><tr><th>Role</th><th>Status</th><th>Notes</th><th>MIDI</th><th>DECtalk / audible</th><th>Poly</th><th>Active loudness min / median / avg / max</th><th>Peak</th></tr></thead><tbody>{inspection?.roles.map((item) => <tr key={item.role} className={item.role === role?.role ? "selected" : ""} onClick={() => onSelectRole(item.role)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectRole(item.role); } }} tabIndex={0} role="button" aria-pressed={item.role === role?.role}><th>{item.role}</th><td>{item.status}</td><td>{item.note_count}</td><td><PitchRange value={item.midi_range} /></td><td><div className="pitch-range-stack"><PitchRange label="render" value={item.render_range} /><PitchRange label="heard" value={item.audible_range} /></div></td><td>{item.polyphony ?? "--"}</td><td>{item.loudness ? item.loudness.error ?? `${formatDb(item.loudness.minimum_dbfs)} / ${formatDb(item.loudness.median_dbfs)} / ${formatDb(item.loudness.average_dbfs)} / ${formatDb(item.loudness.maximum_dbfs)}` : "No stem"}</td><td>{formatDb(item.loudness?.peak_dbfs)}</td></tr>)}</tbody></table><div className="mix-loudness"><strong>Final mix</strong><span>{final ? final.error ?? `${formatDb(final.minimum_dbfs)} min · ${formatDb(final.median_dbfs)} median · ${formatDb(final.average_dbfs)} average · ${formatDb(final.maximum_dbfs)} max · ${formatDb(final.peak_dbfs)} peak` : "No completed mix available"}</span></div></section>
     {renderJob && renderJob.state !== "idle" && <details className="generated review-log" open={renderJob.state !== "completed"}><summary>{renderJob.message} <span>{renderJob.selected_roles.join(", ")} · {renderJob.state === "running" ? "background job" : `exit ${renderJob.returncode ?? "--"}`}</span></summary><pre>{renderJob.log || "The renderer is starting; live compiler output will appear here."}</pre></details>}
-    <details className="track-tuning" open>
-      <summary><span>Track tuning</span><strong>{role?.role ?? "Select a role"}</strong><small>Saved to this role in `settings.yaml`</small></summary>
+    <section className="track-tuning" role="dialog" aria-modal="true" aria-label={`Tune ${role?.role ?? "selected role"}`}>
+      <header className="tuning-modal-header"><span>Track tuning</span><strong>{role?.role ?? "Select a role"}</strong><small>Saved to this role in `settings.yaml`</small></header>
       <button className="tuning-modal-close" type="button" onClick={() => setPanel("overview")} title="Close track tuning" aria-label="Close track tuning"><X size={17} /></button>
       {tuning && <div className="tuning-body">
         <p className="tuning-guide"><strong>Value reference</strong><span>0 means no adjustment. Pitch values are semitones; +12 / -12 equals one octave. DECtalk pitch index: C3 = 0, C5 = 24, C6 = 36.</span></p>
@@ -1126,7 +1171,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
         </section>
         <div className="tuning-actions"><button className="secondary" type="button" title="Discard unsaved fields and reload this role's settings.yaml profile" onClick={() => void resetTuning()} disabled={!!busy || !tuningDirty}>Reset</button><button className="primary" type="button" title={tuningDirty ? "Save these tuning changes to settings.yaml" : "No tuning changes to save"} onClick={() => void saveTuning()} disabled={!!busy || !tuningDirty}><Sparkles size={15} /> Save track tuning</button></div>
       </div>}
-    </details>
+    </section>
     <section className="review-visualizer">
       <div className="visual-preview-column"><div className="visual-output-policy"><strong>After final MP4, working clips</strong><div className="visual-output-modes" role="group" aria-label="Intermediate animation mode">{([['delete', 'Delete', 'Remove the lossless per-track animation files after the final song MP4 is created.'], ['compress', 'Compress', 'Convert each lossless per-track animation to a smaller H.264 MP4, then remove its lossless source.'], ['keep', 'Keep lossless', 'Preserve the original lossless per-track animation files for later editing or recompositing.']] as [IntermediateAnimationMode, string, string][]).map(([mode, label, description]) => <button key={mode} type="button" title={description} aria-label={`${label}: ${description}`} className={spectrogramVideoSettings?.intermediate_animation_mode === mode ? "active" : ""} aria-pressed={spectrogramVideoSettings?.intermediate_animation_mode === mode} onClick={() => void updateIntermediateAnimationMode(mode)} disabled={!spectrogramVideoSettings || spectrogramVideoSettingsSaving || job?.state === "running"}>{label}</button>)}</div>{spectrogramVideoSettingsSaving && <LoaderCircle size={14} />}</div><div className="visual-preview-frame" ref={visualPreviewFrameRef}><div className={visualDragging ? "visual-layout-preview dragging" : "visual-layout-preview"} style={{ "--video-aspect": monitorAspectRatio, ...(visualPreviewSize ? { width: `${visualPreviewSize.width}px`, height: `${visualPreviewSize.height}px` } : {}) } as CSSProperties} aria-label={`Enabled spectrogram render regions at ${monitorWidth} by ${monitorHeight}`}>{enabledVisualRoles.map((item) => {
         const selected = item.role === visualRoleName;

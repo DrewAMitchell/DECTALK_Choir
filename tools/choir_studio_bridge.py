@@ -33,6 +33,7 @@ for directory in (REPO_ROOT, ASSISTANT_DIR):
 
 import pyFuncs.PhonemeProcessing as phonemes
 from pyFuncs.ChoirInspection import MidiTrackInfo, RoleInspection, _has_lyric_content, _lyric_conversion_issue, inspect_song
+from pyFuncs.DectalkTrackImport import DectalkTrackImportError, append_imported_track, parse_dectalk_track
 from pyFuncs.MidiPreview import write_single_track_preview
 from pyFuncs.SongPaths import lyrics_directory, outputs_directory
 from assistant import (
@@ -69,6 +70,7 @@ from tools.split_polyphonic_midi import (
 
 
 SONG_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
+ROLE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]*$")
 
 
 class BridgeError(ValueError):
@@ -391,6 +393,113 @@ def _replace_role_setting(path: Path, role: str, key: str, value: str) -> None:
         with contextlib.suppress(OSError):
             temporary.unlink()
         raise BridgeError(f"Could not save visualizer settings: {error}") from error
+
+
+def _settings_with_imported_role(text: str, role: str, setup: str) -> str:
+    """Append one role to the Tracks mapping without reformatting the song profile."""
+
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(keepends=True)
+    tracks_index = next((index for index, line in enumerate(lines) if re.match(r"^Tracks:\s*(?:#.*)?(?:\r?\n)?$", line)), None)
+    if tracks_index is None:
+        raise BridgeError("settings.yaml must define a Tracks mapping before importing a DECTalk track.")
+    section_end = next(
+        (index for index in range(tracks_index + 1, len(lines)) if re.match(r"^\S", lines[index])),
+        len(lines),
+    )
+    if section_end and lines[section_end - 1] and not lines[section_end - 1].endswith(("\n", "\r")):
+        lines[section_end - 1] += newline
+    block = [
+        newline,
+        f"  {role}:{newline}",
+        f"    TRACK_FILENAME: {_format_setting_value(role)}{newline}",
+        f"    LYRICS_FILENAME: {_format_setting_value(role)}{newline}",
+        f"    DEC_SETUP: {_format_setting_value(setup)}{newline}",
+        f"    VOLUME_ADJUST_DB: 0{newline}",
+        f"    IGNORE_MIDI_VELOCITY: true{newline}",
+        f"    RENDER_ENABLED: true{newline}",
+    ]
+    lines[section_end:section_end] = block
+    return "".join(lines)
+
+
+def _import_dectalk_track(song: str, requested_role: object, source_text: object) -> dict[str, Any]:
+    """Atomically add a timed DECTalk string as MIDI plus an applied alignment."""
+
+    role = str(requested_role or "").strip()
+    if not ROLE_NAME.fullmatch(role):
+        raise BridgeError("Track name may contain letters, numbers, spaces, underscores, and hyphens.")
+    song_dir, settings = load_settings(song)
+    if role in (settings.get("Tracks") or {}):
+        raise BridgeError(f"Track {role!r} is already configured for {song}.")
+    inspection = inspect_song(REPO_ROOT, song, include_audio=False)
+    if not inspection.midi_path:
+        raise BridgeError("The selected song has no MIDI file to receive this track.")
+    if inspection.midi and any(track.name == role for track in inspection.midi.tracks):
+        raise BridgeError(f"The song MIDI already contains a track named {role!r}.")
+    try:
+        imported = parse_dectalk_track(str(source_text or ""), int(settings.get("noteOffset", -48)))
+    except DectalkTrackImportError as error:
+        raise BridgeError(str(error)) from error
+
+    midi_path = Path(inspection.midi_path)
+    settings_path = song_dir / "settings.yaml"
+    lyric_dir = lyrics_directory(song_dir)
+    source_path = lyric_dir / f"{role}.txt"
+    transcript_path = lyric_dir / f"{role}.transcript.txt"
+    candidate_dir = outputs_directory(song_dir) / "lyrics_drafts"
+    created_paths = [
+        source_path,
+        transcript_path,
+        candidate_dir / f"{role}.txt",
+        candidate_dir / f"{role}.json",
+        lyric_dir / ".alignment" / f"{role}.json",
+    ]
+    collisions = [str(path.relative_to(song_dir)) for path in created_paths if path.exists()]
+    if collisions:
+        raise BridgeError(f"Import would replace existing track artifacts: {', '.join(collisions)}")
+
+    original_midi = midi_path.read_bytes()
+    original_settings = settings_path.read_bytes()
+    temporary_midi = midi_path.with_suffix(midi_path.suffix + ".import.tmp")
+    temporary_settings = settings_path.with_suffix(settings_path.suffix + ".import.tmp")
+    try:
+        midi = mido.MidiFile(midi_path)
+        append_imported_track(midi, role, imported)
+        midi.save(temporary_midi)
+        settings_text = original_settings.decode("utf-8-sig")
+        temporary_settings.write_text(
+            _settings_with_imported_role(settings_text, role, imported.setup or "[:np][:dv hs 100]"),
+            encoding="utf-8",
+            newline="",
+        )
+        temporary_midi.replace(midi_path)
+        temporary_settings.replace(settings_path)
+        lyric_dir.mkdir(parents=True, exist_ok=True)
+        transcript_path.write_text(_normalized_lyric_text(source_text), encoding="utf-8")
+        source_path.write_text(imported.lyric_text, encoding="utf-8")
+        report, lines = build_alignment(song, role, source_path)
+        normalized_text = "\n".join(lines).rstrip() + "\n"
+        _write_candidate_alignment(song, role, report, normalized_text)
+        applied = _apply_alignment(song, role, normalized_text)
+    except Exception as error:
+        midi_path.write_bytes(original_midi)
+        settings_path.write_bytes(original_settings)
+        temporary_midi.unlink(missing_ok=True)
+        temporary_settings.unlink(missing_ok=True)
+        for path in created_paths:
+            path.unlink(missing_ok=True)
+        if isinstance(error, BridgeError):
+            raise
+        raise BridgeError(f"Could not import DECTalk track: {error}") from error
+    return {
+        "role": role,
+        "note_count": len(imported.notes),
+        "duration_ms": round(imported.duration_ms),
+        "midi_path": str(midi_path),
+        "source_path": applied["path"],
+        "alignment_path": applied["alignment_path"],
+    }
 
 
 def _replace_role_mapping(
@@ -1190,6 +1299,8 @@ def handle(request: dict[str, Any]) -> Any:
         return _spectrogram_video_settings(song)
     if command == "update_spectrogram_video_settings":
         return _update_spectrogram_video_settings(song, request.get("intermediate_animation_mode"))
+    if command == "import_dectalk_track":
+        return _import_dectalk_track(song, request.get("role"), request.get("text"))
     role = _role(song, request.get("role"))
     if command == "save_visual_layout":
         return _save_visual_layout(song, role, request.get("position"), request.get("hsb"), request.get("options"))

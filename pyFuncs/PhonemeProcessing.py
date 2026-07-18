@@ -1,4 +1,5 @@
 import cmudict
+import re
 cmu_dict = cmudict.dict()
 
 # DECTALK_Arpabet_Phonemes = ["_", "@", "&", "^", "|", "a", "A", "b", "B", "c", "C", "d", "D", "D", "E", "e", "f", "g", "G", "h", "I", "i", "J", "j", "K", "k", "L", "l", "l", "m", "M", "N", "n", "o", "O", "P", "p", "q", "Q", "r", "R", "R", "s", "S", "t", "T", "U", "u", "v", "W", "w", "x", "Y", "y", "z", "Z", "_", "ae", "dx", "ah", "ix", "aa", "ay", "b", "ir", "ao", "ch", "d", "dh", "dz", "eh", "ey", "f", "g", "nx", "hx", "ih", "iy", "jh", "ur", "er", "k", "el", "ll", "lx", "m", "or", "en", "n", "ow", "oy", "ar", "p", "eat", "tx", "r", "rr", "rx", "s", "sh", "t", "th", "uh", "uw", "v", "aw", "w", "ax", "yu", "yx", "z", "zh", ]
@@ -250,6 +251,19 @@ def convertWordToPhonemes(fooWord, convertLowercase=True, DECTALK_check=True):
 
 
 SPOKEN_WORD_MARKER = "__dectalk_spoken_word__"
+TONE_EVENT_MARKER = "__dectalk_tone_event__"
+TONE_EVENT_PATTERN = re.compile(r"^@tone\((\d+(?:\.\d+)?),(\d+(?:\.\d+)?)\)$", re.IGNORECASE)
+
+
+def parseToneEventToken(token):
+    match = TONE_EVENT_PATTERN.fullmatch(str(token).strip())
+    if not match:
+        return None
+    frequencyHz = float(match.group(1))
+    durationMs = float(match.group(2))
+    if frequencyHz <= 0 or durationMs <= 0:
+        raise ValueError("Tone frequency and duration must both be positive")
+    return [TONE_EVENT_MARKER, frequencyHz, round(durationMs)]
 
 
 def parseSpokenWordToken(token):
@@ -289,7 +303,17 @@ def lyricsToPhonemes(lyricsFileName, printInfo=True, convertLowercase=True, DECT
         for fooWord in splt:    # Iterate over words in line
             if len(fooWord) == 0: continue  # If fooWord has no characters, skip
 
-            if fooWord[0] == '[':
+            if fooWord.startswith('@tone('):
+                try:
+                    outPhonemes = parseToneEventToken(fooWord)
+                except ValueError as err:
+                    print(f"ERROR: {err} in {lyricsFileName}   (line {currentLineIndex})")
+                    exit()
+                if outPhonemes is None:
+                    print(f"ERROR: Invalid tone event token \"{fooWord}\" in {lyricsFileName}   (line {currentLineIndex})")
+                    exit()
+
+            elif fooWord[0] == '[':
                 try:
                     lineTiming = parseLineTimingToken(fooWord)
                 except ValueError as err:

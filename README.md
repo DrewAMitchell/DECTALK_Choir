@@ -167,6 +167,8 @@ Automatic note leveling targets `-5.0 dBFS` for every non-silent sung MIDI note.
 \[:np\] sets the voice to perfect paul, the most popular voice. Other voices include \[:np\] \[:nb\] \[:nh\] \[:nd\] \[:nf\] \[:nu\] \[:nr\] \[:nw\] & \[:nk\]
 \[:dv hs 95\] changes the head size to be 95% standard. I usually increase head size for lower voices as I think it sounds better.
 Choir Studio Review exposes these voice commands as a beta per-track selector. Saving replaces only the `[:n?]` command and preserves the rest of `DEC_SETUP`. Head size is a timbre control rather than a gain control; this engine clamps values below `65` to the same effective `hs 65` voice.
+
+Choir Studio can also import an existing timed DECTalk command into the selected song. Use the file-import button beside the song folder control, name the new role, and paste a string such as `[:np][d<80,12>ao<500,12>ng<80,12>]`. Studio creates the MIDI track, direct-phoneme lyric source, and applied alignment together, then opens the new role in Align. Contiguous phonemes at one pitch become one note; `_` tokens retain rests. `[:tone frequency_hz,duration_ms]` and its `[:t ...]` alias are retained exactly for audio while their frequencies map to the nearest MIDI notes for visualization. Dialing and conversational event scripts are rejected because they have no deterministic musical alignment.
 There are a ton of other settings to play with that I haven't taken the time to learn, I've been mostly focused on the synchronization and playback.
 
 

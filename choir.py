@@ -533,6 +533,14 @@ def isSpokenCompiledLine(fooLine):
 	)
 
 
+def isToneCompiledLine(fooLine):
+	return (
+		len(fooLine) == 2
+		and type(fooLine[1]) == tuple
+		and fooLine[1][0] == pp.TONE_EVENT_MARKER
+	)
+
+
 for fooPartName in partNamesToOutput:
 	# # Actually write output
 	# lyricFileName = f"{songOutputDir}/phonemes/{fooPartName}.txt"
@@ -599,6 +607,31 @@ for fooPartName in partNamesToOutput:
 					(pp.SPOKEN_WORD_MARKER, spokenDuration, spokenWord, spokenVelocity, None),
 				]
 				fooCompiledLyrics.append([])
+			lyricIndex += 1
+			continue
+
+		if fooPhonemes[lyricIndex][0] == pp.TONE_EVENT_MARKER:
+			claimedNote = None
+			while noteIndex < len(fooNotes) and claimedNote is None:
+				candidateNote = fooNotes[noteIndex]
+				noteIndex += 1
+				if candidateNote[0] != -1:
+					claimedNote = candidateNote
+			if claimedNote is None:
+				break
+			if len(fooCompiledLyrics[-1]) > 0:
+				fooCompiledLyrics.append([])
+			fooCompiledLyrics[-1] = [
+				round(claimedNote[3]),
+				(
+					pp.TONE_EVENT_MARKER,
+					max(1, round(fooPhonemes[lyricIndex][2])),
+					float(fooPhonemes[lyricIndex][1]),
+					round(claimedNote[1]),
+					claimedNote[4] if len(claimedNote) > 4 else None,
+				),
+			]
+			fooCompiledLyrics.append([])
 			lyricIndex += 1
 			continue
 
@@ -796,7 +829,7 @@ if '-plt' in sys.argv[1]:
 		foo_OCTAVE_BOOST = settings_yaml['Tracks'][fooPartName]['OCTAVE_BOOST']
 
 		for fooLine in compiledLyrics[fooPartName]:
-			if isSpokenCompiledLine(fooLine):
+			if isSpokenCompiledLine(fooLine) or isToneCompiledLine(fooLine):
 				continue
 
 			# Display Phoneme
@@ -900,7 +933,7 @@ if True:
 		for fooLine in compiledLyrics[fooPartName]:
 			startTime = fooLine[0]
 			partialTxtFile = f"{songOutputDir}/{fooPartName}/{startTime}.txt"
-			invalidPhonemes = [] if isSpokenCompiledLine(fooLine) else pp.unsupportedDectalkPhonemes(
+			invalidPhonemes = [] if isSpokenCompiledLine(fooLine) or isToneCompiledLine(fooLine) else pp.unsupportedDectalkPhonemes(
 				fooPhen[0] for fooPhen in fooLine[1:] if fooPhen != ' '
 			)
 			if invalidPhonemes:
@@ -915,6 +948,8 @@ if True:
 			partialTxtFile = open(partialTxtFile, 'w')
 			if isSpokenCompiledLine(fooLine):
 				partialTxtFile.write(f"{foo_DEC_SETUP}{fooLine[1][2]}")
+			elif isToneCompiledLine(fooLine):
+				partialTxtFile.write(f"{foo_DEC_SETUP}[:tone {fooLine[1][2]:g},{fooLine[1][1]}]")
 			else:
 				partialTxtFile.write(f"[:phoneme arpabet speak on]{foo_DEC_SETUP}[")
 				for fooPhen in fooLine[1:]:
@@ -953,7 +988,7 @@ while len(procSet) > 0:
 
 	if ii >= len(procSet):
 		ii = 0
-		print(f"Waiting on say.exe processes to finish, {len(procSet)} remaing")
+		print(f"Waiting on say.exe processes to finish, {len(procSet)} remaining")
 		time.sleep(0.5)
 
 
@@ -1126,8 +1161,13 @@ for fooPartName in partNamesToOutput:
 		nextAudio = AudioSegment.from_file(readWavFileName).set_sample_width(4)
 		if isSpokenCompiledLine(fooLine):
 			nextAudio = fitSpokenAudioToWindow(nextAudio, fooLine[1][1])
+		elif isToneCompiledLine(fooLine):
+			targetDurationMs = max(1, round(fooLine[1][1]))
+			if len(nextAudio) < targetDurationMs:
+				nextAudio += AudioSegment.silent(targetDurationMs-len(nextAudio), frame_rate=nextAudio.frame_rate)
+			nextAudio = nextAudio[:targetDurationMs]
 
-		if not isSpokenCompiledLine(fooLine) and foo_OCTAVE_BOOST != 0: #  Multiply playback speed by OCTAVE_BOOST
+		if not isSpokenCompiledLine(fooLine) and not isToneCompiledLine(fooLine) and foo_OCTAVE_BOOST != 0: #  Multiply playback speed by OCTAVE_BOOST
 			initRate = nextAudio.frame_rate
 			new_sample_rate = int(initRate * pow(2, foo_OCTAVE_BOOST/12))
 			print(f"initRate:{initRate}     new_sample_rate:{new_sample_rate}")
@@ -1137,7 +1177,7 @@ for fooPartName in partNamesToOutput:
 		lineAudioSet.append((fooLine, startTime, nextAudio, meanVelocity))
 
 	for fooLine, startTime, nextAudio, meanVelocity in lineAudioSet:
-		if not isSpokenCompiledLine(fooLine) and isEnabled(trackDict['AUTO_NOTE_LEVEL_ENABLED']):
+		if not isSpokenCompiledLine(fooLine) and not isToneCompiledLine(fooLine) and isEnabled(trackDict['AUTO_NOTE_LEVEL_ENABLED']):
 			nextAudio, adjustments = applyAutomaticNoteLevel(nextAudio, fooLine, foo_OCTAVE_BOOST, trackDict)
 			noteLevelAdjustments.extend(adjustments)
 		nextAudio += meanVelocity

@@ -60,7 +60,7 @@ while len(procSet) > 0:
 	
 	if ii >= len(procSet):
 		ii = 0
-		print(f"Waiting on say.exe processes to finish, {len(procSet)} remaing")
+		print(f"Waiting on say.exe processes to finish, {len(procSet)} remaining")
 		time.sleep(0.5)
 
 
