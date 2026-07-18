@@ -164,6 +164,8 @@ button:disabled { cursor: wait; opacity: .55; }
 :root[data-theme="light"] .midi-note.selected-word { stroke: #1c2d2a; }
 :root[data-theme="light"] .phrase rect { fill: #d3e3e0; stroke: #89a8a1; }
 :root[data-theme="light"] .phrase text { fill: #29413d; }
+:root[data-theme="light"] .phrase.selected rect { fill: #d89a2d; stroke: #704900; stroke-width: 2; filter: drop-shadow(0 1px 2px #6b4a2340); }
+:root[data-theme="light"] .phrase.selected text { fill: #211500; font-weight: 800; }
 :root[data-theme="light"] .phrase.invalid rect { fill: #f2bbb7; stroke: #bc4c48; }:root[data-theme="light"] .phrase.invalid text { fill: #522422; }:root[data-theme="light"] .phrase.selected.invalid rect { fill: #c83f3c; stroke: #851f20; }:root[data-theme="light"] .phrase.selected.invalid text { fill: #ffffff; }:root[data-theme="light"] .phrase-workbench.invalid { border-color: #c44642; background: #fff1ef; box-shadow: inset 0 0 0 1px #e6a4a0; }:root[data-theme="light"] .phrase-workbench.invalid .phrase-workbench-heading strong { color: #7b2927; }
 :root[data-theme="light"] .word-insert-popover { border-color: #9abbb0; background: #f7fbf9; box-shadow: 0 8px 20px #36534b2b; }:root[data-theme="light"] .word-insert-popover input { border-color: #b6cec6; background: #ffffff; color: #263d37; }
 :root[data-theme="light"] .template-picker select { border-color: #b6c6c2; background: #ffffff; color: #2d413e; }
