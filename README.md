@@ -67,7 +67,7 @@ Outputs are saved to `songs/<Song>/outputs/`. One folder for each track is gener
 
 Align can also enable **Phoneme output** for an individual track. Its next audio render writes a reusable, timing-complete DECTalk command to `outputs/_phonemes/<Track>.txt`. Phrase gaps become timed rests, making an imported phoneme track editable in Studio and exportable again after its alignment is corrected. Normal-speech words (`~word`) and overlapping phrase timelines cannot be represented faithfully in one serial command, so those tracks fail export with a clear render error instead of producing misleading data.
 
-Three example songs are included. Choir Studio can create a complete starting workspace directly from another MIDI file.
+Four complete example songs are included: `DaisyBell`, `AuldLangSyne`, `CarolOfTheBells_Short`, and `CantHelpFalling`. Choir Studio can create a complete starting workspace directly from another MIDI file.
 
 ## MIDI
 In `songs/<Song>/inputs/`, choir.py checks for a single .mid file. I use LMMS to work with MIDI, but other software *should* be able to export compatible files. For each output track in settings.yaml, `TRACK_FILENAME` selects the MIDI track to read. If `TRACK_FILENAME` is omitted, the settings key is used as the MIDI track name. Each track should be monophonic, only playing one note at a time. Split chords into separate tracks. The only data used are note positions, timings, and velocity.

@@ -1,0 +1,256 @@
+# Different voice options [:np] [:nb] [:nh] [:nd] [:nf] [:nu] [:nr] [:nw] [:nk]
+
+# DECtalk pitch offset from MIDI. The Singer track is in a normal vocal range.
+noteOffset: -48
+
+# Words are broken up into phonemes, the playback lengths of which must be specified in code.
+consonantFractionTarget: 0.20
+consonantMinMs: 5
+consonantMaxMs: 90
+
+# Fold tiny MIDI transcription gaps into the previous note.
+gapMendMs: 20
+
+Tracks:
+  Singer Bass:
+    LYRICS_FILENAME: "Singer Bass"
+    DEC_SETUP: "[:np][:dv hs 100]"
+    VOLUME_ADJUST_DB: 0
+    SPECTROGRAM:
+      COLOR_HSB: [316, 90, 100]
+      POSITION: [0.5, 0, 0.5]
+      LABEL: "Singer Bass"
+      LABEL_ENABLED: true
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
+      CURRENT_WORD_POSITION: "bottom-center"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: true
+
+    RENDER_ENABLED: True
+    PITCH_SHIFT: 0
+    OCTAVE_BOOST: 0
+    PITCH_WRAP_SHIFT: null
+    IGNORE_MIDI_VELOCITY: true
+    VELOCITY_VOLUME_SCALE_DB: 0
+    STEM_PEAK_CEILING_DBFS: -4
+    GAP_MEND_MS: 20
+    MINIMUM_NOTE_DURATION_MS: 0
+    CODA_MAX_MS: 200
+  Singer:
+    LYRICS_FILENAME: Singer
+    DEC_SETUP: "[:np][:dv hs 110]"
+    VOLUME_ADJUST_DB: 2
+    SPECTROGRAM:
+      COLOR_HSB: [328, 100, 100]
+      POSITION: [0.5, 0, 0]
+      LABEL: "Singer"
+      LABEL_ENABLED: true
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
+      CURRENT_WORD_POSITION: "bottom-center"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: true
+
+    RENDER_ENABLED: True
+    PITCH_SHIFT: 0
+    OCTAVE_BOOST: 0
+    PITCH_WRAP_SHIFT: null
+    IGNORE_MIDI_VELOCITY: true
+    VELOCITY_VOLUME_SCALE_DB: 0
+    STEM_PEAK_CEILING_DBFS: -2
+    GAP_MEND_MS: 20
+    MINIMUM_NOTE_DURATION_MS: 0
+    CODA_MAX_MS: 200
+  Singer_UpOctOne:
+    LYRICS_FILENAME: Singer_UpOctOne
+    DEC_SETUP: "[:nk][:dv hs 130]"
+    VOLUME_ADJUST_DB: -5.0
+    PITCH_SHIFT: -12
+    OCTAVE_BOOST: 12
+    SPECTROGRAM:
+      COLOR_HSB: [29, 100, 84]
+      POSITION: [0.5, 0.5, 0]
+      LABEL: "Singer + 1"
+      LABEL_ENABLED: true
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
+      CURRENT_WORD_POSITION: "bottom-left"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: true
+
+    RENDER_ENABLED: True
+  Bass Chords:
+    TRACK_FILENAME: "Bass Chords"
+    LYRICS_FILENAME: "Bass Chords"
+    DEC_SETUP: "[:np][:dv hs 100]"
+    VOLUME_ADJUST_DB: -3
+    IGNORE_MIDI_VELOCITY: true
+    RENDER_ENABLED: True
+    PITCH_SHIFT: 0
+    OCTAVE_BOOST: 0
+    PITCH_WRAP_SHIFT: null
+    VELOCITY_VOLUME_SCALE_DB: 0
+    STEM_PEAK_CEILING_DBFS: -5
+    GAP_MEND_MS: 20
+    MINIMUM_NOTE_DURATION_MS: 0
+    CODA_MAX_MS: 200
+    SPECTROGRAM:
+      COLOR_HSB: [0, 100, 86]
+      POSITION: [0.5, 0.5, 0.5]
+      LABEL: "Bass Chords #1"
+      LABEL_ENABLED: true
+      LABEL_POSITION: "top-left"
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
+      CURRENT_WORD_POSITION: "bottom-left"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: false
+
+  Bass Chords_Voice_2:
+    TRACK_FILENAME: Bass Chords - Voice 2
+    LYRICS_FILENAME: Bass Chords_Voice_2
+    DEC_SETUP: "[:np][:dv hs 100]"
+    VOLUME_ADJUST_DB: -3
+    IGNORE_MIDI_VELOCITY: true
+    RENDER_ENABLED: True
+    SPLIT_SOURCE_ROLE: Bass Chords
+    PITCH_SHIFT: 0
+    OCTAVE_BOOST: 0
+    PITCH_WRAP_SHIFT: null
+    VELOCITY_VOLUME_SCALE_DB: 0
+    STEM_PEAK_CEILING_DBFS: -5
+    GAP_MEND_MS: 20
+    MINIMUM_NOTE_DURATION_MS: 0
+    CODA_MAX_MS: 200
+    SPECTROGRAM:
+      COLOR_HSB: [0, 100, 100]
+      POSITION: [0.25, 0.75, 0]
+      LABEL: "Bass Chords #2"
+      LABEL_ENABLED: true
+      LABEL_POSITION: "bottom-center"
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
+      CURRENT_WORD_POSITION: "center-right"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: false
+
+  Bass Chords_Voice_3:
+    TRACK_FILENAME: Bass Chords - Voice 3
+    LYRICS_FILENAME: Bass Chords_Voice_3
+    DEC_SETUP: "[:np][:dv hs 100]"
+    VOLUME_ADJUST_DB: -3
+    IGNORE_MIDI_VELOCITY: true
+    RENDER_ENABLED: True
+    SPLIT_SOURCE_ROLE: Bass Chords
+    PITCH_SHIFT: 0
+    OCTAVE_BOOST: 0
+    PITCH_WRAP_SHIFT: null
+    VELOCITY_VOLUME_SCALE_DB: 0
+    STEM_PEAK_CEILING_DBFS: -5
+    GAP_MEND_MS: 20
+    MINIMUM_NOTE_DURATION_MS: 0
+    CODA_MAX_MS: 200
+    SPECTROGRAM:
+      COLOR_HSB: [0, 100, 100]
+      POSITION: [0.25, 0.75, 0.25]
+      LABEL: "Bass Chords #3"
+      LABEL_ENABLED: true
+      LABEL_POSITION: "bottom-center"
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
+      CURRENT_WORD_POSITION: "center-right"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: false
+
+  Bass Chords_Voice_4:
+    TRACK_FILENAME: Bass Chords - Voice 4
+    LYRICS_FILENAME: Bass Chords_Voice_4
+    DEC_SETUP: "[:np][:dv hs 100]"
+    VOLUME_ADJUST_DB: -3
+    IGNORE_MIDI_VELOCITY: true
+    RENDER_ENABLED: True
+    SPLIT_SOURCE_ROLE: Bass Chords
+    PITCH_SHIFT: 0
+    OCTAVE_BOOST: 0
+    PITCH_WRAP_SHIFT: null
+    VELOCITY_VOLUME_SCALE_DB: 0
+    STEM_PEAK_CEILING_DBFS: -5
+    GAP_MEND_MS: 20
+    MINIMUM_NOTE_DURATION_MS: 0
+    CODA_MAX_MS: 200
+    SPECTROGRAM:
+      COLOR_HSB: [0, 100, 100]
+      POSITION: [0.25, 0.75, 0.5]
+      LABEL: "Bass Chords #4"
+      LABEL_ENABLED: true
+      LABEL_POSITION: "bottom-center"
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
+      CURRENT_WORD_POSITION: "center-right"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: false
+
+  Bass Chords_Voice_5:
+    TRACK_FILENAME: Bass Chords - Voice 5
+    LYRICS_FILENAME: Bass Chords_Voice_5
+    DEC_SETUP: "[:np][:dv hs 100]"
+    VOLUME_ADJUST_DB: -3
+    IGNORE_MIDI_VELOCITY: true
+    RENDER_ENABLED: True
+    SPLIT_SOURCE_ROLE: Bass Chords
+    PITCH_SHIFT: 0
+    OCTAVE_BOOST: 0
+    PITCH_WRAP_SHIFT: null
+    VELOCITY_VOLUME_SCALE_DB: 0
+    STEM_PEAK_CEILING_DBFS: -5
+    GAP_MEND_MS: 20
+    MINIMUM_NOTE_DURATION_MS: 0
+    CODA_MAX_MS: 200
+    SPECTROGRAM:
+      COLOR_HSB: [0, 100, 100]
+      POSITION: [0.25, 0.75, 0.75]
+      LABEL: "Bass Chords #5"
+      LABEL_ENABLED: true
+      LABEL_POSITION: "bottom-center"
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
+      CURRENT_WORD_POSITION: "center-right"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: false
+

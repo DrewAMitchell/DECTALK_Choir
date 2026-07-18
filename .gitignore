@@ -20,13 +20,14 @@ klattclassic/*
 dectalk/*
 external/*
 
-# Ignore all songs except for the 3 example tracks
+# Ignore all songs except for the included example tracks
 
 songs/*
 
 !songs/CarolOfTheBells_Short*
 !songs/AuldLangSyne*
 !songs/DaisyBell*
+!songs/CantHelpFalling*
 !songs/OctaveBoostReference*
 !songs/HeadSizePitchReference*
 
@@ -46,3 +47,6 @@ songs/OctaveBoostReference/outputs/*
 !songs/OctaveBoostReference/outputs/_tracks/*.wav
 songs/*/inputs/lyrics/*.original.txt
 songs/*/inputs/lyrics/*.before-alignment.txt
+songs/*/inputs/*.bak
+songs/*/inputs/* - Backup.mmpz
+songs/*/inputs/*_split_summary.txt

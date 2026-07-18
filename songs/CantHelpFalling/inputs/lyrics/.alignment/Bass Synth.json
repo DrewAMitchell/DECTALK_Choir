@@ -1,0 +1,1390 @@
+{
+  "virtual_splits": [],
+  "word_cues": [
+    {
+      "word": "`duw",
+      "start_ms": 0,
+      "end_ms": 844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 1125,
+      "end_ms": 1406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 1500,
+      "end_ms": 2344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 2625,
+      "end_ms": 2906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 3000,
+      "end_ms": 3844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 4125,
+      "end_ms": 4406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 4500,
+      "end_ms": 5250
+    },
+    {
+      "word": "`duw",
+      "start_ms": 5250,
+      "end_ms": 5531
+    },
+    {
+      "word": "`duw",
+      "start_ms": 5625,
+      "end_ms": 5906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 6000,
+      "end_ms": 7031
+    },
+    {
+      "word": "`duw",
+      "start_ms": 7125,
+      "end_ms": 7500
+    },
+    {
+      "word": "`duw",
+      "start_ms": 7500,
+      "end_ms": 7969
+    },
+    {
+      "word": "`duw",
+      "start_ms": 8625,
+      "end_ms": 9000
+    },
+    {
+      "word": "`duw",
+      "start_ms": 9000,
+      "end_ms": 10406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 11250,
+      "end_ms": 11531
+    },
+    {
+      "word": "`duw",
+      "start_ms": 11625,
+      "end_ms": 12012
+    },
+    {
+      "word": "`duw",
+      "start_ms": 12012,
+      "end_ms": 12855
+    },
+    {
+      "word": "`duw",
+      "start_ms": 13512,
+      "end_ms": 14355
+    },
+    {
+      "word": "`duw",
+      "start_ms": 15012,
+      "end_ms": 15855
+    },
+    {
+      "word": "`duw",
+      "start_ms": 16125,
+      "end_ms": 16406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 16500,
+      "end_ms": 17344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 17625,
+      "end_ms": 17906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 18000,
+      "end_ms": 18844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 19125,
+      "end_ms": 19406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 19500,
+      "end_ms": 20344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 20625,
+      "end_ms": 20906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 21000,
+      "end_ms": 21844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 22125,
+      "end_ms": 22406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 22500,
+      "end_ms": 23344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 23625,
+      "end_ms": 23906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 24000,
+      "end_ms": 24844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 25125,
+      "end_ms": 25406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 25500,
+      "end_ms": 26344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 26625,
+      "end_ms": 26906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 27012,
+      "end_ms": 27855
+    },
+    {
+      "word": "`duw",
+      "start_ms": 28512,
+      "end_ms": 28793
+    },
+    {
+      "word": "`duw",
+      "start_ms": 29062,
+      "end_ms": 29344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 29625,
+      "end_ms": 29906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 30000,
+      "end_ms": 30281
+    },
+    {
+      "word": "`duw",
+      "start_ms": 31500,
+      "end_ms": 31781
+    },
+    {
+      "word": "`duw",
+      "start_ms": 33000,
+      "end_ms": 33844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 34125,
+      "end_ms": 34406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 34500,
+      "end_ms": 35344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 35625,
+      "end_ms": 35906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 36000,
+      "end_ms": 36844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 37125,
+      "end_ms": 37406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 37500,
+      "end_ms": 38344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 38625,
+      "end_ms": 38906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 39000,
+      "end_ms": 39844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 40125,
+      "end_ms": 40406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 40500,
+      "end_ms": 41344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 41625,
+      "end_ms": 41906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 42000,
+      "end_ms": 42844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 43125,
+      "end_ms": 43406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 43500,
+      "end_ms": 44344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 44625,
+      "end_ms": 44906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 45000,
+      "end_ms": 45844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 46125,
+      "end_ms": 46406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 46500,
+      "end_ms": 47344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 47625,
+      "end_ms": 47906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 48000,
+      "end_ms": 48844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 49125,
+      "end_ms": 49406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 49500,
+      "end_ms": 50344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 50625,
+      "end_ms": 50906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 51000,
+      "end_ms": 51844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 52125,
+      "end_ms": 52406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 52500,
+      "end_ms": 53344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 53625,
+      "end_ms": 53906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 54000,
+      "end_ms": 54844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 55125,
+      "end_ms": 55406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 55500,
+      "end_ms": 56344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 56625,
+      "end_ms": 56906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 57000,
+      "end_ms": 57844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 58125,
+      "end_ms": 58406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 58500,
+      "end_ms": 59344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 59625,
+      "end_ms": 59906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 60000,
+      "end_ms": 60844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 61125,
+      "end_ms": 61406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 61500,
+      "end_ms": 62344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 62625,
+      "end_ms": 62906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 63000,
+      "end_ms": 63844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 64125,
+      "end_ms": 64406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 64500,
+      "end_ms": 65344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 65625,
+      "end_ms": 65906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 66000,
+      "end_ms": 66844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 67125,
+      "end_ms": 67406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 67500,
+      "end_ms": 68344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 68625,
+      "end_ms": 68906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 69000,
+      "end_ms": 69844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 70125,
+      "end_ms": 70406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 70500,
+      "end_ms": 71344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 71625,
+      "end_ms": 71906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 72000,
+      "end_ms": 72844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 73125,
+      "end_ms": 73406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 73500,
+      "end_ms": 74344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 74625,
+      "end_ms": 74906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 75000,
+      "end_ms": 75844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 76125,
+      "end_ms": 76406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 76500,
+      "end_ms": 77344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 77625,
+      "end_ms": 77906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 78000,
+      "end_ms": 78844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 79125,
+      "end_ms": 79406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 79500,
+      "end_ms": 80344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 80625,
+      "end_ms": 80906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 81000,
+      "end_ms": 81844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 82125,
+      "end_ms": 82406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 82500,
+      "end_ms": 83344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 83625,
+      "end_ms": 83906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 84000,
+      "end_ms": 84844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 85125,
+      "end_ms": 85406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 85500,
+      "end_ms": 86344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 86625,
+      "end_ms": 86906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 87000,
+      "end_ms": 87844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 88125,
+      "end_ms": 88406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 88500,
+      "end_ms": 89344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 89625,
+      "end_ms": 89906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 90000,
+      "end_ms": 90844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 91125,
+      "end_ms": 91406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 91500,
+      "end_ms": 92344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 92625,
+      "end_ms": 92906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 93000,
+      "end_ms": 93844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 94125,
+      "end_ms": 94406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 94500,
+      "end_ms": 95344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 95625,
+      "end_ms": 95906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 96000,
+      "end_ms": 96844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 97125,
+      "end_ms": 97406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 97500,
+      "end_ms": 98344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 98625,
+      "end_ms": 98906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 99000,
+      "end_ms": 99844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 100125,
+      "end_ms": 100406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 100500,
+      "end_ms": 101344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 101625,
+      "end_ms": 101906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 102000,
+      "end_ms": 102844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 103125,
+      "end_ms": 103406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 103500,
+      "end_ms": 104344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 104625,
+      "end_ms": 104906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 105000,
+      "end_ms": 105844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 106125,
+      "end_ms": 106406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 106500,
+      "end_ms": 107344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 107625,
+      "end_ms": 107906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 108000,
+      "end_ms": 108844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 109125,
+      "end_ms": 109406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 109500,
+      "end_ms": 110344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 110625,
+      "end_ms": 110906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 111000,
+      "end_ms": 111844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 112125,
+      "end_ms": 112406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 112500,
+      "end_ms": 113344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 113625,
+      "end_ms": 113906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 114000,
+      "end_ms": 114844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 115125,
+      "end_ms": 115406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 115500,
+      "end_ms": 116344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 116625,
+      "end_ms": 116906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 117000,
+      "end_ms": 117844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 118125,
+      "end_ms": 118406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 118500,
+      "end_ms": 119344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 119625,
+      "end_ms": 119906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 120000,
+      "end_ms": 120844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 121125,
+      "end_ms": 121406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 121500,
+      "end_ms": 122344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 122625,
+      "end_ms": 122906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 123000,
+      "end_ms": 123844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 124125,
+      "end_ms": 124406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 124500,
+      "end_ms": 125344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 125625,
+      "end_ms": 125906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 126000,
+      "end_ms": 126844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 127125,
+      "end_ms": 127406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 127500,
+      "end_ms": 128344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 128625,
+      "end_ms": 128906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 129000,
+      "end_ms": 129844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 130125,
+      "end_ms": 130406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 130500,
+      "end_ms": 131344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 131625,
+      "end_ms": 131906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 132000,
+      "end_ms": 132844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 133125,
+      "end_ms": 133406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 133500,
+      "end_ms": 134344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 134625,
+      "end_ms": 134906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 135000,
+      "end_ms": 135844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 136125,
+      "end_ms": 136406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 136500,
+      "end_ms": 137344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 137625,
+      "end_ms": 137906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 138000,
+      "end_ms": 138844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 139125,
+      "end_ms": 139406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 139500,
+      "end_ms": 140344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 140625,
+      "end_ms": 140906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 141000,
+      "end_ms": 141844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 142125,
+      "end_ms": 142406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 142500,
+      "end_ms": 143344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 143625,
+      "end_ms": 143906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 144000,
+      "end_ms": 144844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 145125,
+      "end_ms": 145406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 145500,
+      "end_ms": 146344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 146625,
+      "end_ms": 146906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 147000,
+      "end_ms": 147844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 148125,
+      "end_ms": 148406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 148500,
+      "end_ms": 149344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 149625,
+      "end_ms": 149906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 150000,
+      "end_ms": 150844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 151125,
+      "end_ms": 151406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 151500,
+      "end_ms": 152344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 152625,
+      "end_ms": 152906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 153000,
+      "end_ms": 153844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 154125,
+      "end_ms": 154406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 154500,
+      "end_ms": 155344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 155625,
+      "end_ms": 155906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 156000,
+      "end_ms": 156844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 157125,
+      "end_ms": 157406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 157500,
+      "end_ms": 158344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 158625,
+      "end_ms": 158906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 159000,
+      "end_ms": 159844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 160125,
+      "end_ms": 160406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 160500,
+      "end_ms": 161344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 161625,
+      "end_ms": 161906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 162000,
+      "end_ms": 162844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 163125,
+      "end_ms": 163406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 163500,
+      "end_ms": 164344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 164625,
+      "end_ms": 164906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 165000,
+      "end_ms": 165844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 166125,
+      "end_ms": 166406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 166500,
+      "end_ms": 167344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 167625,
+      "end_ms": 167906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 168000,
+      "end_ms": 168844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 169125,
+      "end_ms": 169406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 169500,
+      "end_ms": 170344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 170625,
+      "end_ms": 170906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 171000,
+      "end_ms": 171844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 172125,
+      "end_ms": 172406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 172500,
+      "end_ms": 173344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 173625,
+      "end_ms": 173906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 174000,
+      "end_ms": 174844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 175125,
+      "end_ms": 175406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 175500,
+      "end_ms": 176344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 176625,
+      "end_ms": 176906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 177000,
+      "end_ms": 177844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 178125,
+      "end_ms": 178406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 178500,
+      "end_ms": 179344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 179625,
+      "end_ms": 179906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 180000,
+      "end_ms": 180844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 181125,
+      "end_ms": 181406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 181500,
+      "end_ms": 182344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 182625,
+      "end_ms": 182906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 183000,
+      "end_ms": 183844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 184125,
+      "end_ms": 184406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 184500,
+      "end_ms": 185344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 185625,
+      "end_ms": 185906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 186000,
+      "end_ms": 186844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 187125,
+      "end_ms": 187406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 187500,
+      "end_ms": 188344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 188625,
+      "end_ms": 188906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 189000,
+      "end_ms": 189844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 190125,
+      "end_ms": 190406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 190500,
+      "end_ms": 191344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 191625,
+      "end_ms": 191906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 192000,
+      "end_ms": 192000
+    },
+    {
+      "word": "`duw",
+      "start_ms": 192000,
+      "end_ms": 192844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 193125,
+      "end_ms": 193125
+    },
+    {
+      "word": "`duw",
+      "start_ms": 193125,
+      "end_ms": 193406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 193500,
+      "end_ms": 193500
+    },
+    {
+      "word": "`duw",
+      "start_ms": 193500,
+      "end_ms": 194344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 194625,
+      "end_ms": 194625
+    },
+    {
+      "word": "`duw",
+      "start_ms": 194625,
+      "end_ms": 194906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 195000,
+      "end_ms": 195000
+    },
+    {
+      "word": "`duw",
+      "start_ms": 195000,
+      "end_ms": 195844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 196125,
+      "end_ms": 196125
+    },
+    {
+      "word": "`duw",
+      "start_ms": 196125,
+      "end_ms": 196406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 196500,
+      "end_ms": 196500
+    },
+    {
+      "word": "`duw",
+      "start_ms": 196500,
+      "end_ms": 197344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 197625,
+      "end_ms": 197625
+    },
+    {
+      "word": "`duw",
+      "start_ms": 197625,
+      "end_ms": 197906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 198000,
+      "end_ms": 198000
+    },
+    {
+      "word": "`duw",
+      "start_ms": 198000,
+      "end_ms": 198844
+    },
+    {
+      "word": "`duw",
+      "start_ms": 199125,
+      "end_ms": 199125
+    },
+    {
+      "word": "`duw",
+      "start_ms": 199125,
+      "end_ms": 199406
+    },
+    {
+      "word": "`duw",
+      "start_ms": 199500,
+      "end_ms": 199500
+    },
+    {
+      "word": "`duw",
+      "start_ms": 199500,
+      "end_ms": 200344
+    },
+    {
+      "word": "`duw",
+      "start_ms": 200625,
+      "end_ms": 200625
+    },
+    {
+      "word": "`duw",
+      "start_ms": 200625,
+      "end_ms": 200906
+    },
+    {
+      "word": "`duw",
+      "start_ms": 201000,
+      "end_ms": 204141
+    }
+  ]
+}
