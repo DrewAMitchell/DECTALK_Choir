@@ -928,12 +928,43 @@ fn open_ffmpeg_download() -> Result<(), String> {
     Ok(())
 }
 
+fn reveal_main_window(app: &AppHandle) -> Result<(), String> {
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "The main Studio window is unavailable.".to_string())?;
+    main.show()
+        .map_err(|error| format!("Could not show the main Studio window: {error}"))?;
+    main.set_focus()
+        .map_err(|error| format!("Could not focus the main Studio window: {error}"))?;
+    if let Some(splashscreen) = app.get_webview_window("splashscreen") {
+        splashscreen
+            .close()
+            .map_err(|error| format!("Could not close the Studio splash screen: {error}"))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn finish_startup(app: AppHandle) -> Result<(), String> {
+    reveal_main_window(&app)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(MediaPlayer::default()))
         .manage(SpectrogramJob::default())
         .manage(RenderJob::default())
+        .setup(|app| {
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(8));
+                if handle.get_webview_window("splashscreen").is_some() {
+                    let _ = reveal_main_window(&handle);
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             choir_bridge,
             start_render_job,
@@ -949,6 +980,7 @@ fn main() {
             delete_song,
             open_media,
             open_ffmpeg_download,
+            finish_startup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DECTALK Choir Studio");

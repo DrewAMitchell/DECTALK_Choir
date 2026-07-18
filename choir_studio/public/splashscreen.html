@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DECTALK Choir Studio</title>
+    <style>
+      :root { color-scheme: dark; font-family: "Segoe UI", sans-serif; background: #101817; }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; user-select: none; }
+      body { display: grid; place-items: center; border: 1px solid #36524a; background: #101817; color: #dce9e5; }
+      main { display: grid; place-items: center; gap: 10px; }
+      svg { width: 132px; height: 132px; filter: drop-shadow(0 5px 16px #60d4ae2e); }
+      .bars rect { transform-box: fill-box; transform-origin: center bottom; animation: sing 1.15s ease-in-out infinite alternate; }
+      .bars rect:nth-child(2) { animation-delay: -480ms; }
+      .bars rect:nth-child(3) { animation-delay: -160ms; }
+      .bars rect:nth-child(4) { animation-delay: -620ms; }
+      .bars rect:nth-child(5) { animation-delay: -330ms; }
+      .bars rect:nth-child(6) { animation-delay: -760ms; }
+      h1 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: 0; }
+      h1 strong { color: #60d4ae; font-weight: 700; }
+      p { margin: -4px 0 0; color: #78928a; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+      @keyframes sing { from { transform: scaleY(.72); opacity: .72; } to { transform: scaleY(1); opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { .bars rect { animation: none; } }
+    </style>
+  </head>
+  <body>
+    <main aria-label="DECTALK Choir Studio is starting">
+      <svg viewBox="0 0 256 256" role="img" aria-label="Choir visualizer logo">
+        <g class="bars" fill="#60d4ae">
+          <rect x="38" y="138" width="22" height="72" rx="8" />
+          <rect x="70" y="106" width="22" height="104" rx="8" />
+          <rect x="102" y="72" width="22" height="138" rx="8" />
+          <rect x="134" y="118" width="22" height="92" rx="8" />
+          <rect x="166" y="92" width="22" height="118" rx="8" />
+          <rect x="198" y="152" width="22" height="58" rx="8" />
+        </g>
+        <g font-family="Georgia, 'Times New Roman', serif" font-size="42" font-weight="700" text-anchor="middle">
+          <text x="34" y="76" fill="#f29a4b">&#x266f;</text>
+          <text x="72" y="61" fill="#70a8ff">&#x266d;</text>
+          <text x="108" y="48" fill="#e87098">&#x266f;</text>
+          <text x="148" y="58" fill="#a5c95d">&#x266d;</text>
+          <text x="186" y="70" fill="#c08ae8">&#x266f;</text>
+          <text x="224" y="86" fill="#52bfd6">&#x266d;</text>
+        </g>
+      </svg>
+      <h1>DECTALK Choir <strong>Studio</strong></h1>
+      <p>Preparing the workspace</p>
+    </main>
+  </body>
+</html>
