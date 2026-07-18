@@ -221,7 +221,19 @@ export default function App() {
   const [lyricsModalOpen, setLyricsModalOpen] = useState(false);
   const [splitRoleName, setSplitRoleName] = useState("");
   const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
+  const [errorNotice, setErrorNotice] = useState({ message: "", sequence: 0 });
+  const error = errorNotice.message;
+  const setError = useCallback((message: string) => {
+    setErrorNotice((current) => ({
+      message,
+      sequence: message ? current.sequence + 1 : current.sequence,
+    }));
+  }, []);
+  const resetErrorTimeout = useCallback(() => {
+    setErrorNotice((current) => current.message
+      ? { ...current, sequence: current.sequence + 1 }
+      : current);
+  }, []);
   const [alignmentLoading, setAlignmentLoading] = useState(false);
   const [alignmentTransitionPending, startAlignmentTransition] = useTransition();
   const alignmentRequestRef = useRef(0);
@@ -246,6 +258,14 @@ export default function App() {
   }, [invalidateAlignmentLoad]);
   useEffect(() => { bridge<string[]>({ command: "list_songs" }).then((items) => { setSongs(items); const restoredSong = storedUiState.song && items.includes(storedUiState.song) ? storedUiState.song : items[0]; if (restoredSong) void loadSong(restoredSong, restoredSong === storedUiState.song ? storedUiState.role : ""); }).catch((cause) => setError(String(cause))); }, [loadSong]);
   useEffect(() => { document.documentElement.dataset.theme = theme; window.localStorage.setItem("dectalk-choir-studio.theme", theme); }, [theme]);
+  useEffect(() => {
+    if (!errorNotice.message) return;
+    const sequence = errorNotice.sequence;
+    const timer = window.setTimeout(() => {
+      setErrorNotice((current) => current.sequence === sequence ? { ...current, message: "" } : current);
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [errorNotice]);
   useEffect(() => {
     if (!song || !inspection) return;
     window.localStorage.setItem(UI_STATE_KEY, JSON.stringify({ song, role: roleName, stage, theme, render_roles: renderRolesBySong }));
@@ -428,7 +448,7 @@ export default function App() {
       <div className="theme-switch" role="group" aria-label="Color theme"><button className={theme === "dark" ? "active" : ""} type="button" title="Use dark theme" aria-label="Use dark theme" aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}><Moon size={15} /></button><button className={theme === "light" ? "active" : ""} type="button" title="Use light theme" aria-label="Use light theme" aria-pressed={theme === "light"} onClick={() => setTheme("light")}><Sun size={16} /></button></div>
     </header>
     {deleteSongArmed && <section className="song-delete-confirm" role="alertdialog" aria-label={`Delete ${song}`}><div><strong>Delete {song}?</strong><span>Its inputs, settings, and generated outputs will be removed.</span></div><button className="secondary" type="button" onClick={() => setDeleteSongArmed(false)} disabled={!!busy}>Cancel</button><button className="danger" type="button" onClick={() => void removeSong()} disabled={!!busy}>Delete song</button></section>}
-    {error && <div className="error-toast" role="alert" aria-live="assertive"><CircleAlert size={17} /><span>{error}</span><div className="error-actions">{/ffmpeg/i.test(error) && <><button type="button" className="error-action" onClick={() => void openFfmpegDownload().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Open FFmpeg's official Windows download guidance">Get FFmpeg</button><button type="button" className="error-action" onClick={() => void navigator.clipboard.writeText(FFMPEG_WINGET_COMMAND).then(() => setError(`Copied: ${FFMPEG_WINGET_COMMAND}`)).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Copy the Windows Package Manager install command">Copy winget</button></>}<button type="button" onClick={() => setError("")} title="Dismiss error" aria-label="Dismiss error"><X size={16} /></button></div></div>}
+    {error && <div className="error-toast" role="alert" aria-live="assertive" onMouseEnter={resetErrorTimeout} onFocus={resetErrorTimeout}><CircleAlert size={17} /><span>{error}</span><div className="error-actions">{/ffmpeg/i.test(error) && <><button type="button" className="error-action" onClick={() => void openFfmpegDownload().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Open FFmpeg's official Windows download guidance">Get FFmpeg</button><button type="button" className="error-action" onClick={() => void navigator.clipboard.writeText(FFMPEG_WINGET_COMMAND).then(() => setError(`Copied: ${FFMPEG_WINGET_COMMAND}`)).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Copy the Windows Package Manager install command">Copy winget</button></>}<button type="button" onClick={() => setError("")} title="Dismiss error" aria-label="Dismiss error"><X size={16} /></button></div></div>}
     <section className={`workspace ${stage === "review" ? "review-workspace" : ""}`}>
       <aside className="track-rail"><h2 className="rail-song-title" title={song}>{song || "Song"}</h2><div className="rail-heading"><PanelLeft size={16} /> Tracks</div><div className="track-list">{inspection?.roles.map((item) => {
         const syncState = sourceSyncStateFor(item);
