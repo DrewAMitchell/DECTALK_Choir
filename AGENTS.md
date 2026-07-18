@@ -164,6 +164,8 @@ The header's timed-DECTalk importer is the deliberate exception to the normal dr
 
 When a phrase is shortened, release surplus notes from the nearest multi-note word on the dragged edge before moving inward; the literal first or last word does not need to own two notes.
 
+The lyric modal's large editor is the sole visible working-draft surface. Drafting replaces and saves that editor text before Align loads the same candidate; do not add a second generated-text preview.
+
 ## Consonant/Vowel Timing
 
 - Keep consonants and vowels as separate emitted phonemes when timing matters.
