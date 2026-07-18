@@ -37,6 +37,14 @@ lyrics, pitch rules, DECtalk commands, audio processing, and output layout.
 
 **[Watch the DECTALK Choir demonstration on YouTube](https://www.youtube.com/watch?v=oPg8LVGdd4I).**
 
+To start from an existing MIDI, use the **inbox** button beside the song selector.
+Choose a `.mid` or `.midi` file and name the song. Studio copies the MIDI into a
+new `songs/<Song>/inputs/` workspace, creates one configured role and lyric
+placeholder for every note-bearing track, then opens the first role in Align.
+Duplicate or filesystem-unsafe MIDI track names are normalized only in the copy;
+the selected source file is never modified. Add lyrics or a note skeleton before
+enabling each role for rendering.
+
 ## Background
 Dectalk is a text to speech synthesizer released in 1983. It was famously used by Steven Hawking, and was included in the game Moonbase Alpha to read chat messages aloud. The system allows pronunciation phonemes, even inputting specific pitches and durations. Players of Moonbase Alpha quickly realized that these could be used to sing songs. I think this is absolutely delightful, and really wanted to play with this myself. Rather than copy-paste lines of text into the game, I tracked down a standard version of DECTalk and compiled it line by line.
 
@@ -57,7 +65,7 @@ Example:
 
 Outputs are saved to `songs/<Song>/outputs/`. One folder for each track is generated to save partial outputs. **_tracks** contains each individual track's compiled output, **_animation** contains generated spectrogram animations, and **_finished** contains the final compiled audio and video.
 
-Three example songs are included, and I would recommend duplicating and modifying one of them instead of starting from scratch.
+Three example songs are included. Choir Studio can create a complete starting workspace directly from another MIDI file.
 
 ## MIDI
 In `songs/<Song>/inputs/`, choir.py checks for a single .mid file. I use LMMS to work with MIDI, but other software *should* be able to export compatible files. For each output track in settings.yaml, `TRACK_FILENAME` selects the MIDI track to read. If `TRACK_FILENAME` is omitted, the settings key is used as the MIDI track name. Each track should be monophonic, only playing one note at a time. Split chords into separate tracks. The only data used are note positions, timings, and velocity.

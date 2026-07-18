@@ -18,12 +18,14 @@ in the [DECTALK Choir README](../README.md#choir-renderer).
   requires the published `songs/<Song>/inputs/lyrics/<Part>.txt`. The original
   user input is captured once at `<Part>.transcript.txt` and is never replaced.
 
-The Studio lifecycle is **MIDI -> Lyrics -> Align -> Review**. MIDI is a
-read-only source preview; Align owns lyric-to-note editing. The track rail
-replaces the source-track dropdown as the primary way to select a working role.
-The header includes persistent dark/light preferences, output-folder access, and
-a two-step song deletion control that removes the selected song workspace,
-including its generated outputs.
+The Studio lifecycle is **Align -> Render Audio**. Align owns MIDI preview and
+lyric-to-note editing; its track rail is the primary way to select a working
+role. The header inbox action imports a `.mid` or `.midi` as a new song, creates
+one role per note-bearing track, and opens the first role in Align. This atomic
+scaffold never overwrites an existing song or modifies the selected source MIDI.
+The header also includes persistent dark/light preferences, output-folder
+access, timed-DECTalk track import, and a two-step song deletion control that
+removes the selected song workspace, including its generated outputs.
 
 ## Bring-up
 
@@ -35,8 +37,9 @@ npx tauri dev
 ```
 
 The app expects the repository’s Windows Python environment at
-`..\.venv\Scripts\python.exe`. It does not change source MIDI. Applying an
-alignment to the configured lyric input is an explicit, confirmed action.
+`..\.venv\Scripts\python.exe`. Imported MIDI is copied before Studio normalizes
+track names or performs an explicit track split. Applying an alignment to the
+configured lyric input is an explicit, confirmed action.
 
 ## Windows Installer
 
@@ -70,8 +73,8 @@ before publishing an installer.
 
 ## Current Capability
 
-- MIDI view: inspect a selected role, preview only its source MIDI track, seek,
-  pause, stop, and play its existing stem or final mix.
+- MIDI song import: choose a file outside the repository, create a complete song
+  workspace, and derive deterministic roles from all note-bearing tracks.
 - Lyrics view: load the published aligned lyric when present, otherwise load the
   original transcript. Paste or edit text, or generate a direct-phoneme note
   skeleton in place. Draft timing captures a missing transcript once, writes the

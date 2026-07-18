@@ -23,6 +23,7 @@ from typing import Any
 import uuid
 
 import mido
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +33,7 @@ for directory in (REPO_ROOT, ASSISTANT_DIR):
         sys.path.insert(0, str(directory))
 
 import pyFuncs.PhonemeProcessing as phonemes
-from pyFuncs.ChoirInspection import MidiTrackInfo, RoleInspection, _has_lyric_content, _lyric_conversion_issue, inspect_song
+from pyFuncs.ChoirInspection import MidiTrackInfo, RoleInspection, _has_lyric_content, _lyric_conversion_issue, inspect_midi, inspect_song
 from pyFuncs.DectalkTrackImport import DectalkTrackImportError, append_imported_track, parse_dectalk_track
 from pyFuncs.MidiPreview import write_single_track_preview
 from pyFuncs.SongPaths import lyrics_directory, outputs_directory
@@ -71,10 +72,118 @@ from tools.split_polyphonic_midi import (
 
 SONG_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 ROLE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]*$")
+WINDOWS_RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{index}" for index in range(1, 10)), *(f"LPT{index}" for index in range(1, 10))}
 
 
 class BridgeError(ValueError):
     """A request cannot safely be applied to the local Choir workspace."""
+
+
+def _new_song_name(value: object) -> str:
+    name = str(value or "")
+    if not SONG_NAME.fullmatch(name) or len(name) > 64:
+        raise BridgeError("Song name may contain only letters, numbers, underscores, and hyphens.")
+    if name.upper() in WINDOWS_RESERVED_NAMES:
+        raise BridgeError(f"'{name}' is reserved by Windows and cannot be used as a song name.")
+    return name
+
+
+def _unique_role_name(name: str, track_index: int, used: set[str]) -> str:
+    base = re.sub(r"[^A-Za-z0-9 _-]+", "_", name).strip(" _-")[:64].rstrip(" _-")
+    if not base or not base[0].isalnum() or base.upper() in WINDOWS_RESERVED_NAMES:
+        base = f"Track_{track_index:02d}"
+    candidate = base
+    suffix = 2
+    while candidate in used:
+        candidate = f"{base}_{suffix}"
+        suffix += 1
+    used.add(candidate)
+    return candidate
+
+
+def _scaffold_midi_song(repo_root: Path, source_value: object, song_value: object) -> dict[str, Any]:
+    source = Path(str(source_value or "")).expanduser()
+    if source.suffix.lower() not in {".mid", ".midi"} or not source.is_file():
+        raise BridgeError("Select an existing .mid or .midi file.")
+    song = _new_song_name(song_value)
+    songs_dir = repo_root / "songs"
+    songs_dir.mkdir(parents=True, exist_ok=True)
+    destination = songs_dir / song
+    if destination.exists():
+        raise BridgeError(f"A song named '{song}' already exists.")
+
+    try:
+        summary = inspect_midi(source)
+        midi = mido.MidiFile(source)
+    except (OSError, ValueError, EOFError) as error:
+        raise BridgeError(f"Could not read MIDI file: {error}") from error
+
+    used: set[str] = set()
+    roles: list[tuple[int, str]] = []
+    for track in summary.tracks:
+        if track.note_count:
+            roles.append((track.index, _unique_role_name(track.name, track.index, used)))
+    if not roles:
+        raise BridgeError("The selected MIDI has no note-bearing tracks to import.")
+
+    temporary = songs_dir / f".{song}.{uuid.uuid4().hex}.tmp"
+    try:
+        inputs = temporary / "inputs"
+        lyrics = inputs / "lyrics"
+        outputs = temporary / "outputs"
+        lyrics.mkdir(parents=True)
+        outputs.mkdir()
+
+        for track_index, role in roles:
+            midi.tracks[track_index].name = role
+        midi_name = f"{song}{source.suffix.lower()}"
+        midi_path = inputs / midi_name
+        midi.save(midi_path)
+
+        settings = {
+            "noteOffset": -48,
+            "consonantFractionTarget": 0.15,
+            "consonantMinMs": 5,
+            "consonantMaxMs": 75,
+            "Tracks": {
+                role: {
+                    "DEC_SETUP": "[:np][:dv hs 100]",
+                    "VOLUME_ADJUST_DB": 0,
+                    "RENDER_ENABLED": False,
+                    "PITCH_SHIFT": 0,
+                    "OCTAVE_BOOST": 0,
+                    "PITCH_WRAP_SHIFT": None,
+                    "IGNORE_MIDI_VELOCITY": True,
+                    "VELOCITY_VOLUME_SCALE_DB": 0,
+                    "STEM_PEAK_CEILING_DBFS": -1,
+                    "GAP_MEND_MS": 0,
+                    "MINIMUM_NOTE_DURATION_MS": 0,
+                }
+                for _, role in roles
+            },
+        }
+        (temporary / "settings.yaml").write_text(
+            yaml.safe_dump(settings, sort_keys=False, allow_unicode=False),
+            encoding="utf-8",
+        )
+        for _, role in roles:
+            (lyrics / f"{role}.txt").write_text(
+                "# Add lyrics or create a note skeleton in Choir Studio.\n",
+                encoding="utf-8",
+            )
+
+        temporary.rename(destination)
+    except Exception as error:
+        shutil.rmtree(temporary, ignore_errors=True)
+        if isinstance(error, BridgeError):
+            raise
+        raise BridgeError(f"Could not create song workspace: {error}") from error
+
+    return {
+        "song": song,
+        "roles": [role for _, role in roles],
+        "midi_path": str(destination / "inputs" / f"{song}{source.suffix.lower()}"),
+    }
 
 
 def _song_name(value: object) -> str:
@@ -1292,6 +1401,8 @@ def handle(request: dict[str, Any]) -> Any:
     if command == "list_songs":
         song_dir = REPO_ROOT / "songs"
         return sorted(path.name for path in song_dir.iterdir() if path.is_dir() and (path / "settings.yaml").is_file())
+    if command == "import_midi_song":
+        return _scaffold_midi_song(REPO_ROOT, request.get("source_path"), request.get("song"))
 
     song = _song_name(request.get("song"))
     if command == "inspect_song":
