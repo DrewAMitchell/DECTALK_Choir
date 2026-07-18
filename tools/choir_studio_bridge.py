@@ -9,7 +9,7 @@ same inspector/drafter/aligner that the command-line workflow uses.
 from __future__ import annotations
 
 import contextlib
-from dataclasses import asdict, is_dataclass
+from dataclasses import fields, is_dataclass
 import io
 import json
 import math
@@ -32,7 +32,7 @@ for directory in (REPO_ROOT, ASSISTANT_DIR):
         sys.path.insert(0, str(directory))
 
 import pyFuncs.PhonemeProcessing as phonemes
-from pyFuncs.ChoirInspection import _has_lyric_content, _lyric_conversion_issue, inspect_song
+from pyFuncs.ChoirInspection import MidiTrackInfo, RoleInspection, _has_lyric_content, _lyric_conversion_issue, inspect_song
 from pyFuncs.MidiPreview import write_single_track_preview
 from pyFuncs.SongPaths import lyrics_directory, outputs_directory
 from assistant import (
@@ -96,7 +96,16 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
     if is_dataclass(value):
-        return _jsonable(asdict(value))
+        result = {
+            field.name: _jsonable(getattr(value, field.name))
+            for field in fields(value)
+        }
+        if isinstance(value, MidiTrackInfo):
+            result["note_count"] = value.note_count
+        elif isinstance(value, RoleInspection):
+            result["note_count"] = value.note_count
+            result["polyphony"] = value.polyphony
+        return result
     if isinstance(value, dict):
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):

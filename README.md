@@ -62,7 +62,9 @@ Three example songs are included, and I would recommend duplicating and modifyin
 ## MIDI
 In `songs/<Song>/inputs/`, choir.py checks for a single .mid file. I use LMMS to work with MIDI, but other software *should* be able to export compatible files. For each output track in settings.yaml, `TRACK_FILENAME` selects the MIDI track to read. If `TRACK_FILENAME` is omitted, the settings key is used as the MIDI track name. Each track should be monophonic, only playing one note at a time. Split chords into separate tracks. The only data used are note positions, timings, and velocity.
 
-Choir Studio marks configured tracks with simultaneous notes in the Align rail. Open the branch control on that track to preview the minimum monophonic voice lanes and their note counts. The splitter can export a separate MIDI or replace the working MIDI with a one-time `.bak` backup; every untargeted track and every source note is preserved.
+Choir Studio marks configured tracks with simultaneous notes in both the Align rail and Align toolbar. Open either yellow branch warning to preview the minimum monophonic voice lanes and their note counts. The splitter can export a separate MIDI or replace the working MIDI with a one-time `.bak` backup; every untargeted track and every source note is preserved.
+
+The renderer accepts overlapping notes, but one output role is still a monophonic DECTALK voice. Brief transition overlaps are sequentialized by ending the earlier note at the next onset. Simultaneous chord notes therefore collapse to zero-duration events instead of producing multiple voices; split those tracks when each chord voice must remain audible.
 
 ### Lyrics
 Lyrics should be saved as a .txt file in `songs/<Song>/inputs/lyrics/`. Lyrics are run one line at a time, so desync issues in playback can frequently be fixed by separating words into individual lines. Internally, words are split up into phonemes by **pyFuncs/PhonemeProcessing.py**. If a word can't be converted, try replacing it with a homophone.
