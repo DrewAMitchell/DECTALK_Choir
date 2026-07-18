@@ -487,22 +487,25 @@ def _spectrogram_video_settings(song: str) -> dict[str, Any]:
     video_settings = settings.get("spectrogramVideo") or {}
     if not isinstance(video_settings, dict):
         video_settings = {}
-    return {
-        "delete_intermediate_animations": video_settings.get("deleteIntermediateAnimations", True) is not False,
-    }
+    mode = str(video_settings.get("intermediateAnimationMode", "")).strip().lower()
+    if mode not in {"delete", "compress", "keep"}:
+        mode = "delete" if video_settings.get("deleteIntermediateAnimations", True) is not False else "keep"
+    return {"intermediate_animation_mode": mode}
 
 
-def _update_spectrogram_video_settings(song: str, delete_intermediate_animations: object) -> dict[str, Any]:
-    if not isinstance(delete_intermediate_animations, bool):
-        raise BridgeError("Delete intermediate animations must be on or off.")
+def _update_spectrogram_video_settings(song: str, intermediate_animation_mode: object) -> dict[str, Any]:
+    mode = str(intermediate_animation_mode or "").strip().lower()
+    if mode not in {"delete", "compress", "keep"}:
+        raise BridgeError("Intermediate animation mode must be delete, compress, or keep.")
     song_dir, settings = load_settings(song)
     existing = settings.get("spectrogramVideo") or {}
     if not isinstance(existing, dict):
         existing = {}
     updated = dict(existing)
-    updated["deleteIntermediateAnimations"] = delete_intermediate_animations
+    updated.pop("deleteIntermediateAnimations", None)
+    updated["intermediateAnimationMode"] = mode
     _replace_top_level_mapping(song_dir / "settings.yaml", "spectrogramVideo", updated)
-    return {"delete_intermediate_animations": delete_intermediate_animations}
+    return {"intermediate_animation_mode": mode}
 
 
 VISUAL_TEXT_POSITIONS = frozenset({
@@ -1265,7 +1268,7 @@ def handle(request: dict[str, Any]) -> Any:
     if command == "get_spectrogram_video_settings":
         return _spectrogram_video_settings(song)
     if command == "update_spectrogram_video_settings":
-        return _update_spectrogram_video_settings(song, request.get("delete_intermediate_animations"))
+        return _update_spectrogram_video_settings(song, request.get("intermediate_animation_mode"))
     role = _role(song, request.get("role"))
     if command == "save_visual_layout":
         return _save_visual_layout(song, role, request.get("position"), request.get("hsb"), request.get("options"))

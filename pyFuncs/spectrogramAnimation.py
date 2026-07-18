@@ -1,5 +1,5 @@
 import colorsys
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import json
 import math as m
 import os
@@ -30,6 +30,8 @@ TEXT_ANCHORS = {
     "bottom-left", "bottom-center", "bottom-right",
 }
 FINAL_VIDEO_CRF = 23
+INTERMEDIATE_VIDEO_CRF = 23
+INTERMEDIATE_ANIMATION_MODES = frozenset({"delete", "compress", "keep"})
 
 
 def _output_song_dir(song_title):
@@ -396,11 +398,14 @@ def _compose_clips(clips, output_path, audio_path, video_dims, frames_per_second
     temporary.replace(output_path)
 
 
-def _should_delete_intermediate_animations(settings_yaml):
+def _intermediate_animation_mode(settings_yaml):
     video_settings = settings_yaml.get("spectrogramVideo") or {}
     if not isinstance(video_settings, dict):
-        return True
-    return video_settings.get("deleteIntermediateAnimations", True) is not False
+        return "delete"
+    mode = str(video_settings.get("intermediateAnimationMode", "")).strip().lower()
+    if mode in INTERMEDIATE_ANIMATION_MODES:
+        return mode
+    return "delete" if video_settings.get("deleteIntermediateAnimations", True) is not False else "keep"
 
 
 def _cleanup_intermediate_animations(clips, finished_dir, enabled):
@@ -417,6 +422,71 @@ def _cleanup_intermediate_animations(clips, finished_dir, enabled):
         legacy_animation.unlink()
         removed.append(legacy_animation)
     return removed
+
+
+def _compress_intermediate_animation(source_path):
+    source = Path(source_path)
+    target = source if source.suffix.lower() == ".mp4" else source.with_suffix(".mp4")
+    temporary = target.with_name(f"{target.stem}.compressing{target.suffix}")
+    temporary.unlink(missing_ok=True)
+    original_size = source.stat().st_size
+    try:
+        try:
+            sp.run(
+                [
+                    "ffmpeg", "-y", "-i", str(source), "-map", "0:v:0", "-an",
+                    "-c:v", "libx264", "-preset", "medium", "-crf", str(INTERMEDIATE_VIDEO_CRF),
+                    "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(temporary),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except sp.CalledProcessError as error:
+            detail_lines = (error.stderr or error.stdout or "").strip().splitlines()
+            detail = detail_lines[-1] if detail_lines else f"FFmpeg exited with {error.returncode}"
+            raise RuntimeError(detail) from error
+        if not temporary.is_file() or temporary.stat().st_size <= 0:
+            raise RuntimeError(f"FFmpeg did not produce a compressed animation for {source.name}.")
+        temporary.replace(target)
+        if source != target:
+            source.unlink()
+        return {
+            "source": str(source),
+            "target": str(target),
+            "original_size": original_size,
+            "compressed_size": target.stat().st_size,
+        }
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _compress_intermediate_animations(clips, finished_dir):
+    sources = [Path(clip["path"]) for clip in clips if Path(clip["path"]).is_file()]
+    legacy_animation = Path(finished_dir) / "animation.mp4"
+    if legacy_animation.is_file():
+        sources.append(legacy_animation)
+    if not sources:
+        return []
+    worker_count = min(len(sources), max(1, min(4, os.cpu_count() or 1)))
+    print(f"Compressing {len(sources)} intermediate animation videos across {worker_count} workers", flush=True)
+    results = []
+    errors = []
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = {executor.submit(_compress_intermediate_animation, path): path for path in sources}
+        for future in as_completed(futures):
+            source = futures[future]
+            try:
+                result = future.result()
+                results.append(result)
+                reduction = (1 - result["compressed_size"] / result["original_size"]) * 100 if result["original_size"] else 0
+                print(f"Compressed {source.name}: {reduction:.1f}% smaller", flush=True)
+            except Exception as error:
+                errors.append(f"{source.name}: {error}")
+    if errors:
+        raise RuntimeError("Could not compress every intermediate animation; original failed clips were kept. " + "; ".join(errors))
+    return results
 
 
 def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 1440), freqRange=(100, 5000), divisionFactor=500, framesPerSecond=30, barCount=100, back_color=(0, 0, 0), barGapFrac=0.5):
@@ -518,10 +588,20 @@ def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 144
     )
     print("PROGRESS stage=cleanup state=started", flush=True)
     cleanup_started = perf_counter()
-    delete_intermediates = _should_delete_intermediate_animations(settings_yaml)
-    removed = _cleanup_intermediate_animations(clips, finished_dir, delete_intermediates)
-    if delete_intermediates:
+    intermediate_mode = _intermediate_animation_mode(settings_yaml)
+    if intermediate_mode == "delete":
+        removed = _cleanup_intermediate_animations(clips, finished_dir, True)
         print(f"Removed {len(removed)} intermediate animation videos", flush=True)
+    elif intermediate_mode == "compress":
+        compressed = _compress_intermediate_animations(clips, finished_dir)
+        original_bytes = sum(item["original_size"] for item in compressed)
+        compressed_bytes = sum(item["compressed_size"] for item in compressed)
+        reduction = (1 - compressed_bytes / original_bytes) * 100 if original_bytes else 0
+        print(
+            f"Compressed {len(compressed)} intermediate animation videos with libx264 "
+            f"CRF {INTERMEDIATE_VIDEO_CRF}; size reduced {reduction:.1f}%",
+            flush=True,
+        )
     else:
         print(f"Kept {len(clips)} intermediate animation videos by song setting", flush=True)
     print(f"TIMING stage=cleanup seconds={perf_counter() - cleanup_started:.3f}", flush=True)

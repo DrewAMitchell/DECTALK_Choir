@@ -7,7 +7,8 @@ from pyFuncs.AudioTiming import OUTPUT_LEAD_IN_MS
 from pyFuncs.spectrogramAnimation import (
     FINAL_VIDEO_CRF,
     _cleanup_intermediate_animations,
-    _should_delete_intermediate_animations,
+    _compress_intermediate_animation,
+    _intermediate_animation_mode,
     _load_word_cues,
 )
 from tools.choir_studio_bridge import _replace_role_mapping, _replace_top_level_mapping, _word_cues_from_report
@@ -83,8 +84,9 @@ def test_spectrogram_word_cues_include_renderer_lead_in(tmp_path: Path, monkeypa
 
 
 def test_spectrogram_video_policy_defaults_to_cleanup_and_uses_distribution_crf():
-    assert _should_delete_intermediate_animations({}) is True
-    assert _should_delete_intermediate_animations({"spectrogramVideo": {"deleteIntermediateAnimations": False}}) is False
+    assert _intermediate_animation_mode({}) == "delete"
+    assert _intermediate_animation_mode({"spectrogramVideo": {"intermediateAnimationMode": "compress"}}) == "compress"
+    assert _intermediate_animation_mode({"spectrogramVideo": {"intermediateAnimationMode": "keep"}}) == "keep"
     assert FINAL_VIDEO_CRF == 23
 
 
@@ -109,7 +111,7 @@ def test_top_level_spectrogram_video_save_preserves_song_settings(tmp_path: Path
     settings_path.write_text(
         "noteOffset: -48\n\n"
         "spectrogramVideo:\n"
-        "  deleteIntermediateAnimations: false\n\n"
+        "  intermediateAnimationMode: keep\n\n"
         "Tracks:\n"
         "  Soprano:\n"
         "    DEC_SETUP: \"[:np]\"\n",
@@ -119,10 +121,52 @@ def test_top_level_spectrogram_video_save_preserves_song_settings(tmp_path: Path
     _replace_top_level_mapping(
         settings_path,
         "spectrogramVideo",
-        {"deleteIntermediateAnimations": True},
+        {"intermediateAnimationMode": "compress"},
     )
 
     saved = yaml.safe_load(settings_path.read_text(encoding="utf-8"))
     assert saved["noteOffset"] == -48
-    assert saved["spectrogramVideo"]["deleteIntermediateAnimations"] is True
+    assert saved["spectrogramVideo"]["intermediateAnimationMode"] == "compress"
     assert saved["Tracks"]["Soprano"]["DEC_SETUP"] == "[:np]"
+
+
+def test_intermediate_compression_replaces_source_only_after_ffmpeg_output(tmp_path: Path, monkeypatch):
+    source = tmp_path / "track.mkv"
+    source.write_bytes(b"lossless-animation")
+
+    def fake_run(arguments, check, capture_output, text):
+        assert check is True
+        assert capture_output is True
+        assert text is True
+        assert arguments[arguments.index("-crf") + 1] == "23"
+        Path(arguments[-1]).write_bytes(b"compressed")
+
+    monkeypatch.setattr("pyFuncs.spectrogramAnimation.sp.run", fake_run)
+    result = _compress_intermediate_animation(source)
+
+    target = tmp_path / "track.mp4"
+    assert not source.exists()
+    assert target.read_bytes() == b"compressed"
+    assert result["original_size"] == len(b"lossless-animation")
+    assert result["compressed_size"] == len(b"compressed")
+
+
+def test_failed_intermediate_compression_retains_original(tmp_path: Path, monkeypatch):
+    source = tmp_path / "animation.mp4"
+    source.write_bytes(b"original-video")
+
+    def fail_run(arguments, check, capture_output, text):
+        Path(arguments[-1]).write_bytes(b"partial")
+        raise RuntimeError("encoder failed")
+
+    monkeypatch.setattr("pyFuncs.spectrogramAnimation.sp.run", fail_run)
+
+    try:
+        _compress_intermediate_animation(source)
+    except RuntimeError as error:
+        assert str(error) == "encoder failed"
+    else:
+        raise AssertionError("Compression failure should be surfaced")
+
+    assert source.read_bytes() == b"original-video"
+    assert not (tmp_path / "animation.compressing.mp4").exists()
