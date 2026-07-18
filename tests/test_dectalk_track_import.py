@@ -150,3 +150,42 @@ def test_bridge_import_rolls_back_midi_settings_and_lyrics_on_alignment_failure(
     assert settings_path.read_bytes() == original_settings
     assert not (inputs / "lyrics" / "Failed Voice.txt").exists()
     assert not (inputs / "lyrics" / "Failed Voice.transcript.txt").exists()
+
+
+def test_bridge_creates_one_track_song_from_dectalk_string(tmp_path, monkeypatch):
+    root = tmp_path / "repo"
+    monkeypatch.setattr(bridge, "REPO_ROOT", root)
+    monkeypatch.setattr(assistant, "REPO_ROOT", root)
+
+    result = bridge._create_dectalk_song(
+        "SoloSong",
+        "Solo Voice",
+        "[:np][:dv hs 100][d<100,12>uw<400,12>_<250,0>m<100,14>ay<400,14>n<80,14>]",
+    )
+
+    song_dir = root / "songs" / "SoloSong"
+    settings = yaml.safe_load((song_dir / "settings.yaml").read_text(encoding="utf-8"))
+    midi = mido.MidiFile(song_dir / "inputs" / "SoloSong.mid")
+    assert list(settings["Tracks"]) == ["Solo Voice"]
+    assert [track.name for track in midi.tracks] == ["Timing", "Solo Voice"]
+    assert (song_dir / "inputs" / "lyrics" / "Solo Voice.txt").read_text(encoding="utf-8") == "`duw\n`mayn\n"
+    assert (song_dir / "inputs" / "lyrics" / ".alignment" / "Solo Voice.json").is_file()
+    assert result["song"] == "SoloSong"
+    assert result["role"] == "Solo Voice"
+
+
+def test_new_dectalk_song_is_removed_when_alignment_fails(tmp_path, monkeypatch):
+    root = tmp_path / "repo"
+    monkeypatch.setattr(bridge, "REPO_ROOT", root)
+    monkeypatch.setattr(assistant, "REPO_ROOT", root)
+
+    def fail_alignment(*_args):
+        raise RuntimeError("alignment failed")
+
+    monkeypatch.setattr(bridge, "build_alignment", fail_alignment)
+
+    with pytest.raises(bridge.BridgeError, match="Could not create DECTalk song"):
+        bridge._create_dectalk_song("FailedSong", "Solo Voice", "[dah<300,12>]")
+
+    assert not (root / "songs" / "FailedSong").exists()
+    assert not list((root / "songs").glob(".FailedSong.*.tmp"))

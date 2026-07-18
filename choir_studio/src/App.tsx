@@ -49,7 +49,7 @@ type SplitLane = { number: number; name: string; note_count: number; minimum_pit
 type SplitPreview = { source_path: string; source_name: string; track_index: number; note_count: number; max_polyphony: number; default_filename: string; lanes: SplitLane[]; splittable: boolean };
 type SplitResult = { path: string; summary_path: string; backup_path: string | null; replaced_source: boolean; lanes: SplitLane[]; warning: string | null; created_roles: string[] };
 type SplitRestoreResult = { path: string; preserved_split_path: string };
-type DectalkImportResult = { role: string; note_count: number; duration_ms: number; midi_path: string; source_path: string; alignment_path: string };
+type DectalkImportResult = { song: string; role: string; note_count: number; duration_ms: number; midi_path: string; source_path: string; alignment_path: string };
 type MidiSongImportResult = { song: string; roles: string[]; midi_path: string };
 type TrackTuning = {
   VOICE: string | null;
@@ -410,14 +410,17 @@ export default function App() {
   }, [song, roleName, loadSong]);
   const finishDectalkImport = useCallback(async (result: DectalkImportResult) => {
     invalidateAlignmentLoad();
-    const refreshed = await bridge<SongInspection>({ command: "inspect_song", song });
-    setInspection(refreshed); setRoleName(result.role); setDraftState(null); setDraftRole(""); setAlignment(null); setAlignmentRole(""); setSelectedPhrase(null); setDectalkImportOpen(false); setStage("align");
-  }, [song, invalidateAlignmentLoad]);
+    const [refreshed, availableSongs] = await Promise.all([
+      bridge<SongInspection>({ command: "inspect_song", song: result.song }),
+      bridge<string[]>({ command: "list_songs" }),
+    ]);
+    setSongs(availableSongs); setSong(result.song); setInspection(refreshed); setRoleName(result.role); setDraftState(null); setDraftRole(""); setAlignment(null); setAlignmentRole(""); setSelectedPhrase(null); setDectalkImportOpen(false); setStage("align");
+  }, [invalidateAlignmentLoad]);
 
   return <main className="studio-shell">
     <header className="app-header">
       <div className="brand"><img className="brand-mark" src={choirStudioMark} alt="" /><span>DECTALK Choir</span><strong>Studio</strong></div>
-      <div className="header-song-cluster"><label className="song-select"><select aria-label="Select song" value={song} onChange={(event) => void loadSong(event.target.value)}>{songs.map((item) => <option key={item}>{item}</option>)}</select></label><div className="selection-actions"><button className="header-command" type="button" onClick={() => void chooseMidiSong()} title="Import a MIDI file as a new Choir song" aria-label="Import MIDI as new song"><Inbox size={16} /></button><button className="header-command" type="button" onClick={() => setDectalkImportOpen(true)} disabled={!song} title="Import a timed DECTalk phoneme string as a new MIDI track with an applied lyric alignment" aria-label="Import timed DECTalk phonemes"><FileInput size={16} /></button><button className="header-command" type="button" onClick={() => void openOutputs()} disabled={!song} title="Open this song's generated output folder" aria-label="Open output folder"><FolderOpen size={16} /></button><button className="header-command" type="button" onClick={() => void playRender()} disabled={!inspection?.final_mix} title="Open the completed song mix in your default media player" aria-label="Open render in default media player"><Play size={15} /></button><button className="header-command destructive-command" type="button" onClick={() => setDeleteSongArmed(true)} disabled={!song} title="Delete this song and all of its outputs" aria-label="Delete selected song"><Trash2 size={15} /></button></div></div>
+      <div className="header-song-cluster"><label className="song-select"><select aria-label="Select song" value={song} onChange={(event) => void loadSong(event.target.value)}>{songs.map((item) => <option key={item}>{item}</option>)}</select></label><div className="selection-actions"><button className="header-command" type="button" onClick={() => void chooseMidiSong()} title="Import a MIDI file as a new Choir song" aria-label="Import MIDI as new song"><Inbox size={16} /></button><button className="header-command" type="button" onClick={() => setDectalkImportOpen(true)} title="Import timed DECTalk phonemes into this song or create a new one-track song" aria-label="Import timed DECTalk phonemes"><FileInput size={16} /></button><button className="header-command" type="button" onClick={() => void openOutputs()} disabled={!song} title="Open this song's generated output folder" aria-label="Open output folder"><FolderOpen size={16} /></button><button className="header-command" type="button" onClick={() => void playRender()} disabled={!inspection?.final_mix} title="Open the completed song mix in your default media player" aria-label="Open render in default media player"><Play size={15} /></button><button className="header-command destructive-command" type="button" onClick={() => setDeleteSongArmed(true)} disabled={!song} title="Delete this song and all of its outputs" aria-label="Delete selected song"><Trash2 size={15} /></button></div></div>
       <nav className="lifecycle" aria-label="Track design phases">
         {stages.map(([id, label, Icon], index) => <button key={id} className={`${stage === id ? "active" : ""}${id === "review" && stage !== "review" && allTranscriptTracksSynced ? " ready-next" : ""}`} onClick={() => selectStage(id)}><span className="stage-index">{index + 1}</span><Icon size={16} />{label}</button>)}
       </nav>
@@ -475,6 +478,8 @@ function MidiSongImportModal({ sourcePath, onClose, onImported, setError }: { so
 function DectalkImportModal({ song, onClose, onImported, setError }: { song: string; onClose(): void; onImported(result: DectalkImportResult): Promise<void>; setError(value: string): void }) {
   const [role, setRole] = useState("Imported Voice");
   const [text, setText] = useState("");
+  const [createNewSong, setCreateNewSong] = useState(!song);
+  const [songName, setSongName] = useState("ImportedSong");
   const [working, setWorking] = useState(false);
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape" && !working) onClose(); };
@@ -483,21 +488,23 @@ function DectalkImportModal({ song, onClose, onImported, setError }: { song: str
   }, [working, onClose]);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!role.trim() || !text.trim()) return;
+    if (!role.trim() || !text.trim() || (createNewSong ? !songName.trim() : !song)) return;
     setWorking(true); setError("");
     try {
-      const result = await bridge<DectalkImportResult>({ command: "import_dectalk_track", song, role: role.trim(), text });
+      const result = await bridge<DectalkImportResult>({ command: createNewSong ? "create_dectalk_song" : "import_dectalk_track", song: createNewSong ? songName.trim() : song, role: role.trim(), text });
       await onImported(result);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setWorking(false); }
   };
   return <section className="split-modal-backdrop" role="presentation" onMouseDown={() => { if (!working) onClose(); }}><form className="split-modal dectalk-import-modal" role="dialog" aria-modal="true" aria-labelledby="dectalk-import-title" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => void submit(event)}>
     <button className="split-modal-close" type="button" onClick={onClose} disabled={working} title="Close DECTalk import" aria-label="Close DECTalk import"><X size={17} /></button>
-    <header><p className="eyebrow">Current song: {song}</p><h2 id="dectalk-import-title">Import timed DECTalk phonemes</h2><p>Create a new MIDI role and publish its direct-phoneme alignment in one operation.</p></header>
-    <label><span>Track name</span><input autoFocus value={role} onChange={(event) => setRole(event.target.value)} placeholder="Imported Voice" disabled={working} /></label>
+    <header><p className="eyebrow">{createNewSong ? "New one-track song" : `Current song: ${song}`}</p><h2 id="dectalk-import-title">Import timed DECTalk phonemes</h2><p>{createNewSong ? "Create a song whose only MIDI role and applied alignment come from this command string." : "Create a new MIDI role and publish its direct-phoneme alignment in one operation."}</p></header>
+    <label className="dectalk-import-destination"><input type="checkbox" checked={createNewSong} onChange={(event) => setCreateNewSong(event.target.checked)} disabled={working || !song && createNewSong} /><span><strong>Create as a new song</strong><small>Build a new song folder and MIDI with this phoneme track as its only role.</small></span></label>
+    {createNewSong && <label><span>Song name</span><input autoFocus value={songName} onChange={(event) => setSongName(event.target.value)} pattern="[A-Za-z0-9_-]+" maxLength={64} title="Use letters, numbers, underscores, or hyphens" placeholder="ImportedSong" disabled={working} /></label>}
+    <label><span>Track name</span><input autoFocus={!createNewSong} value={role} onChange={(event) => setRole(event.target.value)} placeholder="Imported Voice" disabled={working} /></label>
     <label className="dectalk-import-source"><span>DECTalk command string</span><textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="[:np][d&lt;80,12&gt;ao&lt;500,12&gt;ng&lt;80,12&gt;][:tone 440,500]" disabled={working} /></label>
     <p className="dectalk-import-note">Contiguous phonemes at one pitch become one MIDI note. Timed underscores become rests; rests of 250 ms or longer start a new phrase. Tone events use <code>[:tone frequency_hz,duration_ms]</code>; Studio retains that exact command and maps its frequency to the nearest MIDI note for alignment.</p>
-    <div className="split-actions"><button type="button" className="secondary" onClick={onClose} disabled={working}>Cancel</button><button type="submit" className="primary" disabled={working || !role.trim() || !text.trim()}>{working ? <><LoaderCircle size={15} /> Importing...</> : <><FileInput size={15} /> Import and open Align</>}</button></div>
+    <div className="split-actions"><button type="button" className="secondary" onClick={onClose} disabled={working}>Cancel</button><button type="submit" className="primary" disabled={working || !role.trim() || !text.trim() || (createNewSong ? !songName.trim() : !song)}>{working ? <><LoaderCircle size={15} /> Importing...</> : <><FileInput size={15} /> {createNewSong ? "Create song and open Align" : "Import and open Align"}</>}</button></div>
   </form></section>;
 }
 

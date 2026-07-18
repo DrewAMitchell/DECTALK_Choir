@@ -552,6 +552,36 @@ def _settings_with_imported_role(text: str, role: str, setup: str) -> str:
     return "".join(lines)
 
 
+def _imported_track_settings(role: str, setup: str) -> dict[str, Any]:
+    return {
+        "TRACK_FILENAME": role,
+        "LYRICS_FILENAME": role,
+        "DEC_SETUP": setup,
+        "VOLUME_ADJUST_DB": 0,
+        "IGNORE_MIDI_VELOCITY": True,
+        "RENDER_ENABLED": True,
+    }
+
+
+def _publish_imported_dectalk_alignment(
+    song: str,
+    role: str,
+    source_text: object,
+    lyric_text: str,
+) -> dict[str, Any]:
+    song_dir = REPO_ROOT / "songs" / song
+    lyric_dir = lyrics_directory(song_dir)
+    source_path = lyric_dir / f"{role}.txt"
+    transcript_path = lyric_dir / f"{role}.transcript.txt"
+    lyric_dir.mkdir(parents=True, exist_ok=True)
+    transcript_path.write_text(_normalized_lyric_text(source_text), encoding="utf-8")
+    source_path.write_text(lyric_text, encoding="utf-8")
+    report, lines = build_alignment(song, role, source_path)
+    normalized_text = "\n".join(lines).rstrip() + "\n"
+    _write_candidate_alignment(song, role, report, normalized_text)
+    return _apply_alignment(song, role, normalized_text)
+
+
 def _import_dectalk_track(song: str, requested_role: object, source_text: object) -> dict[str, Any]:
     """Atomically add a timed DECTalk string as MIDI plus an applied alignment."""
 
@@ -604,13 +634,7 @@ def _import_dectalk_track(song: str, requested_role: object, source_text: object
         )
         temporary_midi.replace(midi_path)
         temporary_settings.replace(settings_path)
-        lyric_dir.mkdir(parents=True, exist_ok=True)
-        transcript_path.write_text(_normalized_lyric_text(source_text), encoding="utf-8")
-        source_path.write_text(imported.lyric_text, encoding="utf-8")
-        report, lines = build_alignment(song, role, source_path)
-        normalized_text = "\n".join(lines).rstrip() + "\n"
-        _write_candidate_alignment(song, role, report, normalized_text)
-        applied = _apply_alignment(song, role, normalized_text)
+        applied = _publish_imported_dectalk_alignment(song, role, source_text, imported.lyric_text)
     except Exception as error:
         midi_path.write_bytes(original_midi)
         settings_path.write_bytes(original_settings)
@@ -622,10 +646,74 @@ def _import_dectalk_track(song: str, requested_role: object, source_text: object
             raise
         raise BridgeError(f"Could not import DECTalk track: {error}") from error
     return {
+        "song": song,
         "role": role,
         "note_count": len(imported.notes),
         "duration_ms": round(imported.duration_ms),
         "midi_path": str(midi_path),
+        "source_path": applied["path"],
+        "alignment_path": applied["alignment_path"],
+    }
+
+
+def _create_dectalk_song(song_value: object, requested_role: object, source_text: object) -> dict[str, Any]:
+    """Create a one-role song from a timed DECTalk string without touching existing songs."""
+
+    song = _new_song_name(song_value)
+    role = str(requested_role or "").strip()
+    if not ROLE_NAME.fullmatch(role):
+        raise BridgeError("Track name may contain letters, numbers, spaces, underscores, and hyphens.")
+    songs_dir = REPO_ROOT / "songs"
+    songs_dir.mkdir(parents=True, exist_ok=True)
+    destination = songs_dir / song
+    if destination.exists():
+        raise BridgeError(f"A song named '{song}' already exists.")
+    try:
+        imported = parse_dectalk_track(str(source_text or ""), -48)
+    except DectalkTrackImportError as error:
+        raise BridgeError(str(error)) from error
+
+    temporary = songs_dir / f".{song}.{uuid.uuid4().hex}.tmp"
+    setup = imported.setup or "[:np][:dv hs 100]"
+    try:
+        inputs = temporary / "inputs"
+        (inputs / "lyrics").mkdir(parents=True)
+        (temporary / "outputs").mkdir()
+        midi = mido.MidiFile(type=1, ticks_per_beat=480)
+        conductor = mido.MidiTrack()
+        conductor.append(mido.MetaMessage("track_name", name="Timing", time=0))
+        conductor.append(mido.MetaMessage("set_tempo", tempo=500_000, time=0))
+        conductor.append(mido.MetaMessage("end_of_track", time=0))
+        midi.tracks.append(conductor)
+        append_imported_track(midi, role, imported)
+        midi_path = inputs / f"{song}.mid"
+        midi.save(midi_path)
+        settings = {
+            "noteOffset": -48,
+            "consonantFractionTarget": 0.15,
+            "consonantMinMs": 5,
+            "consonantMaxMs": 75,
+            "codaMaxMs": 200,
+            "Tracks": {role: _imported_track_settings(role, setup)},
+        }
+        (temporary / "settings.yaml").write_text(
+            yaml.safe_dump(settings, sort_keys=False, allow_unicode=False),
+            encoding="utf-8",
+        )
+        temporary.rename(destination)
+        applied = _publish_imported_dectalk_alignment(song, role, source_text, imported.lyric_text)
+    except Exception as error:
+        shutil.rmtree(temporary, ignore_errors=True)
+        shutil.rmtree(destination, ignore_errors=True)
+        if isinstance(error, BridgeError):
+            raise
+        raise BridgeError(f"Could not create DECTalk song: {error}") from error
+    return {
+        "song": song,
+        "role": role,
+        "note_count": len(imported.notes),
+        "duration_ms": round(imported.duration_ms),
+        "midi_path": str(destination / "inputs" / f"{song}.mid"),
         "source_path": applied["path"],
         "alignment_path": applied["alignment_path"],
     }
@@ -1540,6 +1628,8 @@ def handle(request: dict[str, Any]) -> Any:
         return sorted(path.name for path in song_dir.iterdir() if path.is_dir() and (path / "settings.yaml").is_file())
     if command == "import_midi_song":
         return _scaffold_midi_song(REPO_ROOT, request.get("source_path"), request.get("song"))
+    if command == "create_dectalk_song":
+        return _create_dectalk_song(request.get("song"), request.get("role"), request.get("text"))
 
     song = _song_name(request.get("song"))
     if command == "inspect_song":

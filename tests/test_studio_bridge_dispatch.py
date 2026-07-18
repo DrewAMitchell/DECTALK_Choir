@@ -24,3 +24,27 @@ def test_render_role_update_does_not_require_a_single_role(monkeypatch) -> None:
     )
 
     assert result == {"song": "Example", "roles": requested}
+
+
+def test_new_dectalk_song_dispatches_before_existing_song_validation(monkeypatch) -> None:
+    monkeypatch.setattr(
+        bridge,
+        "_create_dectalk_song",
+        lambda song, role, text: {"song": song, "role": role, "text": text},
+    )
+
+    def reject_existing_song_lookup(value: object) -> str:
+        raise AssertionError("new-song import must not require an existing song folder")
+
+    monkeypatch.setattr(bridge, "_song_name", reject_existing_song_lookup)
+
+    result = bridge.handle(
+        {
+            "command": "create_dectalk_song",
+            "song": "NewSong",
+            "role": "Lead",
+            "text": "[dah<300,12>]",
+        }
+    )
+
+    assert result == {"song": "NewSong", "role": "Lead", "text": "[dah<300,12>]"}
