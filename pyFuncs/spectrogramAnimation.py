@@ -196,23 +196,41 @@ def _word_cues_from_payload(payload):
 
 def _load_word_cues(song_title, track_name):
     song_dir = Path("songs") / song_title
-    path = song_dir / "inputs" / "lyrics" / ".alignment" / f"{track_name}.json"
-    if not path.is_file():
-        return [], None
-    try:
-        cues = _word_cues_from_payload(json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, ValueError, TypeError):
-        return [], None
-    if cues:
-        return [
-            {
-                **cue,
-                "start_ms": cue["start_ms"] + OUTPUT_LEAD_IN_MS,
-                "end_ms": cue["end_ms"] + OUTPUT_LEAD_IN_MS,
-            }
-            for cue in cues
-        ], str(path)
+    candidates = [
+        song_dir / "inputs" / "lyrics" / ".alignment" / f"{track_name}.json",
+        song_dir / "outputs" / "lyrics_drafts" / f"{track_name}.json",
+    ]
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            cues = _word_cues_from_payload(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError):
+            continue
+        if cues:
+            return [
+                {
+                    **cue,
+                    "start_ms": cue["start_ms"] + OUTPUT_LEAD_IN_MS,
+                    "end_ms": cue["end_ms"] + OUTPUT_LEAD_IN_MS,
+                }
+                for cue in cues
+            ], str(path)
     return [], None
+
+
+def _validate_current_word_cues(payloads):
+    missing = [
+        payload["track_name"]
+        for payload in payloads
+        if payload["spectrogram"].get("CURRENT_WORD_ENABLED") and not payload["word_cues"]
+    ]
+    if missing:
+        names = ", ".join(missing)
+        raise RuntimeError(
+            f"Current-word display is enabled but no alignment timing is available for: {names}. "
+            "Apply or draft an alignment for each track, or disable Current word before generating the video."
+        )
 
 
 def _setup_metadata(track_settings):
@@ -523,8 +541,6 @@ def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 144
         track_settings = settings_yaml["Tracks"][track_name]
         spectrogram = dict(track_settings.get("SPECTROGRAM") or {})
         cues, cue_source = _load_word_cues(songTitle, track_name)
-        if spectrogram.get("CURRENT_WORD_ENABLED") and not cues:
-            print(f"{track_name}: current-word overlay skipped because no alignment timing is available", flush=True)
         safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", track_name).strip("_") or f"track_{index + 1}"
         payloads.append({
             "track_name": track_name,
@@ -543,6 +559,7 @@ def generateAnimation(trackNames, songTitle, settings_yaml, videoDims=(2560, 144
             "word_source": cue_source,
         })
 
+    _validate_current_word_cues(payloads)
     setup_seconds = perf_counter() - total_started
     print(f"TIMING stage=setup seconds={setup_seconds:.3f}", flush=True)
 

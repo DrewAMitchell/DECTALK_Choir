@@ -11,6 +11,7 @@ from pyFuncs.spectrogramAnimation import (
     _intermediate_animation_mode,
     _load_word_cues,
     _track_label,
+    _validate_current_word_cues,
 )
 from tools.choir_studio_bridge import _replace_role_mapping, _replace_top_level_mapping, _word_cues_from_report
 
@@ -82,6 +83,44 @@ def test_spectrogram_word_cues_include_renderer_lead_in(tmp_path: Path, monkeypa
         "start_ms": 250 + OUTPUT_LEAD_IN_MS,
         "end_ms": 700 + OUTPUT_LEAD_IN_MS,
     }]
+
+
+def test_spectrogram_word_cues_fall_back_to_working_report_when_applied_sidecar_is_legacy(tmp_path: Path, monkeypatch):
+    song_dir = tmp_path / "songs" / "TestSong"
+    applied = song_dir / "inputs" / "lyrics" / ".alignment" / "Lead.json"
+    draft = song_dir / "outputs" / "lyrics_drafts" / "Lead.json"
+    applied.parent.mkdir(parents=True)
+    draft.parent.mkdir(parents=True)
+    applied.write_text(json.dumps({"virtual_splits": []}), encoding="utf-8")
+    draft.write_text(json.dumps({
+        "token_counts": [{"line": 0, "word_index": 0, "word": "fallback"}],
+        "notes": [{"line": 0, "word_index": 0, "start_ms": 100, "end_ms": 500}],
+    }), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    cues, source = _load_word_cues("TestSong", "Lead")
+
+    assert source == str(draft.relative_to(tmp_path))
+    assert cues == [{
+        "word": "fallback",
+        "start_ms": 100 + OUTPUT_LEAD_IN_MS,
+        "end_ms": 500 + OUTPUT_LEAD_IN_MS,
+    }]
+
+
+def test_current_word_overlay_requires_alignment_timing():
+    payloads = [
+        {"track_name": "Lead", "spectrogram": {"CURRENT_WORD_ENABLED": True}, "word_cues": []},
+        {"track_name": "Bass", "spectrogram": {"CURRENT_WORD_ENABLED": False}, "word_cues": []},
+    ]
+
+    try:
+        _validate_current_word_cues(payloads)
+    except RuntimeError as error:
+        assert "Lead" in str(error)
+        assert "Bass" not in str(error)
+    else:
+        raise AssertionError("Missing current-word timing must fail spectrogram generation")
 
 
 def test_spectrogram_video_policy_defaults_to_cleanup_and_uses_distribution_crf():
