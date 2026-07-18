@@ -23,18 +23,22 @@ button:disabled { cursor: wait; opacity: .55; }
 @media (prefers-reduced-motion: reduce) { .global-tooltip { transition: none; }.lifecycle button.ready-next { animation: none; background: var(--ready-bg); box-shadow: inset 0 -2px #60d4ae; } }
 
 .studio-shell { width: 100%; min-width: 0; height: 100%; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 58px minmax(0, 1fr); overflow: hidden; background: #101416; }
-.app-header { min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 14px; padding: 0 22px; border-bottom: 1px solid #2b3437; background: #151a1c; }
-.brand { display: flex; align-items: center; gap: 8px; color: #d7e2e0; font-size: 15px; letter-spacing: .02em; white-space: nowrap; }
+.app-header { min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 14px; padding: 0 0 0 22px; border-bottom: 1px solid #2b3437; background: #151a1c; cursor: grab; }
+.app-header:active { cursor: grabbing; }
+.brand { display: flex; align-self: stretch; align-items: center; gap: 8px; color: #d7e2e0; font-size: 15px; letter-spacing: .02em; white-space: nowrap; user-select: none; }
+.brand > * { pointer-events: none; }
 .brand::after { content: ""; width: 1px; height: 24px; margin-left: 4px; background: #3a4848; }.brand strong { color: #60d4ae; font-weight: 650; }.brand-mark { display: block; width: 28px; height: 28px; object-fit: contain; filter: drop-shadow(0 0 4px #60d4ae55); }
-.header-song-cluster { display: flex; flex: 1 1 260px; min-width: 190px; max-width: 520px; align-items: center; gap: 4px; }.song-select { display: flex; flex: 1 1 auto; min-width: 0; align-items: center; gap: 9px; color: #9aa7aa; font-size: 12px; }
+.header-song-cluster { display: flex; flex: 1 1 260px; min-width: 190px; max-width: 520px; align-items: center; gap: 4px; cursor: default; }.song-select { display: flex; flex: 1 1 auto; min-width: 0; align-items: center; gap: 9px; color: #9aa7aa; font-size: 12px; }
 .song-select select { width: 100%; min-width: 0; color: #eef4f2; background: #20282a; border: 2px solid #60d4ae; border-radius: 4px; padding: 6px 28px 6px 8px; box-shadow: 0 0 0 1px #60d4ae26; }
 .song-select select:focus-visible { outline: 2px solid #60d4ae66; outline-offset: 2px; }
 .selection-actions { display: flex; align-items: center; gap: 4px; }.header-command { display: grid; place-items: center; width: 29px; height: 29px; padding: 0; border: 1px solid #3a4648; border-radius: 4px; background: #20282a; color: #a8b8b5; }.header-command:hover { color: #e9f5f1; border-color: #6c9f91; background: #2a3536; }
-.theme-switch { display: inline-flex; flex: 0 0 auto; margin-left: auto; padding: 2px; border: 1px solid #3a4648; border-radius: 4px; background: #20282a; }.theme-switch button { display: grid; place-items: center; width: 28px; height: 26px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: #91a09e; }.theme-switch button:hover { color: #e8f0ed; background: #2d3939; }.theme-switch button.active { color: #10201d; background: #60d4ae; }
+.header-drag-space { flex: 1 1 12px; min-width: 8px; align-self: stretch; }
+.theme-switch { display: inline-flex; flex: 0 0 auto; padding: 2px; border: 1px solid #3a4648; border-radius: 4px; background: #20282a; cursor: default; }.theme-switch button { display: grid; place-items: center; width: 28px; height: 26px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: #91a09e; }.theme-switch button:hover { color: #e8f0ed; background: #2d3939; }.theme-switch button.active { color: #10201d; background: #60d4ae; }
+.window-controls { display: flex; flex: 0 0 auto; align-self: stretch; margin-left: -6px; border-left: 1px solid #2b3437; cursor: default; }.window-controls button { display: grid; width: 38px; min-height: 100%; place-items: center; padding: 0; border: 0; border-radius: 0; background: transparent; color: #9eacab; }.window-controls button:hover { background: #293234; color: #f1f7f5; }.window-controls .window-close { width: 44px; }.window-controls .window-close:hover { background: #b33b35; color: #fff; }
 .header-state { min-width: 0; overflow: hidden; color: #91a09e; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.song-delete-confirm { position: fixed; z-index: 30; top: 64px; right: 16px; display: flex; align-items: center; gap: 8px; max-width: min(540px, calc(100vw - 32px)); padding: 9px 10px 9px 12px; border: 1px solid #a85850; border-radius: 5px; background: #321e1d; box-shadow: 0 12px 28px #00000045; color: #ffd6d0; font-size: 11px; }.song-delete-confirm > div { display: grid; gap: 2px; min-width: 0; margin-right: auto; }.song-delete-confirm strong { color: #ffe4de; font-size: 12px; }.song-delete-confirm span { overflow: hidden; color: #d9aaa3; text-overflow: ellipsis; white-space: nowrap; }.song-delete-confirm .secondary, .song-delete-confirm .danger { min-height: 29px; padding-inline: 9px; font-size: 11px; }.danger { border: 1px solid #bd6259; border-radius: 4px; background: #7a3935; color: #ffe4df; font-weight: 700; }.danger:hover:not(:disabled) { border-color: #e5887d; background: #9a443e; }.destructive-command { color: #d48c84; }.destructive-command:hover { color: #ffe0da; border-color: #a95d55; background: #342221; }
+.song-delete-confirm { position: fixed; z-index: 30; top: 64px; right: 16px; display: flex; align-items: center; gap: 8px; max-width: min(540px, calc(100vw - 32px)); padding: 9px 10px 9px 12px; border: 1px solid #a85850; border-radius: 5px; background: #321e1d; box-shadow: 0 12px 28px #00000045; color: #ffd6d0; font-size: 11px; }.song-delete-confirm > div { display: grid; gap: 2px; min-width: 0; margin-right: auto; }.song-delete-confirm strong { color: #ffe4de; font-size: 12px; }.song-delete-confirm span { overflow: hidden; color: #d9aaa3; text-overflow: ellipsis; white-space: nowrap; }.song-delete-confirm .secondary, .song-delete-confirm .danger { min-height: 29px; padding-inline: 9px; font-size: 11px; }.danger { border: 1px solid #bd6259; border-radius: 4px; background: #7a3935; color: #ffe4df; font-weight: 700; }.danger:hover:not(:disabled) { border-color: #e5887d; background: #9a443e; }.header-command.destructive-command { border-color: #70443f; background: #2d2222; color: #dc8d84; }.header-command.destructive-command:hover { color: #ffe0da; border-color: #a95d55; background: #432725; }
 
-.lifecycle { display: flex; align-self: stretch; align-items: stretch; gap: 0; border-left: 1px solid #2b3437; }
+.lifecycle { display: flex; align-self: stretch; align-items: stretch; gap: 0; border-left: 1px solid #2b3437; cursor: default; }
 .lifecycle button { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 0 11px; border: 0; border-right: 1px solid #283033; background: transparent; color: #93a0a2; font-size: 12px; }
 .lifecycle button:hover { background: #1a2224; color: #e8eded; }.lifecycle button.active { color: #ecf6f3; background: #1c2928; box-shadow: inset 0 -2px #60d4ae; }
 .lifecycle button.ready-next { --ready-bg: #244139; --ready-color: #dff8ef; --ready-glow: #60d4ae42; color: var(--ready-color); animation: render-ready-breathe 1.8s ease-in-out infinite; }
@@ -118,9 +122,11 @@ button:disabled { cursor: wait; opacity: .55; }
 :root[data-theme="light"] .app-header, :root[data-theme="light"] .track-rail { background: #f8fbfa; border-color: #cbd4d4; }
 :root[data-theme="light"] .lifecycle { background: transparent; border-color: #cbd4d4; }
 :root[data-theme="light"] .brand { color: #29403d; }:root[data-theme="light"] .brand::after { background: #b5c8c2; }
+:root[data-theme="light"] .window-controls { border-color: #cbd4d4; }:root[data-theme="light"] .window-controls button { color: #526864; }:root[data-theme="light"] .window-controls button:hover { background: #e1eae7; color: #172d28; }:root[data-theme="light"] .window-controls .window-close:hover { background: #c83e38; color: #fff; }
 :root[data-theme="light"] .song-select, :root[data-theme="light"] .header-state { color: #607171; }
 :root[data-theme="light"] .song-select select { color: #21302f; background: #ffffff; border-color: #60d4ae; }:root[data-theme="light"] .theme-switch { color: #21302f; background: #ffffff; border-color: #bfcac9; }
 :root[data-theme="light"] .header-command { color: #4b6560; background: #ffffff; border-color: #bfcac9; }:root[data-theme="light"] .header-command:hover { color: #1d3831; background: #e3ece9; border-color: #7fa99b; }
+:root[data-theme="light"] .header-command.destructive-command { border-color: #d5aaa5; background: #fff1ef; color: #a74e47; }:root[data-theme="light"] .header-command.destructive-command:hover { border-color: #bd6b63; background: #f8dcd8; color: #782e29; }
 :root[data-theme="light"] .theme-switch button { color: #617372; }
 :root[data-theme="light"] .theme-switch button:hover { color: #172624; background: #e3ece9; }
 :root[data-theme="light"] .lifecycle button { color: #60706f; border-color: #d7dfde; }
@@ -230,10 +236,10 @@ button:disabled { cursor: wait; opacity: .55; }
 :root[data-theme="light"] .tuning-modal-backdrop { background: #20312e66; }:root[data-theme="light"] .tune-panel .track-tuning { border-color: #9dc0b5; background: #f7fbf9; box-shadow: 0 28px 80px #263b364d; }:root[data-theme="light"] .tuning-modal-close { border-color: #aac7be; background: #edf5f1; color: #315a4d; }:root[data-theme="light"] .tuning-modal-close:hover { border-color: #6f9f90; background: #dcece6; color: #173e32; }:root[data-theme="light"] .review-tune-control { color: #997327; }:root[data-theme="light"] .review-tune-control:hover { background: #f8edcf; color: #725514; }
 
 @media (max-height: 800px) {
-  .studio-shell { grid-template-rows: 48px minmax(0, 1fr); }.app-header { gap: 9px; padding: 0 14px; }.brand { font-size: 13px; }.song-select select { width: 100%; padding-top: 4px; padding-bottom: 4px; }.lifecycle button { gap: 5px; padding: 0 8px; font-size: 11px; }.stage-index { width: 17px; height: 17px; font-size: 10px; }.surface { padding: 10px 16px; }.surface-header { margin-bottom: 10px; }.surface-header h1, .render-stage h1, .review-identity h1 { font-size: 20px; }.midi-stage { padding-bottom: 12px; }.midi-transport { margin-bottom: 8px; }.piano-roll, .empty-canvas { height: clamp(190px, 38vh, 330px); }.review-stage { padding-right: 4px; }.review-header { margin-bottom: 8px; }.review-stats th, .review-stats td { padding: 6px 7px; }.track-tuning > summary { padding: 8px 10px; }.tuning-body > section { gap: 8px; padding: 9px; }.tuning-field em { min-height: 0; }.tuning-actions { padding: 8px 10px; }
+  .studio-shell { grid-template-rows: 48px minmax(0, 1fr); }.app-header { gap: 9px; padding: 0 0 0 14px; }.brand { font-size: 13px; }.song-select select { width: 100%; padding-top: 4px; padding-bottom: 4px; }.lifecycle button { gap: 5px; padding: 0 8px; font-size: 11px; }.stage-index { width: 17px; height: 17px; font-size: 10px; }.surface { padding: 10px 16px; }.surface-header { margin-bottom: 10px; }.surface-header h1, .render-stage h1, .review-identity h1 { font-size: 20px; }.midi-stage { padding-bottom: 12px; }.midi-transport { margin-bottom: 8px; }.piano-roll, .empty-canvas { height: clamp(190px, 38vh, 330px); }.review-stage { padding-right: 4px; }.review-header { margin-bottom: 8px; }.review-stats th, .review-stats td { padding: 6px 7px; }.track-tuning > summary { padding: 8px 10px; }.tuning-body > section { gap: 8px; padding: 9px; }.tuning-field em { min-height: 0; }.tuning-actions { padding: 8px 10px; }
 }
 @media (max-height: 650px) {
-  .app-header { padding: 0 10px; }.header-state { display: none; }.selection-actions { gap: 2px; }.surface { padding: 7px 12px; }.track-rail { padding-top: 9px; }.rail-heading { padding-bottom: 6px; }.track { padding: 7px 8px; }.track small { display: none; }.piano-roll, .empty-canvas { height: clamp(160px, 34vh, 250px); }.review-visualizer { gap: 8px; }.visuals-panel .visual-layout-controls { padding: 10px; }.visual-preview-column { justify-content: flex-start; }
+  .app-header { padding: 0 0 0 10px; }.header-state { display: none; }.selection-actions { gap: 2px; }.surface { padding: 7px 12px; }.track-rail { padding-top: 9px; }.rail-heading { padding-bottom: 6px; }.track { padding: 7px 8px; }.track small { display: none; }.piano-roll, .empty-canvas { height: clamp(160px, 34vh, 250px); }.review-visualizer { gap: 8px; }.visuals-panel .visual-layout-controls { padding: 10px; }.visual-preview-column { justify-content: flex-start; }
 }
 
 @media (max-height: 600px) {
@@ -243,7 +249,7 @@ button:disabled { cursor: wait; opacity: .55; }
 
   .app-header {
     gap: 6px;
-    padding-inline: 8px;
+    padding-left: 8px;
   }
 
   .lifecycle button {
@@ -272,6 +278,10 @@ button:disabled { cursor: wait; opacity: .55; }
   .align-workspace .piano-roll {
     min-height: 140px;
   }
+}
+
+@media (max-width: 1120px) {
+  .brand > span { display: none; }
 }
 
 /* Keep the working surfaces compact: explicit overflow is preferable to shifting the layout. */
