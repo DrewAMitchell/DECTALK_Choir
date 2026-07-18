@@ -381,7 +381,7 @@ if midiFileName == '':
 # Load MIDI data
 import pyFuncs.MidiProcessing as pymidi
 
-midiData = pymidi.loadMidiData(midiFileName)#, printInfo=False)
+midiData = pymidi.loadMidiData(midiFileName, printInfo=False)
 
 # Convert midi data to notes and durations
 noteSet = {}

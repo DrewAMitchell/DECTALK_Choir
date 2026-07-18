@@ -97,7 +97,10 @@ fn runtime_python(root: &Path) -> Result<PathBuf, String> {
 }
 
 fn configure_python(command: &mut Command, root: &Path, python: &Path) {
-    command.current_dir(root);
+    command
+        .current_dir(root)
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1");
     if python.starts_with(root.join("python")) {
         let python_home = root.join("python");
         command
@@ -487,8 +490,24 @@ where
     R: std::io::Read + Send + 'static,
 {
     std::thread::spawn(move || {
-        for line in BufReader::new(reader).lines().map_while(Result::ok) {
-            let _ = sender.send((is_stderr, line));
+        let mut reader = BufReader::new(reader);
+        let mut bytes = Vec::new();
+        loop {
+            bytes.clear();
+            match reader.read_until(b'\n', &mut bytes) {
+                Ok(0) => break,
+                Ok(_) => {
+                    while matches!(bytes.last(), Some(b'\n' | b'\r')) {
+                        bytes.pop();
+                    }
+                    let line = String::from_utf8_lossy(&bytes).into_owned();
+                    let _ = sender.send((is_stderr, line));
+                }
+                Err(error) => {
+                    let _ = sender.send((true, format!("Could not read process output: {error}")));
+                    break;
+                }
+            }
         }
     });
 }
@@ -1017,7 +1036,50 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::MediaPlayer;
+    use super::{configure_python, stream_process_output, MediaPlayer};
+    use std::ffi::OsStr;
+    use std::io::Cursor;
+    use std::path::Path;
+    use std::process::Command;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn python_processes_always_emit_utf8() {
+        let mut command = Command::new("python");
+        configure_python(
+            &mut command,
+            Path::new(r"C:\Choir"),
+            Path::new(r"C:\Choir\.venv\Scripts\python.exe"),
+        );
+        let environment = command.get_envs().collect::<Vec<_>>();
+
+        assert!(environment.iter().any(|(key, value)| {
+            *key == OsStr::new("PYTHONIOENCODING") && *value == Some(OsStr::new("utf-8"))
+        }));
+        assert!(environment.iter().any(|(key, value)| {
+            *key == OsStr::new("PYTHONUTF8") && *value == Some(OsStr::new("1"))
+        }));
+    }
+
+    #[test]
+    fn process_stream_survives_legacy_encoded_metadata() {
+        let (sender, receiver) = mpsc::channel();
+        stream_process_output(
+            Cursor::new(b"Copyright \xa9 1999\nnext line\n".to_vec()),
+            false,
+            sender,
+        );
+
+        let first = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("receive legacy metadata");
+        let second = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("reader continues after invalid UTF-8");
+        assert_eq!(first, (false, "Copyright � 1999".to_string()));
+        assert_eq!(second, (false, "next line".to_string()));
+    }
 
     #[test]
     fn midi_staging_shortens_deep_workspace_paths() {
