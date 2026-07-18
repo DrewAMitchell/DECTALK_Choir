@@ -2,10 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "DECTALK Choir Studio (Tauri)",
+      "name": "DECTALK Choir Studio (Tauri + CDP)",
       "type": "node-terminal",
       "request": "launch",
-      "command": "npm.cmd exec tauri dev",
+      "command": "$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS='--remote-debugging-address=127.0.0.1 --remote-debugging-port=9356'; npm.cmd exec tauri dev",
       "cwd": "${workspaceFolder}/choir_studio"
     }
   ]
