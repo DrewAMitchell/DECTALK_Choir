@@ -1106,8 +1106,18 @@ def _update_track_tuning(song: str, role: str, requested: object) -> dict[str, A
     return {"settings_path": str(settings_path), "values": values}
 
 
-def _prepare_midi_preview(song: str, role: str) -> dict[str, Any]:
+def _prepare_midi_preview(song: str, role: str, requested_program: object = 0) -> dict[str, Any]:
     """Build a fresh, selected-track-only MIDI file for the Windows sequencer."""
+
+    if isinstance(requested_program, bool):
+        raise BridgeError("MIDI preview instrument must be a General MIDI program from 0 through 127.")
+    try:
+        numeric_program = float(requested_program)
+    except (TypeError, ValueError) as error:
+        raise BridgeError("MIDI preview instrument must be a General MIDI program from 0 through 127.") from error
+    if not numeric_program.is_integer() or not 0 <= numeric_program <= 127:
+        raise BridgeError("MIDI preview instrument must be a General MIDI program from 0 through 127.")
+    program = int(numeric_program)
 
     inspection = inspect_song(REPO_ROOT, song)
     inspected_role = next((item for item in inspection.roles if item.role == role), None)
@@ -1120,11 +1130,12 @@ def _prepare_midi_preview(song: str, role: str) -> dict[str, Any]:
         / "_midi_preview"
         / f"{source_track.index:02d}_{safe_name}_{uuid.uuid4().hex[:8]}.mid"
     )
-    path = write_single_track_preview(inspection.midi_path, source_track.index, output)
+    path = write_single_track_preview(inspection.midi_path, source_track.index, output, program=program)
     return {
         "path": str(path),
         "duration_ms": round(inspection.midi.duration_seconds * 1000),
         "track": source_track.name,
+        "program": program,
     }
 
 
@@ -1758,7 +1769,7 @@ def handle(request: dict[str, Any]) -> Any:
     if command == "align":
         return _align(song, role)
     if command == "prepare_midi_preview":
-        return _prepare_midi_preview(song, role)
+        return _prepare_midi_preview(song, role, request.get("program", 0))
     if command == "delete_midi_track":
         return _delete_midi_track(song, role, request.get("confirm_delete") is True)
     if command == "preview_polyphonic_split":

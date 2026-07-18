@@ -20,7 +20,8 @@ in the [DECTALK Choir README](../README.md#choir-renderer).
 
 The Studio lifecycle is **Align -> Render Audio**. Align owns MIDI preview and
 lyric-to-note editing; its track rail is the primary way to select a working
-role. The header inbox action imports a `.mid` or `.midi` as a new song, creates
+role. Its instrument selector applies one persisted General MIDI sound to every
+selected-track preview without changing the source MIDI. The header inbox action imports a `.mid` or `.midi` as a new song, creates
 one role per note-bearing track, and opens the first role in Align. This atomic
 scaffold never overwrites an existing song or modifies the selected source MIDI.
 The header also includes persistent dark/light preferences, output-folder

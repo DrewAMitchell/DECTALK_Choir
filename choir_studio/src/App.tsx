@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ArrowLeft, BarChart3, Check, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, FileAudio, FileInput, FolderOpen, GitBranch, Inbox, Info, LoaderCircle, MessageSquareText, Minus, Moon, Music2, Music3, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
 import { bridge, deleteSong, media, openFfmpegDownload, openMedia, openSongFolder, renderJobStatus, spectrogramJobStatus, startRenderJob, startSpectrogramJob, type MediaStatus, type RenderJobStatus, type SpectrogramJobStatus } from "./bridge";
 import { PianoRoll } from "./PianoRoll";
+import { midiInstrumentGroups, midiInstrumentName } from "./midiInstruments";
 import type { AlignmentReport, Role, SongInspection } from "./types";
 import choirStudioMark from "./assets/choir-studio-mark.svg";
 
@@ -19,7 +20,7 @@ const lyricEditorTips = [
 const lyricTipIntervals = [10000, 6500, 4000];
 const FFMPEG_WINGET_COMMAND = "winget install --id Gyan.FFmpeg.Shared --exact";
 const UI_STATE_KEY = "dectalk-choir-studio.ui-state";
-type StoredUiState = { song?: string; role?: string; stage?: Stage; theme?: "dark" | "light"; render_roles?: Record<string, string[]> };
+type StoredUiState = { song?: string; role?: string; stage?: Stage; theme?: "dark" | "light"; midi_instrument?: number; render_roles?: Record<string, string[]> };
 
 function readStoredUiState(): StoredUiState {
   try {
@@ -29,6 +30,7 @@ function readStoredUiState(): StoredUiState {
       role: typeof value.role === "string" ? value.role : undefined,
       stage: stages.some(([id]) => id === value.stage) ? value.stage as Stage : undefined,
       theme: value.theme === "light" || value.theme === "dark" ? value.theme : undefined,
+      midi_instrument: Number.isInteger(value.midi_instrument) && Number(value.midi_instrument) >= 0 && Number(value.midi_instrument) <= 127 ? Number(value.midi_instrument) : undefined,
       render_roles: typeof value.render_roles === "object" && value.render_roles !== null
         ? Object.fromEntries(Object.entries(value.render_roles).filter(([, roles]) => Array.isArray(roles) && roles.every((role) => typeof role === "string"))) as Record<string, string[]>
         : undefined,
@@ -204,6 +206,7 @@ export default function App() {
   const [inspection, setInspection] = useState<SongInspection | null>(null);
   const [roleName, setRoleName] = useState(storedUiState.role ?? "");
   const [stage, setStage] = useState<Stage>(storedUiState.stage ?? "align");
+  const [midiInstrument, setMidiInstrument] = useState(storedUiState.midi_instrument ?? 0);
   const [theme, setTheme] = useState<"dark" | "light">(storedUiState.theme ?? (window.localStorage.getItem("dectalk-choir-studio.theme") === "light" ? "light" : "dark"));
   const [renderRolesBySong, setRenderRolesBySong] = useState<Record<string, string[]>>(storedUiState.render_roles ?? {});
   const [transcript, setTranscript] = useState("");
@@ -284,8 +287,8 @@ export default function App() {
   }, [errorNotice]);
   useEffect(() => {
     if (!song || !inspection) return;
-    window.localStorage.setItem(UI_STATE_KEY, JSON.stringify({ song, role: roleName, stage, theme, render_roles: renderRolesBySong }));
-  }, [song, roleName, stage, theme, inspection, renderRolesBySong]);
+    window.localStorage.setItem(UI_STATE_KEY, JSON.stringify({ song, role: roleName, stage, theme, midi_instrument: midiInstrument, render_roles: renderRolesBySong }));
+  }, [song, roleName, stage, theme, midiInstrument, inspection, renderRolesBySong]);
   useEffect(() => {
     if (!song || !inspection) return;
     const configuredRoles = inspection.roles.filter((item) => item.render_enabled && item.render_eligible).map((item) => item.role);
@@ -487,7 +490,7 @@ export default function App() {
         return <div key={item.role} className={`track-entry${item.role === roleName ? " active" : ""}`}><div className="track"><button className="track-select-hitbox" type="button" onClick={() => selectRole(item.role)} aria-pressed={item.role === roleName} aria-label={`Select ${item.role}`} /><span className="track-copy"><span className="track-name-row"><strong title={`${item.role} · ${item.midi_source_name}`}>{item.role}</strong><SourceSyncMarker state={syncState} /></span><TrackOverlapBadge role={item} onSplit={() => { if (item.role !== roleName) selectRole(item.role); setSplitRoleName(item.role); }} /><span className="track-range-actions"><RailPitchRange value={item.midi_range} /><button className={`track-delete-control${trackDeleteArmed ? " armed" : ""}`} type="button" disabled={!item.midi_track || !trackDeleteArmed || !!busy} title={!item.midi_track ? "This role has no MIDI track to delete" : trackDeleteArmed ? `Permanently delete ${item.midi_source_name} from the working MIDI` : `Hold Ctrl to permanently delete ${item.midi_source_name}`} aria-label={!item.midi_track ? `${item.role} has no MIDI track to delete` : trackDeleteArmed ? `Permanently delete MIDI track for ${item.role}` : `Hold Control to permanently delete MIDI track for ${item.role}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); if (event.ctrlKey) void removeMidiTrack(item.role); }}><Trash2 size={12} /></button></span></span><span className="track-note-total" title={`${item.note_count} MIDI notes`} aria-label={`${item.note_count} MIDI notes`}><b>{item.note_count}</b><Music3 size={13} aria-hidden="true" /></span></div></div>;
       })}</div></aside>
       <section className={`surface${stage === "align" ? " align-surface" : ""}`}>
-        {stage === "align" && <AlignStage role={role} inspection={inspection} song={song} alignment={activeAlignment} loading={alignmentLoading || alignmentTransitionPending} templateSources={templateSources} onAdoptTemplate={adoptTemplate} onOpenLyrics={() => setLyricsModalOpen(true)} onOpenSplitter={() => role && setSplitRoleName(role.role)} onApplied={async () => { const refreshed = await bridge<SongInspection>({ command: "inspect_song", song }); setInspection(refreshed); }} setAlignment={setAlignment} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} busy={busy} setBusy={setBusy} setError={setError} />}
+        {stage === "align" && <AlignStage role={role} inspection={inspection} song={song} alignment={activeAlignment} loading={alignmentLoading || alignmentTransitionPending} midiInstrument={midiInstrument} onMidiInstrumentChange={setMidiInstrument} templateSources={templateSources} onAdoptTemplate={adoptTemplate} onOpenLyrics={() => setLyricsModalOpen(true)} onOpenSplitter={() => role && setSplitRoleName(role.role)} onApplied={async () => { const refreshed = await bridge<SongInspection>({ command: "inspect_song", song }); setInspection(refreshed); }} setAlignment={setAlignment} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} busy={busy} setBusy={setBusy} setError={setError} />}
         {stage === "review" && <ReviewStage song={song} role={role} inspection={inspection} enabledRoles={reviewEnabledRoles} onEnabledRolesChange={(roles) => void updateRenderRoles(roles)} onSelectRole={selectRole} setInspection={setInspection} busy={busy} setBusy={setBusy} setError={setError} />}
       </section>
     </section>
@@ -673,7 +676,7 @@ function LyricsTipBoard() {
   </aside>;
 }
 
-function AlignStage({ role, inspection, song, alignment, loading, templateSources, onAdoptTemplate, onOpenLyrics, onOpenSplitter, onApplied, setAlignment, selectedPhrase, setSelectedPhrase, busy, setBusy, setError }: { role: Role | null; inspection: SongInspection | null; song: string; alignment: AlignmentState | null; loading: boolean; templateSources: AlignmentTemplate[]; onAdoptTemplate(sourceRole: string): void; onOpenLyrics(): void; onOpenSplitter(): void; onApplied(): Promise<void>; setAlignment(value: AlignmentState | null): void; selectedPhrase: number | null; setSelectedPhrase(value: number): void; busy: string; setBusy(value: string): void; setError(value: string): void }) {
+function AlignStage({ role, inspection, song, alignment, loading, midiInstrument, onMidiInstrumentChange, templateSources, onAdoptTemplate, onOpenLyrics, onOpenSplitter, onApplied, setAlignment, selectedPhrase, setSelectedPhrase, busy, setBusy, setError }: { role: Role | null; inspection: SongInspection | null; song: string; alignment: AlignmentState | null; loading: boolean; midiInstrument: number; onMidiInstrumentChange(value: number): void; templateSources: AlignmentTemplate[]; onAdoptTemplate(sourceRole: string): void; onOpenLyrics(): void; onOpenSplitter(): void; onApplied(): Promise<void>; setAlignment(value: AlignmentState | null): void; selectedPhrase: number | null; setSelectedPhrase(value: number): void; busy: string; setBusy(value: string): void; setError(value: string): void }) {
   const [selectedWord, setSelectedWord] = useState<{ line: number; wordIndex: number } | null>(null);
   const [insertWord, setInsertWord] = useState("");
   const [insertOpen, setInsertOpen] = useState(false);
@@ -733,13 +736,19 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
     if (!role || !song) return;
     setError(""); setMediaLabel("Preparing selected MIDI track...");
     try {
-      const preview = await bridge<{ path: string; duration_ms: number; track: string }>({ command: "prepare_midi_preview", song, role: role.role });
+      const preview = await bridge<{ path: string; duration_ms: number; track: string; program: number }>({ command: "prepare_midi_preview", song, role: role.role, program: midiInstrument });
       const next = await media<MediaStatus>("media_play", { path: preview.path, kind: "midi", fromMs: cursorMs });
-      setMediaState({ ...next, duration_ms: Math.max(next.duration_ms, preview.duration_ms) }); setMediaLabel(`Playing ${preview.track}.`);
+      setMediaState({ ...next, duration_ms: Math.max(next.duration_ms, preview.duration_ms) }); setMediaLabel(`Playing ${preview.track} with ${midiInstrumentName(preview.program)}.`);
     } catch (cause) { const message = cause instanceof Error ? cause.message : String(cause); setError(message); setMediaLabel("MIDI preview unavailable."); }
   };
   const togglePause = async () => { try { const next = await media<MediaStatus>("media_toggle_pause"); setMediaState(next); setMediaLabel(next.paused ? "MIDI preview paused." : "MIDI preview resumed."); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
   const stop = async () => { try { const next = await media<MediaStatus>("media_stop"); setMediaState(next); setMediaLabel("Playback stopped."); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
+  const changeMidiInstrument = async (program: number) => {
+    if (active) {
+      try { setMediaState(await media<MediaStatus>("media_stop")); } catch { setMediaState(null); }
+    }
+    onMidiInstrumentChange(program); setMediaLabel(`${midiInstrumentName(program)} selected for the next MIDI preview.`);
+  };
   const seek = async (milliseconds: number) => { setCursorMs(milliseconds); if (!active || mediaState?.paused) return; try { setMediaState(await media<MediaStatus>("media_seek", { positionMs: Math.round(milliseconds) })); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
   const adjust = async (edge: "start" | "end", movement: number) => {
     if (!alignment || !selectedWord || !role) return;
@@ -900,7 +909,7 @@ function AlignStage({ role, inspection, song, alignment, loading, templateSource
   return (
     <section className="align-workspace">
       <section className="midi-transport align-transport">
-        <div className="transport-group"><button className="primary" onClick={() => void playMidi()} disabled={!role?.midi_track}><Play size={15} /> Play MIDI</button><button className="secondary icon-command" title={mediaState?.paused ? "Resume preview" : "Pause preview"} onClick={() => void togglePause()} disabled={!active}>{mediaState?.paused ? <Play size={15} /> : <Pause size={15} />}</button><button className="secondary icon-command" title="Stop playback" onClick={() => void stop()} disabled={!mediaState}><Square size={14} /></button><button className="secondary align-lyrics-command" type="button" title="Edit the working lyric draft without leaving Align" onClick={onOpenLyrics}><PenLine size={15} /> Edit track lyrics</button><span>{mediaLabel}</span></div>
+        <div className="transport-group"><button className="primary" onClick={() => void playMidi()} disabled={!role?.midi_track}><Play size={15} /> Play MIDI</button><button className="secondary icon-command" title={mediaState?.paused ? "Resume preview" : "Pause preview"} onClick={() => void togglePause()} disabled={!active}>{mediaState?.paused ? <Play size={15} /> : <Pause size={15} />}</button><button className="secondary icon-command" title="Stop playback" onClick={() => void stop()} disabled={!mediaState}><Square size={14} /></button><label className="midi-instrument-control" title="Use one consistent General MIDI instrument for every selected-track preview"><Music3 size={14} /><select aria-label="MIDI preview instrument" value={midiInstrument} onChange={(event) => void changeMidiInstrument(Number(event.target.value))}>{midiInstrumentGroups.map(([group, names], groupIndex) => <optgroup key={group} label={group}>{names.map((name, index) => { const program = groupIndex * 8 + index; return <option key={program} value={program}>{name}</option>; })}</optgroup>)}</select></label><button className="secondary align-lyrics-command" type="button" title="Edit the working lyric draft without leaving Align" onClick={onOpenLyrics}><PenLine size={15} /> Edit track lyrics</button><span>{mediaLabel}</span></div>
         <div className="transport-group align-actions"><span className={missingNoteWords ? "save-state dirty" : "save-state"}>{loading ? "Loading alignment..." : alignment ? missingNoteWords ? `${missingNoteWords} word${missingNoteWords === 1 ? "" : "s"} need a note` : sourceInSync ? "Source in sync" : alignment.report.template?.source_role ? `Template: ${alignment.report.template.source_role}` : "Pending source update" : "Not drafted"}</span>{templateSources.length > 0 && <label className="template-picker" title="Copy a saved same-lyrics alignment and remap it to this track by time"><select value={templateRole} onChange={(event) => setTemplateRole(event.target.value)}><option value="">Aligned template</option>{templateSources.map((source) => <option key={source.role} value={source.role}>{source.role}</option>)}</select><button type="button" className="secondary" onClick={() => onAdoptTemplate(templateRole)} disabled={!!busy || !templateRole}>Use</button></label>}<label className="phoneme-export-control" title={`Generate outputs/_phonemes/${role?.role ?? "Track"}.txt during Render Audio using this track's final aligned timing`}><input type="checkbox" checked={role?.export_phoneme_string ?? false} onChange={(event) => void setPhonemeStringExport(event.target.checked)} disabled={!role || !!busy} /><span>Phoneme output</span></label>{role?.polyphony && role.polyphony > 1 ? <button type="button" className="polyphony-warning-control" onClick={onOpenSplitter} title={overlapTooltip(role, "Rendering sequentializes overlaps; split it to preserve each chord voice.")}><CircleAlert size={14} /><span>{role.polyphony}-note overlap</span><GitBranch size={14} /></button> : null}{alignment && <button className={`secondary apply-source-control${applyArmed ? " apply-alignment-confirm" : ""}${sourceInSync ? " apply-alignment-complete" : ""}`} title={sourceInSync ? "The configured lyric source matches this alignment" : missingNoteWords ? "Resolve words without MIDI notes before applying" : applyArmed ? "Confirm publishing this alignment to the configured lyric source" : "Validate and replace the configured lyric input used by choir.py"} onClick={() => { if (applyArmed) void apply(); else setApplyArmed(true); }} disabled={!!busy || missingNoteWords > 0 || sourceInSync}>{sourceInSync ? <><Check size={14} /> Applied</> : applyArmed ? "Apply alignment" : "Apply to source"}</button>}</div>
       </section>
       <div className="align-roll-shell">{overlay && <div className="align-phrase-toolbar">{overlay}</div>}<PianoRoll track={role?.midi_track ?? null} durationSeconds={inspection?.midi?.duration_seconds ?? 0} durationTicks={inspection?.midi?.duration_ticks} alignment={alignment?.report.notes} virtualSplits={alignment?.report.virtual_splits} selectedPhrase={selectedPhrase} selectedWord={selectedWord} invalidPhraseLines={invalidPhraseLines} playheadMs={active ? mediaState?.position_ms : null} playbackPaused={Boolean(mediaState?.paused)} onCursorChange={(milliseconds) => void seek(milliseconds)} onSelectPhrase={(line) => { setSelectedPhrase(line); setSelectedWord(null); setShowAllWords(false); }} onPlaybackPhraseChange={(line) => { setSelectedPhrase(line); setSelectedWord(null); setShowAllWords(false); }} onSelectWord={(line, wordIndex) => { setSelectedPhrase(line); setSelectedWord({ line, wordIndex }); setShowAllWords(wordIndex >= 10); }} onResizeWord={(edge, movement) => void adjust(edge, movement)} onResizePhrase={(edge, movement) => void adjustPhrase(edge, movement)} onVirtualSplitPreview={setVirtualSplitPreviewNote} virtualSplitTargetLabel={virtualSplitTargetLabel} onAddVirtualSplit={(noteIndex, fraction) => void addVirtualSplit(noteIndex, fraction)} />{loading && <div className="align-loading" role="status" aria-live="polite"><LoaderCircle size={17} /><span>Loading alignment and phrase map...</span></div>}</div>

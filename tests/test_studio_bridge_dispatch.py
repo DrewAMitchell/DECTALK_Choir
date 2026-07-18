@@ -1,3 +1,5 @@
+import pytest
+
 from tools import choir_studio_bridge as bridge
 
 
@@ -67,3 +69,28 @@ def test_phoneme_export_setting_dispatches_for_valid_role(monkeypatch) -> None:
     })
 
     assert result == {"song": "Example", "role": "Lead", "enabled": True}
+
+
+def test_midi_preview_dispatches_selected_instrument(monkeypatch) -> None:
+    monkeypatch.setattr(bridge, "_song_name", lambda value: "Example")
+    monkeypatch.setattr(bridge, "_role", lambda song, value: "Lead")
+    monkeypatch.setattr(
+        bridge,
+        "_prepare_midi_preview",
+        lambda song, role, program: {"song": song, "role": role, "program": program},
+    )
+
+    result = bridge.handle({
+        "command": "prepare_midi_preview",
+        "song": "Example",
+        "role": "Lead",
+        "program": 73,
+    })
+
+    assert result == {"song": "Example", "role": "Lead", "program": 73}
+
+
+@pytest.mark.parametrize("program", [-1, 73.5, 128, True, "piano"])
+def test_midi_preview_rejects_invalid_instrument_program(program) -> None:
+    with pytest.raises(bridge.BridgeError, match="General MIDI program"):
+        bridge._prepare_midi_preview("Example", "Lead", program)
