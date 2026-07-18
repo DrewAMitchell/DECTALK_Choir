@@ -141,6 +141,26 @@ def test_spectrogram_label_shows_builtin_head_size_when_not_overridden():
     assert _track_label("Bass", {"DEC_SETUP": "[:nh][:dv hs 130]"}, visual) == "Bass | hs 130"
 
 
+def test_spectrogram_label_names_every_builtin_voice():
+    expected = {
+        "np": "Perfect Paul",
+        "nh": "Huge Harry",
+        "nf": "Frail Frank",
+        "nd": "Doctor Dennis",
+        "nb": "Beautiful Betty",
+        "nu": "Uppity Ursula",
+        "nw": "Whispering Wendy",
+        "nr": "Rough Rita",
+        "nk": "Kit the Kid",
+        "nv": "Val",
+    }
+    visual = {"LABEL": "Voice", "LABEL_SHOW_VOICE": True}
+
+    for code, name in expected.items():
+        assert _track_label("Voice", {"DEC_SETUP": f"[:{code}]"}, visual) == f"Voice | {name} [:{code}]"
+    assert _track_label("Voice", {"DEC_SETUP": ""}, visual) == "Voice | Perfect Paul [:np]"
+
+
 def test_intermediate_cleanup_is_opt_in_to_success_policy(tmp_path: Path):
     clip = tmp_path / "track.mkv"
     legacy = tmp_path / "animation.mp4"

@@ -19,19 +19,33 @@ gapMendMs: 20
 Tracks:
   Soprano:
     DEC_SETUP: "[:np][:dv hs 95]"
-    VOLUME_ADJUST_DB: 15.0
+    VOLUME_ADJUST_DB: 6
 
     SPECTROGRAM:
       COLOR_HSB: [328, 70, 97]
       POSITION: [0.5, 0, 0]
       LABEL: "Soprano"
-      LABEL_ENABLED: false
+      LABEL_ENABLED: true
       LABEL_POSITION: "top-left"
-      LABEL_SHOW_VOICE: false
-      LABEL_SHOW_HEAD_SIZE: false
-      CURRENT_WORD_ENABLED: false
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
       CURRENT_WORD_POSITION: "bottom-center"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: true
 
+    PITCH_SHIFT: 0
+    OCTAVE_BOOST: 0
+    PITCH_WRAP_SHIFT: null
+    IGNORE_MIDI_VELOCITY: true
+    VELOCITY_VOLUME_SCALE_DB: 0
+    STEM_PEAK_CEILING_DBFS: -2.5
+    GAP_MEND_MS: 20
+    MINIMUM_NOTE_DURATION_MS: 0
+    CODA_MAX_MS: 200
   Alto:
     DEC_SETUP: "[:nk][:dv hs 100]"
     VOLUME_ADJUST_DB: 0.0
@@ -40,12 +54,17 @@ Tracks:
       COLOR_HSB: [347, 79, 100]
       POSITION: [0.5, 0.5, 0]
       LABEL: "Alto"
-      LABEL_ENABLED: false
+      LABEL_ENABLED: true
       LABEL_POSITION: "top-left"
-      LABEL_SHOW_VOICE: false
-      LABEL_SHOW_HEAD_SIZE: false
-      CURRENT_WORD_ENABLED: false
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
       CURRENT_WORD_POSITION: "bottom-center"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: true
 
   Tenor:
     DEC_SETUP: "[:np][:dv hs 110]"
@@ -53,26 +72,37 @@ Tracks:
 
     SPECTROGRAM:
       COLOR_HSB: [322, 59, 65]
-      POSITION: [0.5, 0, 0.5]
+      POSITION: [0.5, 0.5, 0.5]
       LABEL: "Tenor"
-      LABEL_ENABLED: false
+      LABEL_ENABLED: true
       LABEL_POSITION: "top-left"
-      LABEL_SHOW_VOICE: false
-      LABEL_SHOW_HEAD_SIZE: false
-      CURRENT_WORD_ENABLED: false
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
       CURRENT_WORD_POSITION: "bottom-center"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: true
 
   Bass:
     DEC_SETUP: "[:np][:dv hs 120]"
     VOLUME_ADJUST_DB: -10.0
 
     SPECTROGRAM:
-      COLOR_HSB: [301, 49, 41]
-      POSITION: [0.5, 0.5, 0.5]
+      COLOR_HSB: [214, 49, 100]
+      POSITION: [0.5, 0, 0.5]
       LABEL: "Bass"
-      LABEL_ENABLED: false
+      LABEL_ENABLED: true
       LABEL_POSITION: "top-left"
-      LABEL_SHOW_VOICE: false
-      LABEL_SHOW_HEAD_SIZE: false
-      CURRENT_WORD_ENABLED: false
+      LABEL_SHOW_VOICE: true
+      LABEL_SHOW_HEAD_SIZE: true
+      LABEL_FONT: "serif"
+      LABEL_FONT_SIZE_PERCENT: 7
+      CURRENT_WORD_ENABLED: true
       CURRENT_WORD_POSITION: "bottom-center"
+      CURRENT_WORD_FONT: "mono"
+      CURRENT_WORD_FONT_SIZE_PERCENT: 10
+      CURRENT_WORD_USE_TRACK_COLOR: true
+

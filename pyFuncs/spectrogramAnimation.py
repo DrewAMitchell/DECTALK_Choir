@@ -15,7 +15,7 @@ from scipy import signal
 import scipy.io.wavfile as wavfile
 
 from pyFuncs.AudioTiming import OUTPUT_LEAD_IN_MS
-from pyFuncs.DectalkDefaults import default_head_size
+from pyFuncs.DectalkDefaults import dectalk_voice_label, default_head_size
 
 
 FONT_PATH = Path(__file__).resolve().parent / "fonts" / "NexaText-Trial-Light.ttf"
@@ -246,7 +246,7 @@ def _track_label(track_name, track_settings, spectrogram):
     pieces = [str(spectrogram.get("LABEL") or track_name)]
     voice, head_size = _setup_metadata(track_settings)
     if spectrogram.get("LABEL_SHOW_VOICE"):
-        pieces.append("Perfect Paul [:np]" if voice == "np" else f"[:{voice}]" if voice else "default voice")
+        pieces.append(dectalk_voice_label(voice))
     if spectrogram.get("LABEL_SHOW_HEAD_SIZE"):
         effective_head_size = head_size if head_size is not None else default_head_size(voice)
         pieces.append(f"hs {effective_head_size}" if head_size is not None else f"hs {effective_head_size} (default)")

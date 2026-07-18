@@ -305,9 +305,18 @@ def clone_passthrough_track(
     return output
 
 
-def note_signature(analysis: TrackAnalysis) -> Counter[tuple[int, int, int, int, int]]:
+def note_signature(
+    analysis: TrackAnalysis,
+    ignore_channels: bool = False,
+) -> Counter[tuple[int, int, int, int, int]]:
     return Counter(
-        (note.start_tick, note.end_tick, note.note, note.velocity, note.channel)
+        (
+            note.start_tick,
+            note.end_tick,
+            note.note,
+            note.velocity,
+            -1 if ignore_channels else note.channel,
+        )
         for note in analysis.notes
     )
 
@@ -406,16 +415,10 @@ def verify_split(
 
     source_notes = Counter()
     for analysis in source_analyses:
-        source_notes.update(
-            (start, end, note, velocity, -1 if ignore_note_channels else channel)
-            for start, end, note, velocity, channel in note_signature(analysis)
-        )
+        source_notes.update(note_signature(analysis, ignore_channels=ignore_note_channels))
     output_notes = Counter()
     for analysis in output_analyses:
-        output_notes.update(
-            (start, end, note, velocity, -1 if ignore_note_channels else channel)
-            for start, end, note, velocity, channel in note_signature(analysis)
-        )
+        output_notes.update(note_signature(analysis, ignore_channels=ignore_note_channels))
 
     if source_notes != output_notes:
         raise MidiSplitError("Verification failed: output MIDI does not preserve the source notes.")

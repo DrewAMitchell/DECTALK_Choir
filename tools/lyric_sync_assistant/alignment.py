@@ -34,6 +34,7 @@ from assistant import (
     read_lyric_token_lines,
     resolve_thresholds,
     resolve_track,
+    sanitize_transcript_line,
 )
 
 
@@ -405,6 +406,63 @@ def reconcile_report_token_counts(report: dict) -> tuple[dict, bool]:
     reconciled_report["token_counts"] = reconciled_counts
     reconciled_report["summary"] = summary
     return reconciled_report, True
+
+
+def replace_alignment_words(
+    report: dict,
+    aligned_text: str,
+    edited_text: str,
+) -> tuple[dict, str]:
+    """Replace aligned words without changing their phrase or note ownership."""
+
+    token_lines = _token_lines_from_report(report, aligned_text)
+    normalized_edited_text = "\n".join(
+        sanitize_transcript_line(line) for line in edited_text.splitlines()
+    )
+    edited_tokens = [
+        token
+        for line in _token_lines_from_text(normalized_edited_text)
+        for token in line
+    ]
+    aligned_tokens = [token for line in token_lines for token in line]
+    if len(edited_tokens) != len(aligned_tokens):
+        raise ValueError(
+            f"This candidate has {len(aligned_tokens)} aligned words, but the edited text has "
+            f"{len(edited_tokens)}. Nothing was saved. Use the Align word controls to insert "
+            "or remove words before bulk rewording."
+        )
+
+    for aligned, edited in zip(aligned_tokens, edited_tokens):
+        aligned.word = edited.word
+        aligned.mode = getattr(edited, "mode", "sing")
+
+    word_map = {
+        (line_index, word_index): token.word
+        for line_index, line in enumerate(token_lines, start=1)
+        for word_index, token in enumerate(line, start=1)
+    }
+    note_dicts = []
+    entries = []
+    for raw_entry in report.get("notes", []):
+        entry_data = dict(raw_entry)
+        key = (entry_data.get("line"), entry_data.get("word_index"))
+        if key in word_map:
+            entry_data["lyric"] = word_map[key]
+        note_dicts.append(entry_data)
+        entries.append(AlignmentEntry(**entry_data))
+
+    updated_report = dict(report)
+    updated_report["notes"] = note_dicts
+    updated_report["token_counts"] = _token_counts(token_lines, entries)
+    updated_report["version"] = max(4, int(report.get("version", 1)))
+    updated_text = "\n".join(
+        render_aligned_lyrics(
+            token_lines,
+            entries,
+            line_timings=report.get("line_timings"),
+        )
+    ) + "\n"
+    return updated_report, updated_text
 
 
 def _fill_phrase_note_gaps(tokens: list[AlignmentToken]) -> None:

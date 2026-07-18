@@ -88,3 +88,24 @@ def test_targeted_split_gives_unnamed_tracks_stable_daw_identities(tmp_path: Pat
     ]
     assert [len(analysis.notes) for analysis in note_tracks] == [1, 1, 1, 1]
     assert len({analysis.notes[0].channel for analysis in note_tracks}) == len(note_tracks)
+
+
+def test_targeted_split_preserves_identical_duplicate_notes(tmp_path: Path) -> None:
+    source = tmp_path / "duplicate_notes.mid"
+    output = tmp_path / "duplicate_notes_split.mid"
+    midi = mido.MidiFile(type=1, ticks_per_beat=96)
+    duplicate_track = mido.MidiTrack([
+        mido.MetaMessage("track_name", name="Doubled Bass", time=0),
+        mido.Message("note_on", channel=0, note=55, velocity=70, time=0),
+        mido.Message("note_on", channel=0, note=55, velocity=70, time=0),
+        mido.Message("note_off", channel=0, note=55, velocity=0, time=96),
+        mido.Message("note_off", channel=0, note=55, velocity=0, time=0),
+    ])
+    midi.tracks.append(duplicate_track)
+    midi.save(source)
+
+    mappings = split_midi(source, output, target_track_indices=[0])
+
+    assert [len(lane.notes) for lane in mappings[0][1]] == [1, 1]
+    result = mido.MidiFile(output)
+    assert sum(len(parse_track(track, index).notes) for index, track in enumerate(result.tracks)) == 2

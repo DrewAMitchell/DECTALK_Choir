@@ -1,0 +1,250 @@
+{
+  "virtual_splits": [],
+  "word_cues": [
+    {
+      "word": "Should",
+      "start_ms": 0,
+      "end_ms": 837
+    },
+    {
+      "word": "auld",
+      "start_ms": 857,
+      "end_ms": 2123
+    },
+    {
+      "word": "acquaint",
+      "start_ms": 2143,
+      "end_ms": 3408
+    },
+    {
+      "word": "aans",
+      "start_ms": 3429,
+      "end_ms": 4266
+    },
+    {
+      "word": "be",
+      "start_ms": 4286,
+      "end_ms": 5551
+    },
+    {
+      "word": "four",
+      "start_ms": 5571,
+      "end_ms": 5980
+    },
+    {
+      "word": "got",
+      "start_ms": 6000,
+      "end_ms": 6837
+    },
+    {
+      "word": "And",
+      "start_ms": 6857,
+      "end_ms": 7694
+    },
+    {
+      "word": "never",
+      "start_ms": 7714,
+      "end_ms": 9408
+    },
+    {
+      "word": "brought",
+      "start_ms": 9429,
+      "end_ms": 10266
+    },
+    {
+      "word": "to",
+      "start_ms": 10286,
+      "end_ms": 11123
+    },
+    {
+      "word": "mind",
+      "start_ms": 11143,
+      "end_ms": 13694
+    },
+    {
+      "word": "Should",
+      "start_ms": 13714,
+      "end_ms": 14551
+    },
+    {
+      "word": "auld",
+      "start_ms": 14571,
+      "end_ms": 15837
+    },
+    {
+      "word": "acquaint",
+      "start_ms": 15857,
+      "end_ms": 17123
+    },
+    {
+      "word": "aans",
+      "start_ms": 17143,
+      "end_ms": 17980
+    },
+    {
+      "word": "be",
+      "start_ms": 18000,
+      "end_ms": 19266
+    },
+    {
+      "word": "four",
+      "start_ms": 19286,
+      "end_ms": 19694
+    },
+    {
+      "word": "got",
+      "start_ms": 19714,
+      "end_ms": 20551
+    },
+    {
+      "word": "And",
+      "start_ms": 20571,
+      "end_ms": 21408
+    },
+    {
+      "word": "days",
+      "start_ms": 21429,
+      "end_ms": 22694
+    },
+    {
+      "word": "of",
+      "start_ms": 22714,
+      "end_ms": 23123
+    },
+    {
+      "word": "auld",
+      "start_ms": 23143,
+      "end_ms": 23980
+    },
+    {
+      "word": "`leyng",
+      "start_ms": 24000,
+      "end_ms": 24837
+    },
+    {
+      "word": "sign",
+      "start_ms": 24857,
+      "end_ms": 26551
+    },
+    {
+      "word": "Four",
+      "start_ms": 27429,
+      "end_ms": 28266
+    },
+    {
+      "word": "auld",
+      "start_ms": 28286,
+      "end_ms": 29980
+    },
+    {
+      "word": "`leyng",
+      "start_ms": 30000,
+      "end_ms": 31694
+    },
+    {
+      "word": "sign",
+      "start_ms": 31714,
+      "end_ms": 32980
+    },
+    {
+      "word": "my",
+      "start_ms": 33000,
+      "end_ms": 33408
+    },
+    {
+      "word": "dear",
+      "start_ms": 33429,
+      "end_ms": 34266
+    },
+    {
+      "word": "Four",
+      "start_ms": 34286,
+      "end_ms": 35123
+    },
+    {
+      "word": "auld",
+      "start_ms": 35143,
+      "end_ms": 36408
+    },
+    {
+      "word": "`leyng",
+      "start_ms": 36429,
+      "end_ms": 38551
+    },
+    {
+      "word": "sign",
+      "start_ms": 38571,
+      "end_ms": 41123
+    },
+    {
+      "word": "Wheel",
+      "start_ms": 41143,
+      "end_ms": 41980
+    },
+    {
+      "word": "take",
+      "start_ms": 42000,
+      "end_ms": 43266
+    },
+    {
+      "word": "uh",
+      "start_ms": 43286,
+      "end_ms": 43694
+    },
+    {
+      "word": "cup",
+      "start_ms": 43714,
+      "end_ms": 44551
+    },
+    {
+      "word": "oh",
+      "start_ms": 44571,
+      "end_ms": 45408
+    },
+    {
+      "word": "kind",
+      "start_ms": 45429,
+      "end_ms": 46694
+    },
+    {
+      "word": "ness",
+      "start_ms": 46714,
+      "end_ms": 47123
+    },
+    {
+      "word": "yet",
+      "start_ms": 47143,
+      "end_ms": 47980
+    },
+    {
+      "word": "Four",
+      "start_ms": 48000,
+      "end_ms": 48837
+    },
+    {
+      "word": "days",
+      "start_ms": 48857,
+      "end_ms": 50123
+    },
+    {
+      "word": "of",
+      "start_ms": 50143,
+      "end_ms": 50551
+    },
+    {
+      "word": "auld",
+      "start_ms": 50571,
+      "end_ms": 51408
+    },
+    {
+      "word": "`leyng",
+      "start_ms": 51429,
+      "end_ms": 52266
+    },
+    {
+      "word": "sign",
+      "start_ms": 52286,
+      "end_ms": 54837
+    }
+  ]
+}

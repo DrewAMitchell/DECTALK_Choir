@@ -31,6 +31,7 @@ from pyFuncs.AudioTiming import OUTPUT_LEAD_IN_MS
 from pyFuncs.DectalkErrorDetection import contains_command_error, create_command_error_reference
 from pyFuncs.DectalkStringExport import DectalkStringExportError, build_dectalk_phoneme_string
 from pyFuncs.SongPaths import has_lyric_content, render_lyrics_path
+from pyFuncs.SettingsSchema import settings_key_warnings
 
 # Make sure song is specified
 if len(sys.argv) < 2:
@@ -63,6 +64,9 @@ try:
 except:
 	print(f"{songDir}/settings.yaml not loaded")
 	exit()
+
+for warning in settings_key_warnings(settings_yaml):
+	print(f"WARNING: {warning}")
 
 # Choir Studio may restrict one render with an explicit environment selection.
 # Without that override, the persisted per-role RENDER_ENABLED setting is authoritative.

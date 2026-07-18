@@ -35,6 +35,7 @@ for directory in (REPO_ROOT, ASSISTANT_DIR):
 
 import pyFuncs.PhonemeProcessing as phonemes
 from pyFuncs.ChoirInspection import MidiTrackInfo, RoleInspection, _has_lyric_content, _lyric_conversion_issue, inspect_midi, inspect_song
+from pyFuncs.DectalkDefaults import DECTALK_VOICE_NAMES
 from pyFuncs.DectalkTrackImport import DectalkTrackImportError, append_imported_track, parse_dectalk_track
 from pyFuncs.MidiPreview import write_single_track_preview
 from pyFuncs.SongPaths import lyrics_directory, outputs_directory
@@ -57,6 +58,7 @@ from alignment import (
     delete_alignment_token,
     insert_alignment_token,
     reconcile_report_token_counts,
+    replace_alignment_words,
     reorder_alignment_token,
     resize_alignment_phrase,
     resize_alignment_token,
@@ -259,13 +261,16 @@ def _source_sync_state(song: str, role: str) -> str:
 
 def _read_source(song: str, role: str) -> dict[str, Any]:
     source, transcript, candidate, _ = _role_paths(song, role)
-    # Published alignment is authoritative in the editor. The transcript is the
-    # fallback only before a track has completed its first alignment.
+    # The working candidate is authoritative once timing work has begun. Source
+    # is only a fallback for legacy aligned roles without a durable candidate.
+    # Deleting the transcript is the explicit reset, so stale candidates are
+    # deliberately ignored until a new transcript lifecycle is created.
+    preferred_paths = (candidate, source, transcript) if transcript.is_file() else (source, transcript)
     active = next(
         (
             path
-            for path in (source, transcript)
-            if path.is_file()
+            for path in preferred_paths
+            if _has_lyric_content(path)
         ),
         transcript,
     )
@@ -276,7 +281,7 @@ def _read_source(song: str, role: str) -> dict[str, Any]:
     return {
         "text": text,
         "path": str(active),
-        "kind": "alignment" if active == source else "transcript",
+        "kind": "candidate" if active == candidate else "alignment" if active == source else "transcript",
         "transcript_exists": transcript.is_file(),
         "candidate_exists": _has_lyric_content(candidate),
     }
@@ -375,6 +380,11 @@ def _create_note_skeleton(song: str, role: str, placeholder: object) -> dict[str
 
 def _draft(song: str, role: str, text: object, auto_lines: object) -> dict[str, Any]:
     _, transcript, draft_path, _ = _role_paths(song, role)
+    if transcript.is_file():
+        raise BridgeError(
+            "This role already has an alignment lifecycle. Edit its candidate directly, "
+            "or delete the preserved transcript manually before restarting timing generation."
+        )
     # Capture the original input once, then keep generated timing and alignment
     # edits in working state until the user explicitly applies them.
     _capture_transcript(song, role, text)
@@ -537,14 +547,23 @@ def _replace_role_setting(path: Path, role: str, key: str, value: str) -> None:
         raise BridgeError(f"Could not save visualizer settings: {error}") from error
 
 
-def _settings_with_imported_role(text: str, role: str, setup: str) -> str:
+def _settings_with_imported_role(
+    text: str,
+    role: str,
+    setup: str,
+    *,
+    track_filename: str | None = None,
+    render_enabled: bool = True,
+) -> str:
     """Append one role to the Tracks mapping without reformatting the song profile."""
 
     newline = "\r\n" if "\r\n" in text else "\n"
     lines = text.splitlines(keepends=True)
-    tracks_index = next((index for index, line in enumerate(lines) if re.match(r"^Tracks:\s*(?:#.*)?(?:\r?\n)?$", line)), None)
+    tracks_index = next((index for index, line in enumerate(lines) if re.match(r"^Tracks:\s*(?:\{\})?\s*(?:#.*)?(?:\r?\n)?$", line)), None)
     if tracks_index is None:
         raise BridgeError("settings.yaml must define a Tracks mapping before importing a DECTalk track.")
+    if re.match(r"^Tracks:\s*\{\}", lines[tracks_index]):
+        lines[tracks_index] = f"Tracks:{newline}"
     section_end = next(
         (index for index in range(tracks_index + 1, len(lines)) if re.match(r"^\S", lines[index])),
         len(lines),
@@ -554,15 +573,165 @@ def _settings_with_imported_role(text: str, role: str, setup: str) -> str:
     block = [
         newline,
         f"  {role}:{newline}",
-        f"    TRACK_FILENAME: {_format_setting_value(role)}{newline}",
+        f"    TRACK_FILENAME: {_format_setting_value(track_filename or role)}{newline}",
         f"    LYRICS_FILENAME: {_format_setting_value(role)}{newline}",
         f"    DEC_SETUP: {_format_setting_value(setup)}{newline}",
         f"    VOLUME_ADJUST_DB: 0{newline}",
         f"    IGNORE_MIDI_VELOCITY: true{newline}",
-        f"    RENDER_ENABLED: true{newline}",
+        f"    RENDER_ENABLED: {'true' if render_enabled else 'false'}{newline}",
     ]
     lines[section_end:section_end] = block
     return "".join(lines)
+
+
+def _settings_without_role(text: str, role: str) -> str:
+    """Remove one role block from Tracks without reformatting unrelated settings."""
+
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(keepends=True)
+    tracks_index = next((index for index, line in enumerate(lines) if re.match(r"^Tracks:\s*", line)), None)
+    if tracks_index is None:
+        raise BridgeError("settings.yaml does not define a Tracks mapping.")
+    tracks_end = next(
+        (index for index in range(tracks_index + 1, len(lines)) if re.match(r"^\S", lines[index])),
+        len(lines),
+    )
+    role_pattern = re.compile(rf"^  {re.escape(role)}:\s*(?:#.*)?(?:\r?\n)?$")
+    role_index = next(
+        (index for index in range(tracks_index + 1, tracks_end) if role_pattern.match(lines[index])),
+        None,
+    )
+    if role_index is None:
+        raise BridgeError(f"Could not locate role '{role}' in settings.yaml without rewriting it.")
+    section_end = next(
+        (index for index in range(role_index + 1, tracks_end) if re.match(r"^  \S", lines[index])),
+        tracks_end,
+    )
+    remove_start = role_index
+    if role_index > 0 and not lines[role_index - 1].strip():
+        remove_start -= 1
+    del lines[remove_start:section_end]
+    next_top_level = next(
+        (index for index in range(tracks_index + 1, len(lines)) if re.match(r"^\S", lines[index])),
+        len(lines),
+    )
+    has_roles = any(re.match(r"^  \S", line) for line in lines[tracks_index + 1:next_top_level])
+    if not has_roles:
+        lines[tracks_index] = f"Tracks: {{}}{newline}"
+    return "".join(lines)
+
+
+def _add_midi_track_role(song: str, track_index: object, role_value: object) -> dict[str, Any]:
+    """Configure one unclaimed note-bearing track from the working MIDI."""
+
+    role = str(role_value or "").strip()
+    if not ROLE_NAME.fullmatch(role) or len(role) > 64:
+        raise BridgeError("Track name must begin with a letter or number and use only letters, numbers, spaces, underscores, or hyphens.")
+    if role.upper() in WINDOWS_RESERVED_NAMES:
+        raise BridgeError(f"'{role}' is reserved by Windows and cannot be used as a track name.")
+    try:
+        requested_index = int(track_index)
+    except (TypeError, ValueError) as error:
+        raise BridgeError("Choose a MIDI track to add.") from error
+
+    song_dir, settings = load_settings(song)
+    tracks = settings.get("Tracks")
+    if not isinstance(tracks, dict):
+        raise BridgeError("settings.yaml must define a Tracks mapping before adding a MIDI track.")
+    if role in tracks:
+        raise BridgeError(f"A configured track named '{role}' already exists.")
+
+    inspection = inspect_song(REPO_ROOT, song, include_audio=False)
+    if inspection.midi is None:
+        raise BridgeError("This song has no readable working MIDI file.")
+    source_track = next(
+        (track for track in inspection.midi.tracks if track.index == requested_index),
+        None,
+    )
+    if source_track is None or not source_track.note_count:
+        raise BridgeError("The selected MIDI track no longer exists or contains no notes.")
+    configured_sources = {
+        str((profile or {}).get("TRACK_FILENAME", configured_role))
+        for configured_role, profile in tracks.items()
+        if isinstance(profile, dict)
+    }
+    if source_track.name in configured_sources:
+        raise BridgeError(f"MIDI track '{source_track.name}' is already configured.")
+
+    settings_path = song_dir / "settings.yaml"
+    lyric_path = lyrics_directory(song_dir) / f"{role}.txt"
+    temporary = settings_path.with_suffix(settings_path.suffix + ".tmp")
+    lyric_created = False
+    try:
+        with settings_path.open("r", encoding="utf-8", newline="") as settings_file:
+            settings_text = settings_file.read()
+        updated_text = _settings_with_imported_role(
+            settings_text,
+            role,
+            "[:np][:dv hs 100]",
+            track_filename=source_track.name,
+            render_enabled=False,
+        )
+        with temporary.open("w", encoding="utf-8", newline="") as settings_file:
+            settings_file.write(updated_text)
+        if not lyric_path.exists():
+            lyric_path.parent.mkdir(parents=True, exist_ok=True)
+            lyric_path.write_text(
+                "# Add lyrics or create a note skeleton in Choir Studio.\n",
+                encoding="utf-8",
+            )
+            lyric_created = True
+        temporary.replace(settings_path)
+    except OSError as error:
+        with contextlib.suppress(OSError):
+            temporary.unlink()
+        if lyric_created:
+            with contextlib.suppress(OSError):
+                lyric_path.unlink()
+        raise BridgeError(f"Could not add the MIDI track to settings.yaml: {error}") from error
+    return {
+        "role": role,
+        "track_name": source_track.name,
+        "track_index": source_track.index,
+        "note_count": source_track.note_count,
+        "settings_path": str(settings_path),
+        "lyric_path": str(lyric_path),
+    }
+
+
+def _remove_midi_track_role(song: str, role: str) -> dict[str, Any]:
+    """Remove a Studio role while retaining its MIDI and all authored artifacts."""
+
+    song_dir, settings = load_settings(song)
+    profile = (settings.get("Tracks") or {}).get(role)
+    if not isinstance(profile, dict):
+        raise BridgeError(f"Role '{role}' is not configured for {song}.")
+    source_name = str(profile.get("TRACK_FILENAME", role))
+    settings_path = song_dir / "settings.yaml"
+    temporary = settings_path.with_suffix(settings_path.suffix + ".tmp")
+    try:
+        with settings_path.open("r", encoding="utf-8", newline="") as settings_file:
+            updated_text = _settings_without_role(settings_file.read(), role)
+        updated_settings = yaml.safe_load(updated_text) or {}
+        updated_tracks = updated_settings.get("Tracks")
+        if not isinstance(updated_tracks, dict) or role in updated_tracks:
+            raise BridgeError("The updated settings did not safely remove the selected role.")
+        with temporary.open("w", encoding="utf-8", newline="") as settings_file:
+            settings_file.write(updated_text)
+        temporary.replace(settings_path)
+    except Exception as error:
+        with contextlib.suppress(OSError):
+            temporary.unlink()
+        if isinstance(error, BridgeError):
+            raise
+        raise BridgeError(f"Could not remove the track from settings.yaml: {error}") from error
+    return {
+        "role": role,
+        "track_name": source_name,
+        "settings_path": str(settings_path),
+        "midi_preserved": True,
+        "artifacts_preserved": True,
+    }
 
 
 def _imported_track_settings(role: str, setup: str) -> dict[str, Any]:
@@ -951,7 +1120,7 @@ TRACK_TUNING_DEFAULTS = {
     "MINIMUM_NOTE_DURATION_MS": 0.0,
     "CODA_MAX_MS": 200.0,
 }
-DECTALK_VOICE_CODES = frozenset({"np", "nb", "nh", "nd", "nf", "nu", "nr", "nw", "nk"})
+DECTALK_VOICE_CODES = frozenset(DECTALK_VOICE_NAMES)
 TRACK_TUNING_TOP_LEVEL_KEYS = {
     "STEM_PEAK_CEILING_DBFS": "stemPeakCeilingDbfs",
     "IGNORE_MIDI_VELOCITY": "ignoreMidiVelocity",
@@ -1445,6 +1614,28 @@ def _write_candidate_alignment(song: str, role: str, report: dict[str, Any], tex
     return {"text": normalized_text, "path": str(candidate_path), "report": report, "report_path": str(report_path), "source_in_sync": source_in_sync}
 
 
+def _update_candidate_text(song: str, role: str, text: object) -> dict[str, Any]:
+    """Save positional lyric edits while preserving the complete alignment map."""
+
+    _, transcript_path, candidate_path, report_path = _role_paths(song, role)
+    if not transcript_path.is_file():
+        raise BridgeError("This role has no preserved transcript. Draft its first alignment before editing the candidate.")
+    if not _has_lyric_content(candidate_path) or not report_path.is_file():
+        raise BridgeError("This role has no alignment candidate to update.")
+    try:
+        current_text = candidate_path.read_text(encoding="utf-8")
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise BridgeError(f"Could not load the alignment candidate: {error}") from error
+    if not isinstance(report, dict):
+        raise BridgeError("The alignment candidate report is invalid.")
+    try:
+        updated_report, updated_text = replace_alignment_words(report, current_text, str(text or ""))
+    except (TypeError, ValueError) as error:
+        raise BridgeError(str(error)) from error
+    return _write_candidate_alignment(song, role, updated_report, updated_text)
+
+
 def _load_candidate(song: str, role: str) -> dict[str, Any]:
     """Return the durable working alignment, rebuilding only missing review metadata."""
 
@@ -1743,7 +1934,11 @@ def handle(request: dict[str, Any]) -> Any:
         return _update_render_enabled_roles(song, request.get("roles"))
     if command == "import_dectalk_track":
         return _import_dectalk_track(song, request.get("role"), request.get("text"))
+    if command == "add_midi_track_role":
+        return _add_midi_track_role(song, request.get("track_index"), request.get("role"))
     role = _role(song, request.get("role"))
+    if command == "remove_midi_track_role":
+        return _remove_midi_track_role(song, role)
     if command == "save_visual_layout":
         return _save_visual_layout(song, role, request.get("position"), request.get("hsb"), request.get("options"))
     if command == "get_track_tuning":
@@ -1756,6 +1951,8 @@ def handle(request: dict[str, Any]) -> Any:
         return _read_source(song, role)
     if command == "save_transcript":
         return _write_transcript(song, role, request.get("text"))
+    if command == "update_candidate_text":
+        return _update_candidate_text(song, role, request.get("text"))
     if command == "validate_transcript":
         return _validate_transcript(request.get("text"))
     if command == "create_note_skeleton":
