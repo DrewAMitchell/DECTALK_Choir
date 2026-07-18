@@ -9,7 +9,13 @@ import unittest
 ALIGNMENT_TOOLS = Path(__file__).resolve().parents[1] / "tools" / "lyric_sync_assistant"
 sys.path.insert(0, str(ALIGNMENT_TOOLS))
 
-from alignment import add_virtual_note_split, adjust_alignment_token_note_count, delete_alignment_token, toggle_alignment_token_mode
+from alignment import (
+    add_virtual_note_split,
+    adjust_alignment_token_note_count,
+    delete_alignment_token,
+    reconcile_report_token_counts,
+    toggle_alignment_token_mode,
+)
 from pyFuncs.PhonemeProcessing import SPOKEN_WORD_MARKER, lyricsToPhonemes
 
 
@@ -159,6 +165,54 @@ class AlignmentNoteCountTests(unittest.TestCase):
 
         self.assertEqual(_counts(updated, 1), [2, 1, 1])
         self.assertEqual(text, "2*one two three\n2*four 2*five\n")
+
+    def test_early_virtual_split_cascades_later_words_to_the_next_note(self) -> None:
+        words = [["first", "second", "third", "last"]]
+        report = _report([[1, 1, 1, 0]], words)
+
+        updated, _ = add_virtual_note_split(
+            report,
+            "first second third last\n",
+            1,
+            0.5,
+            target_line=1,
+            target_word_index=4,
+        )
+
+        self.assertEqual(_counts(updated, 1), [1, 1, 1, 1])
+        self.assertEqual(
+            [(entry["start_ms"], entry["end_ms"], entry["lyric"]) for entry in updated["notes"]],
+            [
+                (0, 250, "first"),
+                (250, 500, "second"),
+                (500, 1000, "third"),
+                (1000, 1500, "last"),
+            ],
+        )
+
+    def test_virtual_split_requires_fifty_milliseconds_per_segment(self) -> None:
+        report = _report([[2, 0, 1], [2, 2]])
+
+        with self.assertRaisesRegex(ValueError, "at least 50 ms"):
+            add_virtual_note_split(
+                report,
+                self.text,
+                1,
+                0.08,
+                target_line=1,
+                target_word_index=2,
+            )
+
+    def test_stale_overflow_claim_is_reconciled_to_zero_notes(self) -> None:
+        report = _report([[1, 1, 1], [2, 2]])
+        report["notes"] = report["notes"][:-2]
+        report["summary"]["zero_note_tokens"] = 0
+
+        reconciled, changed = reconcile_report_token_counts(report)
+
+        self.assertTrue(changed)
+        self.assertEqual(_counts(reconciled, 2), [2, 0])
+        self.assertEqual(reconciled["summary"]["zero_note_tokens"], 1)
 
     def test_virtual_split_does_not_cross_phrase_for_selected_target(self) -> None:
         report = _report([[2, 0, 1], [0, 2]])

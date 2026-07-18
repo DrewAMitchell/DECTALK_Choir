@@ -21,6 +21,8 @@ type Props = {
   onResizeWord?: (edge: "start" | "end", movement: number) => void;
   onResizePhrase?: (edge: "start" | "end", movement: number) => void;
   onAddVirtualSplit?: (noteIndex: number, fraction: number) => void;
+  onVirtualSplitPreview?: (noteIndex: number | null) => void;
+  virtualSplitTargetLabel?: string;
   onCursorChange?: (milliseconds: number) => void;
 };
 
@@ -92,6 +94,8 @@ function PianoRollCanvas({
   onResizeWord,
   onResizePhrase,
   onAddVirtualSplit,
+  onVirtualSplitPreview,
+  virtualSplitTargetLabel,
   onCursorChange,
 }: Props) {
   const sourceNotes = track?.notes ?? [];
@@ -108,6 +112,7 @@ function PianoRollCanvas({
   const [boundaryDrag, setBoundaryDrag] = useState<{ edge: "start" | "end"; pointerId: number; movement: number; targetX: number } | null>(null);
   const [phraseDrag, setPhraseDrag] = useState<{ edge: "start" | "end"; pointerId: number; movement: number; targetX: number; invalid: boolean; missingWords: number } | null>(null);
   const [virtualSplitDrag, setVirtualSplitDrag] = useState<{ pointerId: number; displayIndex: number; fraction: number } | null>(null);
+  const virtualSplitDragRef = useRef<{ pointerId: number; displayIndex: number; fraction: number; left: number; width: number } | null>(null);
   const canvasPanRef = useRef<{ pointerId: number; startX: number; startCenterMs: number; dragging: boolean; feedbackShown: boolean } | null>(null);
   const panFeedbackNonceRef = useRef(0);
   const panFeedbackTimerRef = useRef<number | null>(null);
@@ -379,14 +384,49 @@ function PianoRollCanvas({
     suppressSelectionRef.current = false;
     return true;
   };
+  const noteUnderPointer = (event: PointerEvent<SVGSVGElement>) => {
+    const direct = (event.target as Element).closest<SVGRectElement>(".midi-note");
+    if (direct) return direct;
+    return Array.from(event.currentTarget.querySelectorAll<SVGRectElement>(".midi-note")).find((candidate) => {
+      const rect = candidate.getBoundingClientRect();
+      return event.clientX >= rect.left && event.clientX <= rect.right
+        && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    }) ?? null;
+  };
   const beginCanvasPan = (event: PointerEvent<SVGSVGElement>) => {
     const target = event.target as Element;
+    const note = noteUnderPointer(event);
+    if ((event.ctrlKey || event.metaKey) && note && onAddVirtualSplit) {
+      const displayIndex = Number(note.dataset.displayIndex);
+      if (Number.isInteger(displayIndex)) {
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        const rect = note.getBoundingClientRect();
+        const drag = {
+          pointerId: event.pointerId,
+          displayIndex,
+          fraction: Math.max(0.05, Math.min(0.95, (event.clientX - rect.left) / rect.width)),
+          left: rect.left,
+          width: Math.max(1, rect.width),
+        };
+        virtualSplitDragRef.current = drag;
+        setVirtualSplitDrag(drag);
+        const segment = displaySourceSegments[displayIndex];
+        onVirtualSplitPreview?.(segment ? segment.sourceIndex + 1 : null);
+        return;
+      }
+    }
     // Boundary handles and Ctrl-drag splits own their gestures. Other surfaces use a
     // drag threshold so a click selects a phrase/note while a drag always pans.
     if (event.button !== 0 || target.closest(".word-boundary-region, .phrase-boundary-region")) return;
     canvasPanRef.current = { pointerId: event.pointerId, startX: event.clientX, startCenterMs: timeCenterMs, dragging: false, feedbackShown: false };
   };
   const updateCanvasPan = (event: PointerEvent<SVGSVGElement>) => {
+    if (virtualSplitDragRef.current?.pointerId === event.pointerId) {
+      event.preventDefault();
+      updateVirtualSplit(event);
+      return;
+    }
     const canvasPan = canvasPanRef.current;
     if (!canvasPan || canvasPan.pointerId !== event.pointerId) return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -408,6 +448,10 @@ function PianoRollCanvas({
     setTimeCenterMs(Math.max(0, Math.min(durationMs, canvasPan.startCenterMs + deltaMs)));
   };
   const finishCanvasPan = (event: PointerEvent<SVGSVGElement>) => {
+    if (virtualSplitDragRef.current?.pointerId === event.pointerId) {
+      finishVirtualSplit(event);
+      return;
+    }
     const canvasPan = canvasPanRef.current;
     if (!canvasPan || canvasPan.pointerId !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
@@ -416,6 +460,7 @@ function PianoRollCanvas({
     if (canvasPan.dragging) window.setTimeout(() => { suppressSelectionRef.current = false; }, 0);
   };
   const beginBoundaryDrag = (event: PointerEvent<SVGRectElement>, edge: "start" | "end") => {
+    if (event.ctrlKey || event.metaKey) return;
     if (!onResizeWord || !selectedWordRange) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -437,6 +482,7 @@ function PianoRollCanvas({
     if (boundaryDrag.movement) onResizeWord?.(boundaryDrag.edge, boundaryDrag.movement);
   };
   const beginPhraseDrag = (event: PointerEvent<SVGRectElement>, edge: "start" | "end") => {
+    if (event.ctrlKey || event.metaKey) return;
     if (!onResizePhrase || !selectedPhraseRange) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -456,21 +502,27 @@ function PianoRollCanvas({
     setPhraseDrag(null);
     if (phraseDrag.movement) onResizePhrase?.(phraseDrag.edge, phraseDrag.movement);
   };
-  const finishVirtualSplit = (event: PointerEvent<SVGRectElement>) => {
-    if (!virtualSplitDrag || virtualSplitDrag.pointerId !== event.pointerId || !onAddVirtualSplit || !sourceNotes.length) return;
+  const finishVirtualSplit = (event: PointerEvent<SVGSVGElement>) => {
+    const drag = virtualSplitDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !onAddVirtualSplit || !sourceNotes.length) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    const segment = displaySourceSegments[virtualSplitDrag.displayIndex];
+    const segment = displaySourceSegments[drag.displayIndex];
+    virtualSplitDragRef.current = null;
     setVirtualSplitDrag(null);
+    onVirtualSplitPreview?.(null);
     if (!segment) return;
     const fraction = segment.startFraction
-      + virtualSplitDrag.fraction * (segment.endFraction - segment.startFraction);
+      + drag.fraction * (segment.endFraction - segment.startFraction);
+    suppressSelectionRef.current = true;
     onAddVirtualSplit(segment.sourceIndex + 1, fraction);
   };
-  const updateVirtualSplit = (event: PointerEvent<SVGRectElement>) => {
-    if (!virtualSplitDrag || virtualSplitDrag.pointerId !== event.pointerId) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const fraction = Math.max(0.05, Math.min(0.95, (event.clientX - rect.left) / rect.width));
-    setVirtualSplitDrag((current) => current && current.pointerId === event.pointerId ? { ...current, fraction } : current);
+  const updateVirtualSplit = (event: PointerEvent<SVGSVGElement>) => {
+    const drag = virtualSplitDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const fraction = Math.max(0.05, Math.min(0.95, (event.clientX - drag.left) / drag.width));
+    const updated = { ...drag, fraction };
+    virtualSplitDragRef.current = updated;
+    setVirtualSplitDrag(updated);
   };
   if (!track) return <div className="empty-canvas">Choose a note-bearing role from the track rail.</div>;
   if (!notes.length) return <div className="empty-canvas">{track.name} has no paired MIDI notes to display.</div>;
@@ -487,7 +539,7 @@ function PianoRollCanvas({
       </div>
       <span className="sr-only" role="status" aria-live="polite">{panFeedback ? "The full song is already visible. Zoom in to pan the MIDI view." : ""}</span>
       <div className="roll-pan-controls" aria-label="Timeline pan controls"><button type="button" aria-label="Pan MIDI view earlier" title="Pan MIDI view earlier" onClick={() => pan(-1)}><ChevronLeft size={17} /></button><button type="button" aria-label="Pan MIDI view later" title="Pan MIDI view later" onClick={() => pan(1)}><ChevronRight size={17} /></button></div>
-      <svg className={canvasPanning ? "piano-roll panning" : "piano-roll"} viewBox="0 0 1000 500" preserveAspectRatio="none" overflow="hidden" role="img" aria-label={`${track.name} piano roll`} onPointerDown={beginCanvasPan} onPointerMove={updateCanvasPan} onPointerUp={finishCanvasPan} onPointerCancel={() => { canvasPanRef.current = null; setCanvasPanning(false); }}>
+      <svg className={canvasPanning ? "piano-roll panning" : "piano-roll"} viewBox="0 0 1000 500" preserveAspectRatio="none" overflow="hidden" role="img" aria-label={`${track.name} piano roll`} onPointerDown={beginCanvasPan} onPointerMove={updateCanvasPan} onPointerUp={finishCanvasPan} onPointerCancel={() => { canvasPanRef.current = null; virtualSplitDragRef.current = null; setVirtualSplitDrag(null); onVirtualSplitPreview?.(null); setCanvasPanning(false); }}>
         <rect width="1000" height="500" className="roll-bg" />
         {Array.from({ length: span }, (_, index) => {
           const pitch = bounds.min + index;
@@ -549,7 +601,13 @@ function PianoRollCanvas({
           const coloredNote = selectedPhraseNote || previewing || previewPhrase;
           const previewClass = previewing ? previewReleased ? "preview-release" : "preview-claim" : previewPhrase ? previewPhraseReleased ? "preview-release" : "preview-claim" : "";
           const splitting = virtualSplitDrag?.displayIndex === index;
-          return <g key={`${note.start_tick}-${index}`}><rect className={`midi-note ${coloredNote ? "in-phrase" : ""} ${selectedWordNote && !previewReleased ? "selected-word" : ""} ${previewClass}`} style={coloredNote ? { "--word-color": colorFor(colorLine, colorWord) } as CSSProperties : undefined} onPointerDown={(event) => { if (event.ctrlKey) { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const fraction = Math.max(0.05, Math.min(0.95, (event.clientX - rect.left) / rect.width)); event.currentTarget.setPointerCapture(event.pointerId); setVirtualSplitDrag({ pointerId: event.pointerId, displayIndex: index, fraction }); } }} onPointerMove={updateVirtualSplit} onPointerUp={finishVirtualSplit} onPointerCancel={() => setVirtualSplitDrag(null)} onClick={(event) => { event.stopPropagation(); if (consumeSuppressedSelection()) return; if (timing.entry?.line !== null && timing.entry?.line !== undefined && timing.entry?.word_index !== null && timing.entry?.word_index !== undefined) onSelectWord?.(timing.entry.line, timing.entry.word_index); }} x={x} y={y} width={Math.max(2, right - x)} height={Math.max(7, 350 / span - 3)} rx="2"><title>Ctrl + drag within a note to create a virtual lyric split</title></rect>{splitting && <line className="virtual-split-preview" x1={x + Math.max(2, right - x) * virtualSplitDrag.fraction} x2={x + Math.max(2, right - x) * virtualSplitDrag.fraction} y1={y} y2={y + Math.max(7, 350 / span - 3)} />}</g>;
+          const noteWidth = Math.max(2, right - x);
+          const noteHeight = Math.max(7, 350 / span - 3);
+          const splitX = splitting ? x + noteWidth * virtualSplitDrag.fraction : 0;
+          const splitLabel = virtualSplitTargetLabel ? `${Math.round((virtualSplitDrag?.fraction ?? 0) * 100)}% -> ${virtualSplitTargetLabel}` : `${Math.round((virtualSplitDrag?.fraction ?? 0) * 100)}% split`;
+          const splitBadgeWidth = Math.min(150, Math.max(58, splitLabel.length * 6.5 + 14));
+          const splitBadgeX = Math.max(PLOT_LEFT, Math.min(PLOT_LEFT + PLOT_WIDTH - splitBadgeWidth, splitX - splitBadgeWidth / 2));
+          return <g key={`${note.start_tick}-${index}`}><rect className={`midi-note ${coloredNote ? "in-phrase" : ""} ${selectedWordNote && !previewReleased ? "selected-word" : ""} ${previewClass}`} data-display-index={index} style={coloredNote ? { "--word-color": colorFor(colorLine, colorWord) } as CSSProperties : undefined} onClick={(event) => { event.stopPropagation(); if (consumeSuppressedSelection()) return; if (timing.entry?.line !== null && timing.entry?.line !== undefined && timing.entry?.word_index !== null && timing.entry?.word_index !== undefined) onSelectWord?.(timing.entry.line, timing.entry.word_index); }} x={x} y={y} width={noteWidth} height={noteHeight} rx="2"><title>Ctrl + drag within a note to create a virtual lyric split</title></rect>{splitting && <g className="virtual-split-preview" style={{ "--split-target-color": selectedWord ? colorFor(selectedWord.line, selectedWord.wordIndex) : "#67d9b4" } as CSSProperties}><rect className="before" x={x} y={y - 3} width={Math.max(1, splitX - x)} height={noteHeight + 6} rx="2" /><rect className="after" x={splitX} y={y - 3} width={Math.max(1, right - splitX)} height={noteHeight + 6} rx="2" /><line x1={splitX} x2={splitX} y1={y - 12} y2={y + noteHeight + 12} /><rect className="badge" x={splitBadgeX} y={y - 31} width={splitBadgeWidth} height="19" rx="3" /><text x={splitBadgeX + splitBadgeWidth / 2} y={y - 18}>{splitLabel}</text></g>}</g>;
         })}
         {selectedWordAnchor && <g className="selected-word-label"><rect x={selectedWordAnchor.x} y={selectedWordAnchor.y - 13} width={selectedWordAnchor.width} height="17" rx="3" /><text x={selectedWordAnchor.x + 7} y={selectedWordAnchor.y}>{selectedWordAnchor.label}</text><title>{selectedWordAnchor.label}</title></g>}
         {selectedPhraseRange && (["start", "end"] as const).map((edge) => {

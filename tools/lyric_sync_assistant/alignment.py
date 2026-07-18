@@ -327,18 +327,84 @@ def _token_lines_from_report(report: dict, text: str):
     return token_lines
 
 
-def _token_counts(token_lines) -> list[dict[str, int | str]]:
+def _token_counts(
+    token_lines,
+    entries: list[AlignmentEntry] | None = None,
+) -> list[dict[str, int | str]]:
+    actual_counts: dict[tuple[int, int], int] | None = None
+    if entries is not None:
+        actual_counts = {}
+        for entry in entries:
+            if entry.line is None or entry.word_index is None:
+                continue
+            key = (entry.line, entry.word_index)
+            actual_counts[key] = actual_counts.get(key, 0) + 1
     return [
         {
             "line": line_index,
             "word_index": word_index,
             "word": token.word,
-            "note_count": token.note_count,
+            "note_count": (
+                actual_counts.get((line_index, word_index), 0)
+                if actual_counts is not None
+                else token.note_count
+            ),
             "mode": getattr(token, "mode", "sing"),
         }
         for line_index, tokens in enumerate(token_lines, start=1)
         for word_index, token in enumerate(tokens, start=1)
     ]
+
+
+def reconcile_report_token_counts(report: dict) -> tuple[dict, bool]:
+    """Make persisted word ownership agree with the report's mapped notes."""
+
+    stored_counts = report.get("token_counts")
+    if not isinstance(stored_counts, list):
+        return report, False
+    actual_counts: dict[tuple[int, int], int] = {}
+    for entry in report.get("notes", []):
+        if not isinstance(entry, dict):
+            continue
+        line = entry.get("line")
+        word_index = entry.get("word_index")
+        if isinstance(line, int) and isinstance(word_index, int):
+            key = (line, word_index)
+            actual_counts[key] = actual_counts.get(key, 0) + 1
+
+    changed = False
+    reconciled_counts = []
+    for item in stored_counts:
+        if not isinstance(item, dict):
+            reconciled_counts.append(item)
+            continue
+        reconciled = dict(item)
+        line = reconciled.get("line")
+        word_index = reconciled.get("word_index")
+        actual = actual_counts.get((line, word_index), 0)
+        if reconciled.get("note_count") != actual:
+            reconciled["note_count"] = actual
+            changed = True
+        reconciled_counts.append(reconciled)
+
+    zero_note_tokens = sum(
+        1
+        for item in reconciled_counts
+        if isinstance(item, dict) and item.get("note_count") == 0
+    )
+    summary = dict(report.get("summary") or {})
+    if summary.get("zero_note_tokens") != zero_note_tokens:
+        summary["zero_note_tokens"] = zero_note_tokens
+        changed = True
+    if zero_note_tokens and summary.get("status") != "Needs review":
+        summary["status"] = "Needs review"
+        changed = True
+    if not changed:
+        return report, False
+    reconciled_report = dict(report)
+    reconciled_report["token_counts"] = reconciled_counts
+    reconciled_report["summary"] = summary
+    return reconciled_report, True
 
 
 def _fill_phrase_note_gaps(tokens: list[AlignmentToken]) -> None:
@@ -442,6 +508,11 @@ def add_virtual_note_split(
         for index, (start, end) in enumerate(zip(current_boundaries, current_boundaries[1:]))
         if start < fraction < end
     )
+    segment_start = current_boundaries[segment_index]
+    segment_end = current_boundaries[segment_index + 1]
+    note_duration_ms = raw_notes[note_index - 1].duration_ms
+    if min(fraction - segment_start, segment_end - fraction) * note_duration_ms < 50:
+        raise ValueError("Virtual note segments must each be at least 50 ms long.")
     display_index = sum(1 + len(set(splits_by_note.get(index, []))) for index in range(1, note_index)) + segment_index
     displayed_notes = report.get("notes", [])
     owner = displayed_notes[display_index] if display_index < len(displayed_notes) else None
@@ -478,7 +549,7 @@ def add_virtual_note_split(
     updated_report = dict(report)
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
-    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["token_counts"] = _token_counts(token_lines, entries)
     updated_report["virtual_splits"] = virtual_splits
     updated_report["source_notes"] = [
         {"midi_pitch": note.pitch, "velocity": note.velocity, "start_ms": note.start_ms, "end_ms": note.end_ms}
@@ -565,7 +636,7 @@ def adjust_alignment_token_note_count(
     updated_report = dict(report)
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
-    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["token_counts"] = _token_counts(token_lines, entries)
     updated_report["version"] = max(3, int(report.get("version", 1)))
     updated_text = "\n".join(
         render_aligned_lyrics(
@@ -613,7 +684,7 @@ def toggle_alignment_token_mode(
     updated_report = dict(report)
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
-    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["token_counts"] = _token_counts(token_lines, entries)
     updated_report["version"] = max(4, int(report.get("version", 1)))
     updated_text = "\n".join(
         render_aligned_lyrics(token_lines, entries, line_timings=report.get("line_timings"))
@@ -737,7 +808,7 @@ def resize_alignment_token(
     updated_report = dict(report)
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
-    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["token_counts"] = _token_counts(token_lines, entries)
     updated_report["version"] = max(2, int(report.get("version", 1)))
     updated_text = "\n".join(
         render_aligned_lyrics(
@@ -861,7 +932,7 @@ def resize_alignment_phrase(
     updated_report = dict(report)
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
-    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["token_counts"] = _token_counts(token_lines, entries)
     updated_report["version"] = max(2, int(report.get("version", 1)))
     updated_text = "\n".join(
         render_aligned_lyrics(
@@ -961,7 +1032,7 @@ def insert_alignment_token(
     updated_report = dict(report)
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
-    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["token_counts"] = _token_counts(token_lines, entries)
     updated_report["version"] = max(2, int(report.get("version", 1)))
     updated_text = "\n".join(
         render_aligned_lyrics(
@@ -1023,7 +1094,7 @@ def delete_alignment_token(
     updated_report = dict(report)
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
-    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["token_counts"] = _token_counts(token_lines, entries)
     if isinstance(line_timings, list):
         updated_report["line_timings"] = line_timings
     updated_report["version"] = max(2, int(report.get("version", 1)))
@@ -1083,7 +1154,7 @@ def reorder_alignment_token(
     updated_report = dict(report)
     updated_report["summary"] = new_summary
     updated_report["notes"] = [asdict(entry) for entry in entries]
-    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["token_counts"] = _token_counts(token_lines, entries)
     updated_report["version"] = max(2, int(report.get("version", 1)))
     updated_text = "\n".join(render_aligned_lyrics(token_lines, entries, line_timings=report.get("line_timings"))) + "\n"
     return updated_report, updated_text, (line, destination_index + 1)
@@ -1132,7 +1203,7 @@ def build_alignment(
         "draft_source": str(draft_path),
         "source_mode": "placeholder" if placeholder_word else "transcript",
         "line_timings": line_timings,
-        "token_counts": _token_counts(token_lines),
+        "token_counts": _token_counts(token_lines, entries),
         "source_notes": [
             {"midi_pitch": note.pitch, "velocity": note.velocity, "start_ms": note.start_ms, "end_ms": note.end_ms}
             for note in notes
@@ -1237,7 +1308,7 @@ def apply_timed_alignment_template(
     updated_report["version"] = max(3, int(target_report.get("version", 1)))
     updated_report["summary"] = summary
     updated_report["notes"] = entry_data
-    updated_report["token_counts"] = _token_counts(token_lines)
+    updated_report["token_counts"] = _token_counts(token_lines, entries)
     updated_report["virtual_splits"] = []
     updated_report["template"] = {
         "source_role": source_role,

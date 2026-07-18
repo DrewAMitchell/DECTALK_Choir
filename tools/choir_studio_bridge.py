@@ -56,6 +56,7 @@ from alignment import (
     build_alignment,
     delete_alignment_token,
     insert_alignment_token,
+    reconcile_report_token_counts,
     reorder_alignment_token,
     resize_alignment_phrase,
     resize_alignment_token,
@@ -1381,6 +1382,12 @@ def _load_candidate(song: str, role: str) -> dict[str, Any]:
         report, lines = build_alignment(song, role, alignment_path)
         text = "\n".join(lines).rstrip() + "\n"
         return {"exists": True, **_write_candidate_alignment(song, role, report, text)}
+    report, report_changed = reconcile_report_token_counts(report)
+    if report_changed:
+        try:
+            report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        except OSError as error:
+            raise BridgeError(f"Could not repair lyric candidate ownership: {error}") from error
     try:
         source_in_sync = (
             transcript_path.is_file()
@@ -1520,6 +1527,12 @@ def _apply_alignment(song: str, role: str, text: object) -> dict[str, Any]:
         report = json.loads(report_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise BridgeError(f"Could not read alignment state: {error}") from error
+    report, report_changed = reconcile_report_token_counts(report)
+    if report_changed:
+        try:
+            report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        except OSError as error:
+            raise BridgeError(f"Could not repair lyric candidate ownership: {error}") from error
     missing_note_words = int(report.get("summary", {}).get("zero_note_tokens", 0))
     if missing_note_words:
         raise BridgeError(
