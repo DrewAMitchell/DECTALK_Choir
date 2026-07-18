@@ -441,13 +441,16 @@ button:disabled { cursor: wait; opacity: .55; }
 .spectrogram-stage-progress span.running { border-color: #b88a3e; background: #342816; color: #f2ce87; }
 .spectrogram-stage-progress span.running svg { animation: alignment-spin .8s linear infinite; }
 .spectrogram-stage-progress span.total { border-color: #3e8d72; background: #17352c; color: #a9efd5; }
-.visuals-panel .review-log.spectrogram-log { box-sizing: border-box; display: flex; flex: 1 1 0; width: auto; min-height: 64px; margin: 8px 12px 0; overflow: hidden; flex-direction: column; }
-.visuals-panel .review-log.spectrogram-log summary { box-sizing: border-box; height: 31px; padding: 7px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.visuals-panel .review-log.spectrogram-log pre { box-sizing: border-box; flex: 1 1 auto; height: auto; min-height: 0; max-height: none; margin: 0; overflow: auto; padding: 8px 10px; }
+.visuals-panel .review-log.spectrogram-log { box-sizing: border-box; display: flex; flex: 0 0 31px; width: auto; min-width: 0; min-height: 31px; margin: 8px 12px 0; overflow: hidden; flex-direction: column; border-color: transparent; background: transparent; box-shadow: none; }
+.visuals-panel .review-log.spectrogram-log[open] { flex: 1 1 0; min-height: 64px; border-color: #334543; background: #121a1b; box-shadow: inset 3px 0 #60d4ae66; }
+.visuals-panel .review-log.spectrogram-log:not([open]) summary { background: transparent; }
+.visuals-panel .review-log.spectrogram-log summary { box-sizing: border-box; height: 31px; padding: 1% 0 1% 1%; overflow: visible; text-overflow: ellipsis; white-space: nowrap; }
+.visuals-panel .review-log.spectrogram-log pre { box-sizing: border-box; flex: 1 1 auto; width: 100%; min-width: 0; height: auto; min-height: 0; max-height: none; margin: 0; overflow: auto; overflow-wrap: normal; padding: 8px 10px; scrollbar-gutter: stable; white-space: pre; }
 .overview-panel > .review-log { max-height: 15vh; margin-bottom: 0; overflow: hidden; }.overview-panel > .review-log summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.overview-panel > .review-log pre { max-height: calc(clamp(86px, 20vh, 170px) - 42px); margin-bottom: 0; overflow: auto; }
 :root[data-theme="light"] .spectrogram-stage-progress span { border-color: #c2d2cd; background: #ffffff; color: #304b43; }
 :root[data-theme="light"] .spectrogram-stage-progress span small { color: #607a72; }
 :root[data-theme="light"] .spectrogram-stage-progress span.running { border-color: #b78a3e; background: #fff3d7; color: #734d0b; }
+:root[data-theme="light"] .visuals-panel .review-log.spectrogram-log[open] { border-color: #b9cbc5; background: #f4f8f6; box-shadow: inset 3px 0 #27977699; }
 :root[data-theme="light"] .spectrogram-stage-progress span.total { border-color: #65a58e; background: #def2e9; color: #205c48; }
 
 /* Tuning is a modal, not a collapsible details surface. Its body owns scrolling below the fixed header. */

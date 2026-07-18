@@ -945,6 +945,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const visualDrag = useRef<{ pointerId: number; role: string; mode: "move" | "resize"; startX: number; startY: number; bounds: DOMRect; position: [number, number, number] } | null>(null);
   const visualPreviewFrameRef = useRef<HTMLDivElement>(null);
   const spectrogramLogRef = useRef<HTMLPreElement>(null);
+  const [spectrogramLogOpen, setSpectrogramLogOpen] = useState(true);
   const [visualDragging, setVisualDragging] = useState(false);
   const [visualPreviewSize, setVisualPreviewSize] = useState<{ width: number; height: number } | null>(null);
   const monitorWidth = Math.max(1, window.screen.width);
@@ -1346,6 +1347,6 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
         <div className="visual-save-state" role="status" aria-live="polite">{visualSaving || visualDirtyRoles.length ? <><LoaderCircle size={14} /> Saving layout...</> : <><CircleCheck size={14} /> Layout saved automatically</>}</div>
       </div>
     </section>
-    {job && job.state !== "idle" && <details className="generated review-log spectrogram-log" open><summary>{job.message} <span>{job.state === "running" ? "background job" : `exit ${job.returncode ?? "--"}`} - process log</span></summary><pre ref={spectrogramLogRef}>{job.log || "The generator is starting; live process output will appear here."}</pre></details>}
+    {job && job.state !== "idle" && <details className="generated review-log spectrogram-log" open={spectrogramLogOpen} onToggle={(event) => setSpectrogramLogOpen(event.currentTarget.open)}><summary>{job.message} <span>{job.state === "running" ? "background job" : `exit ${job.returncode ?? "--"}`} - process log</span></summary><pre ref={spectrogramLogRef}>{job.log || "The generator is starting; live process output will appear here."}</pre></details>}
   </section>;
 }
