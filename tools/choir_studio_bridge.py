@@ -237,6 +237,23 @@ def _role_paths(song: str, role: str) -> tuple[Path, Path, Path, Path]:
     return source, transcript, candidate, report
 
 
+def _source_sync_state(song: str, role: str) -> str:
+    """Return the Studio publish state without rebuilding alignment metadata."""
+
+    source, transcript, candidate, _ = _role_paths(song, role)
+    if not transcript.is_file():
+        return "absent"
+    active = candidate if _has_lyric_content(candidate) else source
+    if not source.is_file() or not _has_lyric_content(active):
+        return "pending"
+    try:
+        published = source.read_text(encoding="utf-8").rstrip()
+        working = active.read_text(encoding="utf-8").rstrip()
+    except OSError:
+        return "pending"
+    return "synced" if published == working else "pending"
+
+
 def _read_source(song: str, role: str) -> dict[str, Any]:
     source, transcript, candidate, _ = _role_paths(song, role)
     # Published alignment is authoritative in the editor. The transcript is the
@@ -1406,7 +1423,11 @@ def handle(request: dict[str, Any]) -> Any:
 
     song = _song_name(request.get("song"))
     if command == "inspect_song":
-        return _jsonable(inspect_song(REPO_ROOT, song))
+        inspection = inspect_song(REPO_ROOT, song)
+        payload = _jsonable(inspection)
+        for role_payload, role_inspection in zip(payload["roles"], inspection.roles):
+            role_payload["source_sync_state"] = _source_sync_state(song, role_inspection.role)
+        return payload
     if command == "get_spectrogram_video_settings":
         return _spectrogram_video_settings(song)
     if command == "update_spectrogram_video_settings":

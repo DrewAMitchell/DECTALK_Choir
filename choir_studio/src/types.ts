@@ -49,6 +49,7 @@ export type Role = {
   head_size: number | null;
   render_enabled: boolean;
   render_eligible: boolean;
+  source_sync_state: "absent" | "pending" | "synced";
   midi_track: MidiTrack | null;
   midi_range: string;
   render_range: string;

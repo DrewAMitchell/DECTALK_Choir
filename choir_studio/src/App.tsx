@@ -152,6 +152,13 @@ function RailPitchRange({ value }: { value: string }) {
   </span>;
 }
 
+function SourceSyncMarker({ state }: { state: Role["source_sync_state"] }) {
+  if (state === "absent") return null;
+  const synced = state === "synced";
+  const label = synced ? "Published lyrics match the current alignment" : "Current alignment has not been applied to source";
+  return <span className={`source-sync-marker ${state}`} title={label} aria-label={label}>{synced ? <Check size={13} strokeWidth={3} /> : <X size={13} strokeWidth={3} />}</span>;
+}
+
 function overlapTooltip(role: Role, action: string) {
   const track = role.midi_track;
   if (!track || !role.polyphony || role.polyphony <= 1) return "No simultaneous notes detected";
@@ -315,6 +322,7 @@ export default function App() {
       setDraftState(draft); setDraftRole(roleName); setTranscript(draft.text); setSavedTranscript(draft.text); setTranscriptLocked(true); setLyricsPrompt("");
       const pending = await bridge<AlignmentState & { path: string }>({ command: "align", song, role: roleName });
       setDraftState({ ...draft, text: pending.text, path: pending.path }); setTranscript(pending.text); setSavedTranscript(pending.text); setAlignment(pending); setAlignmentRole(roleName); setSelectedPhrase(firstPhraseLine(pending.report)); setLyricsModalOpen(false); setStage("align");
+      setInspection(await bridge<SongInspection>({ command: "inspect_song", song }));
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
   const runNoteSkeleton = async (placeholder: string) => {
@@ -421,7 +429,12 @@ export default function App() {
     {deleteSongArmed && <section className="song-delete-confirm" role="alertdialog" aria-label={`Delete ${song}`}><div><strong>Delete {song}?</strong><span>Its inputs, settings, and generated outputs will be removed.</span></div><button className="secondary" type="button" onClick={() => setDeleteSongArmed(false)} disabled={!!busy}>Cancel</button><button className="danger" type="button" onClick={() => void removeSong()} disabled={!!busy}>Delete song</button></section>}
     {error && <div className="error-toast" role="alert" aria-live="assertive"><CircleAlert size={17} /><span>{error}</span><div className="error-actions">{/ffmpeg/i.test(error) && <><button type="button" className="error-action" onClick={() => void openFfmpegDownload().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Open FFmpeg's official Windows download guidance">Get FFmpeg</button><button type="button" className="error-action" onClick={() => void navigator.clipboard.writeText(FFMPEG_WINGET_COMMAND).then(() => setError(`Copied: ${FFMPEG_WINGET_COMMAND}`)).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Copy the Windows Package Manager install command">Copy winget</button></>}<button type="button" onClick={() => setError("")} title="Dismiss error" aria-label="Dismiss error"><X size={16} /></button></div></div>}
     <section className={`workspace ${stage === "review" ? "review-workspace" : ""}`}>
-      <aside className="track-rail"><h2 className="rail-song-title" title={song}>{song || "Song"}</h2><div className="rail-heading"><PanelLeft size={16} /> Tracks</div><div className="track-list">{inspection?.roles.map((item) => <div key={item.role} className={`track-entry${item.role === roleName ? " active" : ""}`}><div className="track"><button className="track-select-hitbox" type="button" onClick={() => selectRole(item.role)} aria-pressed={item.role === roleName} aria-label={`Select ${item.role}`} /><span className="track-copy"><strong title={`${item.role} · ${item.midi_source_name}`}>{item.role}</strong><TrackOverlapBadge role={item} onSplit={() => { if (item.role !== roleName) selectRole(item.role); setSplitRoleName(item.role); }} /><RailPitchRange value={item.midi_range} /></span><span className="track-note-total" title={`${item.note_count} MIDI notes`} aria-label={`${item.note_count} MIDI notes`}><b>{item.note_count}</b><Music3 size={13} aria-hidden="true" /></span></div></div>)}</div></aside>
+      <aside className="track-rail"><h2 className="rail-song-title" title={song}>{song || "Song"}</h2><div className="rail-heading"><PanelLeft size={16} /> Tracks</div><div className="track-list">{inspection?.roles.map((item) => {
+        const syncState = item.role === roleName && activeAlignment && item.source_sync_state !== "absent"
+          ? activeAlignment.source_in_sync === true ? "synced" : "pending"
+          : item.source_sync_state;
+        return <div key={item.role} className={`track-entry${item.role === roleName ? " active" : ""}`}><div className="track"><button className="track-select-hitbox" type="button" onClick={() => selectRole(item.role)} aria-pressed={item.role === roleName} aria-label={`Select ${item.role}`} /><span className="track-copy"><span className="track-name-row"><strong title={`${item.role} · ${item.midi_source_name}`}>{item.role}</strong><SourceSyncMarker state={syncState} /></span><TrackOverlapBadge role={item} onSplit={() => { if (item.role !== roleName) selectRole(item.role); setSplitRoleName(item.role); }} /><RailPitchRange value={item.midi_range} /></span><span className="track-note-total" title={`${item.note_count} MIDI notes`} aria-label={`${item.note_count} MIDI notes`}><b>{item.note_count}</b><Music3 size={13} aria-hidden="true" /></span></div></div>;
+      })}</div></aside>
       <section className={`surface${stage === "align" ? " align-surface" : ""}`}>
         {stage === "align" && <AlignStage role={role} inspection={inspection} song={song} alignment={activeAlignment} loading={alignmentLoading || alignmentTransitionPending} templateSources={templateSources} onAdoptTemplate={adoptTemplate} onOpenLyrics={() => setLyricsModalOpen(true)} onOpenSplitter={() => role && setSplitRoleName(role.role)} onApplied={async () => { const refreshed = await bridge<SongInspection>({ command: "inspect_song", song }); setInspection(refreshed); }} setAlignment={setAlignment} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} busy={busy} setBusy={setBusy} setError={setError} />}
         {stage === "review" && <ReviewStage song={song} role={role} inspection={inspection} enabledRoles={reviewEnabledRoles} onEnabledRolesChange={(roles) => void updateRenderRoles(roles)} onSelectRole={selectRole} setInspection={setInspection} busy={busy} setBusy={setBusy} setError={setError} />}
