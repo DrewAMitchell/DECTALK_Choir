@@ -14,6 +14,7 @@ from alignment import (
     adjust_alignment_token_note_count,
     delete_alignment_token,
     reconcile_report_token_counts,
+    resize_alignment_phrase,
     toggle_alignment_token_mode,
 )
 from pyFuncs.PhonemeProcessing import SPOKEN_WORD_MARKER, lyricsToPhonemes
@@ -103,6 +104,36 @@ class AlignmentNoteCountTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "this phrase has a spare note"):
             adjust_alignment_token_note_count(report, self.text, 1, 2, 1)
+
+    def test_shortening_phrase_start_releases_nearest_surplus_word(self) -> None:
+        report = _report([[2, 2, 1], [1, 3]])
+
+        updated, _ = resize_alignment_phrase(report, self.text, 2, "start", 1)
+
+        self.assertEqual(_counts(updated, 1), [2, 2, 2])
+        self.assertEqual(_counts(updated, 2), [1, 2])
+
+    def test_shortening_phrase_end_releases_nearest_surplus_word(self) -> None:
+        report = _report([[2, 3, 1], [2, 2]])
+
+        updated, _ = resize_alignment_phrase(report, self.text, 1, "end", -1)
+
+        self.assertEqual(_counts(updated, 1), [2, 2, 1])
+        self.assertEqual(_counts(updated, 2), [2, 3])
+
+    def test_shortening_phrase_can_release_multiple_internal_surplus_notes(self) -> None:
+        report = _report([[2, 3, 2], [2, 2]])
+
+        updated, _ = resize_alignment_phrase(report, self.text, 1, "end", -3)
+
+        self.assertEqual(_counts(updated, 1), [2, 1, 1])
+        self.assertEqual(_counts(updated, 2), [2, 5])
+
+    def test_shortening_phrase_rejects_more_than_its_surplus(self) -> None:
+        report = _report([[1, 2, 1], [2, 2]])
+
+        with self.assertRaisesRegex(ValueError, "extra notes to release"):
+            resize_alignment_phrase(report, self.text, 1, "end", -2)
 
     def test_deleting_a_phrase_last_word_removes_the_phrase(self) -> None:
         report = _report([[2], [2, 2]], [["intro"], ["four", "five"]])

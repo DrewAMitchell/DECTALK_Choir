@@ -291,10 +291,9 @@ function PianoRollCanvas({
     const previousWords = phrases.filter((phrase) => phrase.line < selectedPhraseRange.line).flatMap((phrase) => phrase.wordCounts);
     const followingWords = phrases.filter((phrase) => phrase.line > selectedPhraseRange.line).flatMap((phrase) => phrase.wordCounts);
     const unassignedTail = alignment.filter((entry) => entry.line === null && entry.note_index > selectedPhraseRange.last).length;
-    const firstWordCount = selectedPhraseRange.wordCounts[0] ?? 1;
-    const lastWordCount = selectedPhraseRange.wordCounts[selectedPhraseRange.wordCounts.length - 1] ?? 1;
-    const validMinimum = edge === "start" ? -previousWords.reduce((total, count) => total + Math.max(0, count - 1), 0) : -(lastWordCount - 1);
-    const validMaximum = edge === "start" ? firstWordCount - 1 : followingWords.reduce((total, count) => total + Math.max(0, count - 1), 0) + unassignedTail;
+    const selectedPhraseSurplus = selectedPhraseRange.wordCounts.reduce((total, count) => total + Math.max(0, count - 1), 0);
+    const validMinimum = edge === "start" ? -previousWords.reduce((total, count) => total + Math.max(0, count - 1), 0) : -selectedPhraseSurplus;
+    const validMaximum = edge === "start" ? selectedPhraseSurplus : followingWords.reduce((total, count) => total + Math.max(0, count - 1), 0) + unassignedTail;
     // Invalid targets are preview-only. The renderer cannot encode a zero-note word.
     const minimum = edge === "start" ? -(selectedPhraseRange.first - 1) : validMinimum;
     const maximum = edge === "end" ? notes.length - selectedPhraseRange.last : validMaximum;

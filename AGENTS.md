@@ -162,6 +162,8 @@ Studio keeps lyric editing inside the application. Its primary stages flow from 
 
 The header's timed-DECTalk importer is the deliberate exception to the normal draft workflow. It validates the entire pasted command first, converts phoneme pitches through the song's `noteOffset`, groups contiguous same-pitch phonemes into MIDI notes, preserves timed underscores as rests, appends a configured MIDI role, and immediately publishes both its direct-phoneme lyric source and applied alignment. Its optional new-song mode creates a named song folder whose MIDI and settings contain only that imported note track, then selects it in Align; existing song folders are never replaced. `[:tone frequency_hz,duration_ms]` and `[:t ...]` remain exact render events while using the nearest MIDI pitch as their alignment proxy; never put those event commands into `DEC_SETUP`. Track-wide setup commands must precede the first timed event, while midstream setup changes and dial/conversational scripts are rejected because silently hoisting them would change semantics or produce no deterministic musical alignment. The original pasted command is preserved once as `<Role>.transcript.txt`. Import is atomic and rolls the MIDI, settings, lyric artifacts, or newly created song folder back on failure; success selects the new role in Align.
 
+When a phrase is shortened, release surplus notes from the nearest multi-note word on the dragged edge before moving inward; the literal first or last word does not need to own two notes.
+
 ## Consonant/Vowel Timing
 
 - Keep consonants and vowels as separate emitted phonemes when timing matters.

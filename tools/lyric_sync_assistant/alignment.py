@@ -435,6 +435,22 @@ def _fill_phrase_note_gaps(tokens: list[AlignmentToken]) -> None:
         token.note_count += 1
 
 
+def _release_phrase_notes(tokens: list[AlignmentToken], amount: int, *, from_end: bool) -> None:
+    """Release surplus notes from words nearest one edge of a phrase."""
+
+    available = sum(max(0, token.note_count - 1) for token in tokens)
+    if available < amount:
+        raise ValueError("This phrase does not have that many extra notes to release.")
+    remaining = amount
+    donors = reversed(tokens) if from_end else iter(tokens)
+    for token in donors:
+        transferred = min(remaining, max(0, token.note_count - 1))
+        token.note_count -= transferred
+        remaining -= transferred
+        if not remaining:
+            return
+
+
 def _split_note_events(notes: list[NoteEvent], virtual_splits: list[dict]) -> list[NoteEvent]:
     by_note: dict[int, list[float]] = {}
     for item in virtual_splits:
@@ -866,9 +882,7 @@ def resize_alignment_phrase(
                 if not remaining:
                     break
         else:
-            if target_token.note_count <= movement:
-                raise ValueError("This phrase cannot give that many leading notes back.")
-            target_token.note_count -= movement
+            _release_phrase_notes(token_lines[target_index], movement, from_end=False)
             # Released time belongs at the preceding tail, moving this phrase later.
             preceding_tokens[-1].note_count += movement
     else:
@@ -899,9 +913,7 @@ def resize_alignment_phrase(
                     break
         else:
             amount = abs(movement)
-            if target_token.note_count <= amount:
-                raise ValueError("This phrase cannot give that many trailing notes back.")
-            target_token.note_count -= amount
+            _release_phrase_notes(token_lines[target_index], amount, from_end=True)
             # The unused duration settles at the tail, so every following phrase shifts earlier.
             for token in following_tokens:
                 if amount and token.note_count == 0:
