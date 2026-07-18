@@ -47,7 +47,8 @@ type NoteSkeleton = { text: string; note_count: number };
 type AlignmentTemplate = { role: string; path: string };
 type SplitLane = { number: number; name: string; note_count: number; minimum_pitch: number | null; maximum_pitch: number | null };
 type SplitPreview = { source_path: string; source_name: string; track_index: number; note_count: number; max_polyphony: number; default_filename: string; lanes: SplitLane[]; splittable: boolean };
-type SplitResult = { path: string; summary_path: string; backup_path: string | null; replaced_source: boolean; lanes: SplitLane[]; warning: string | null };
+type SplitResult = { path: string; summary_path: string; backup_path: string | null; replaced_source: boolean; lanes: SplitLane[]; warning: string | null; created_roles: string[] };
+type SplitRestoreResult = { path: string; preserved_split_path: string };
 type DectalkImportResult = { role: string; note_count: number; duration_ms: number; midi_path: string; source_path: string; alignment_path: string };
 type MidiSongImportResult = { song: string; roles: string[]; midi_path: string };
 type TrackTuning = {
@@ -204,7 +205,6 @@ export default function App() {
   const [theme, setTheme] = useState<"dark" | "light">(storedUiState.theme ?? (window.localStorage.getItem("dectalk-choir-studio.theme") === "light" ? "light" : "dark"));
   const [renderRolesBySong, setRenderRolesBySong] = useState<Record<string, string[]>>(storedUiState.render_roles ?? {});
   const [transcript, setTranscript] = useState("");
-  const [transcriptLocked, setTranscriptLocked] = useState(false);
   const [savedTranscript, setSavedTranscript] = useState("");
   const [transcriptLoadedKey, setTranscriptLoadedKey] = useState("");
   const [validation, setValidation] = useState<{ invalid_words: string[]; normalized_lines: string[]; ok: boolean } | null>(null);
@@ -266,10 +266,10 @@ export default function App() {
     }
     let cancelled = false;
     setTranscriptLoadedKey("");
-    setTranscript(""); setSavedTranscript(""); setTranscriptLocked(false); setValidation(null);
+    setTranscript(""); setSavedTranscript(""); setValidation(null);
     bridge<TranscriptState>({ command: "read_transcript", song, role: roleName }).then((value) => {
       if (cancelled) return;
-      setTranscript(value.text); setSavedTranscript(value.text); setTranscriptLocked(value.transcript_exists); setTranscriptLoadedKey(`${song}:${roleName}`); setValidation(null);
+      setTranscript(value.text); setSavedTranscript(value.text); setTranscriptLoadedKey(`${song}:${roleName}`); setValidation(null);
     }).catch((cause) => { if (!cancelled) setError(String(cause)); });
     return () => { cancelled = true; };
   }, [song, roleName, lyricsModalOpen]);
@@ -320,7 +320,7 @@ export default function App() {
     setBusy("Drafting and aligning lyrics"); setError("");
     try {
       const draft = await bridge<DraftState>({ command: "draft", song, role: roleName, text: transcript, auto_lines: false });
-      setDraftState(draft); setDraftRole(roleName); setTranscript(draft.text); setSavedTranscript(draft.text); setTranscriptLocked(true); setLyricsPrompt("");
+      setDraftState(draft); setDraftRole(roleName); setTranscript(draft.text); setSavedTranscript(draft.text); setLyricsPrompt("");
       const pending = await bridge<AlignmentState & { path: string }>({ command: "align", song, role: roleName });
       setDraftState({ ...draft, text: pending.text, path: pending.path }); setTranscript(pending.text); setSavedTranscript(pending.text); setAlignment(pending); setAlignmentRole(roleName); setSelectedPhrase(firstPhraseLine(pending.report)); setLyricsModalOpen(false); setStage("align");
       setInspection(await bridge<SongInspection>({ command: "inspect_song", song }));
@@ -338,12 +338,6 @@ export default function App() {
       const skeleton = await bridge<NoteSkeleton>({ command: "create_note_skeleton", song, role: roleName, placeholder });
       setTranscript(skeleton.text); setDraftState(null); setDraftRole(""); setAlignment(null); setAlignmentRole(""); setSelectedPhrase(null); setLyricsPrompt("");
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
-  };
-  const saveTranscript = async () => {
-    if (!song || !roleName) return;
-    setBusy("Saving transcript"); setError("");
-    try { await bridge({ command: "save_transcript", song, role: roleName, text: transcript }); setSavedTranscript(transcript); setTranscriptLocked(true); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
   const selectStage = (nextStage: Stage) => {
     setLyricsPrompt("");
@@ -412,10 +406,8 @@ export default function App() {
   const closeSplitModal = useCallback(() => setSplitRoleName(""), []);
   const refreshAfterMidiSplit = useCallback(async () => {
     if (!song) return;
-    invalidateAlignmentLoad();
-    const refreshed = await bridge<SongInspection>({ command: "inspect_song", song });
-    setInspection(refreshed); setAlignment(null); setAlignmentRole(""); setSelectedPhrase(null);
-  }, [song, invalidateAlignmentLoad]);
+    await loadSong(song, roleName);
+  }, [song, roleName, loadSong]);
   const finishDectalkImport = useCallback(async (result: DectalkImportResult) => {
     invalidateAlignmentLoad();
     const refreshed = await bridge<SongInspection>({ command: "inspect_song", song });
@@ -444,7 +436,7 @@ export default function App() {
         {stage === "review" && <ReviewStage song={song} role={role} inspection={inspection} enabledRoles={reviewEnabledRoles} onEnabledRolesChange={(roles) => void updateRenderRoles(roles)} onSelectRole={selectRole} setInspection={setInspection} busy={busy} setBusy={setBusy} setError={setError} />}
       </section>
     </section>
-    {lyricsModalOpen && <section className="lyrics-modal-backdrop" role="presentation" onMouseDown={() => setLyricsModalOpen(false)}><section className="lyrics-modal" role="dialog" aria-modal="true" aria-label={`Edit ${roleName} lyrics`} onMouseDown={(event) => event.stopPropagation()}><button className="lyrics-modal-close" type="button" title="Close lyric editor" aria-label="Close lyric editor" onClick={() => setLyricsModalOpen(false)}><X size={17} /></button><LyricsStage transcript={transcript} transcriptLoaded={transcriptLoadedKey === transcriptKey} transcriptLocked={transcriptLocked} setTranscript={setTranscript} validation={validation} onDraft={runDraft} onNoteSkeleton={runNoteSkeleton} onSave={saveTranscript} busy={busy} draftState={hasDraft ? draftState : null} dirty={transcript !== savedTranscript} prompt={lyricsPrompt} /></section></section>}
+    {lyricsModalOpen && <section className="lyrics-modal-backdrop" role="presentation" onMouseDown={() => setLyricsModalOpen(false)}><section className="lyrics-modal" role="dialog" aria-modal="true" aria-label={`Edit ${roleName} lyrics`} onMouseDown={(event) => event.stopPropagation()}><button className="lyrics-modal-close" type="button" title="Close lyric editor" aria-label="Close lyric editor" onClick={() => setLyricsModalOpen(false)}><X size={17} /></button><LyricsStage transcript={transcript} transcriptLoaded={transcriptLoadedKey === transcriptKey} setTranscript={setTranscript} validation={validation} onDraft={runDraft} onNoteSkeleton={runNoteSkeleton} busy={busy} draftState={hasDraft ? draftState : null} dirty={transcript !== savedTranscript} prompt={lyricsPrompt} /></section></section>}
     {midiImportSource && <MidiSongImportModal sourcePath={midiImportSource} onClose={() => setMidiImportSource("")} onImported={finishMidiSongImport} setError={setError} />}
     {dectalkImportOpen && <DectalkImportModal song={song} onClose={() => setDectalkImportOpen(false)} onImported={finishDectalkImport} setError={setError} />}
     {splitRole && <PolyphonicSplitModal song={song} role={splitRole} onClose={closeSplitModal} onSourceChanged={refreshAfterMidiSplit} setError={setError} />}
@@ -517,6 +509,7 @@ function PolyphonicSplitModal({ song, role, onClose, onSourceChanged, setError }
   const [replaceSource, setReplaceSource] = useState(true);
   const [filename, setFilename] = useState("");
   const [confirmOverwrite, setConfirmOverwrite] = useState(false);
+  const [restored, setRestored] = useState<SplitRestoreResult | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -543,6 +536,16 @@ function PolyphonicSplitModal({ song, role, onClose, onSourceChanged, setError }
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setWorking(false); }
   };
+  const restoreBackup = async () => {
+    if (!result?.backup_path) return;
+    setWorking(true); setError("");
+    try {
+      const next = await bridge<SplitRestoreResult>({ command: "restore_polyphonic_split_backup", song, role: role.role, backup_path: result.backup_path });
+      setRestored(next);
+      await onSourceChanged();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setWorking(false); }
+  };
 
   return <section className="split-modal-backdrop" role="presentation" onMouseDown={() => { if (!working) onClose(); }}><section className="split-modal" role="dialog" aria-modal="true" aria-labelledby="split-modal-title" onMouseDown={(event) => event.stopPropagation()}><button className="split-modal-close" type="button" onClick={onClose} disabled={working} title="Close MIDI splitter" aria-label="Close MIDI splitter"><X size={17} /></button>
     <header><p className="eyebrow">Selected MIDI track</p><h2 id="split-modal-title">Split {role.role} into voices</h2><p>{role.midi_source_name} · {role.note_count} notes</p></header>
@@ -551,16 +554,16 @@ function PolyphonicSplitModal({ song, role, onClose, onSourceChanged, setError }
       <section className="split-analysis"><div><span>Maximum overlap</span><strong>{preview.max_polyphony}</strong></div><div><span>Output voices</span><strong>{preview.lanes.length}</strong></div><div><span>Preserved notes</span><strong>{preview.note_count}</strong></div></section>
       <div className="split-lanes" aria-label="Tentative split voices">{preview.lanes.map((lane) => <div key={lane.number}><span className="split-lane-index">{lane.number}</span><strong title={lane.name}>{lane.name}</strong><span>{midiPitchLabel(lane.minimum_pitch)}-{midiPitchLabel(lane.maximum_pitch)}</span><b>{lane.note_count} notes</b></div>)}</div>
       {!preview.splittable ? <div className="notice"><CircleCheck size={17} /><div><strong>Already monophonic.</strong> This track has no simultaneous notes to separate.</div></div> : <>
-        <fieldset className="split-destination"><legend>Output</legend><label className={replaceSource ? "selected" : ""}><input type="radio" name="split-output" checked={replaceSource} onChange={() => setReplaceSource(true)} /><span><strong>Replace working MIDI</strong><small>Recommended. Keeps a one-time <code>.bak</code> copy and preserves this role on voice one.</small></span></label><label className={!replaceSource ? "selected" : ""}><input type="radio" name="split-output" checked={!replaceSource} onChange={() => setReplaceSource(false)} /><span><strong>Export a new MIDI</strong><small>Writes a separate file beside the source without activating it.</small></span></label></fieldset>
+        <fieldset className="split-destination"><legend>Output</legend><label className={replaceSource ? "selected" : ""}><input type="radio" name="split-output" checked={replaceSource} onChange={() => setReplaceSource(true)} /><span><strong>Replace working MIDI</strong><small>Creates a restorable backup for this operation and preserves this role on voice one.</small></span></label><label className={!replaceSource ? "selected" : ""}><input type="radio" name="split-output" checked={!replaceSource} onChange={() => setReplaceSource(false)} /><span><strong>Export a new MIDI</strong><small>Writes a DAW-ready copy under <code>outputs/midi_exports</code> without activating it.</small></span></label></fieldset>
         {!replaceSource && <div className="split-filename"><label><span>Filename</span><input value={filename} onChange={(event) => setFilename(event.target.value)} /></label><label className="split-overwrite"><input type="checkbox" checked={confirmOverwrite} onChange={(event) => setConfirmOverwrite(event.target.checked)} /> Allow replacing an existing export</label></div>}
-        <footer><span>Only <strong>{preview.source_name}</strong> is split. Every other MIDI track passes through unchanged.</span><button type="button" className="primary" onClick={() => void runSplit()} disabled={working || (!replaceSource && !filename.trim())}>{working ? <LoaderCircle size={16} /> : <GitBranch size={16} />}{working ? "Splitting MIDI" : replaceSource ? "Replace working MIDI" : "Export split MIDI"}</button></footer>
+        <footer><span>Only <strong>{preview.source_name}</strong> is split. Notes and timing are preserved; output tracks receive stable DAW identities.</span><button type="button" className="primary" onClick={() => void runSplit()} disabled={working || (!replaceSource && !filename.trim())}>{working ? <LoaderCircle size={16} /> : <GitBranch size={16} />}{working ? "Splitting MIDI" : replaceSource ? "Replace working MIDI" : "Export split MIDI"}</button></footer>
       </>}
     </>}
-    {result && <section className="split-complete"><CircleCheck size={24} /><div><strong>MIDI split complete</strong><span>{result.path}</span>{result.backup_path && <small>Backup: {result.backup_path}</small>}{result.warning && <small className="split-warning">{result.warning}</small>}</div><button className="primary" type="button" onClick={onClose}>Done</button></section>}
+    {result && <section className="split-complete"><CircleCheck size={24} /><div><strong>{restored ? "Original MIDI restored" : "MIDI split complete"}</strong><span>{restored?.path ?? result.path}</span>{!restored && result.created_roles.length > 0 && <small>Added roles: {result.created_roles.join(", ")}</small>}{restored && <small>Split preserved at: {restored.preserved_split_path}</small>}{!restored && result.backup_path && <small>Restorable backup: {result.backup_path}</small>}{result.warning && <small className="split-warning">{result.warning}</small>}</div><div className="split-complete-actions">{result.backup_path && !restored && <button className="secondary" type="button" onClick={() => void restoreBackup()} disabled={working}>{working ? "Restoring..." : "Restore backup"}</button>}<button className="primary" type="button" onClick={onClose} disabled={working}>Done</button></div></section>}
   </section></section>;
 }
 
-function LyricsStage({ transcript, transcriptLoaded, transcriptLocked, setTranscript, validation, onDraft, onNoteSkeleton, onSave, busy, draftState, dirty, prompt }: { transcript: string; transcriptLoaded: boolean; transcriptLocked: boolean; setTranscript(value: string): void; validation: { invalid_words: string[]; normalized_lines: string[]; ok: boolean } | null; onDraft(): void; onNoteSkeleton(placeholder: string): void; onSave(): void; busy: string; draftState: DraftState | null; dirty: boolean; prompt: string }) {
+function LyricsStage({ transcript, transcriptLoaded, setTranscript, validation, onDraft, onNoteSkeleton, busy, draftState, dirty, prompt }: { transcript: string; transcriptLoaded: boolean; setTranscript(value: string): void; validation: { invalid_words: string[]; normalized_lines: string[]; ok: boolean } | null; onDraft(): void; onNoteSkeleton(placeholder: string): void; busy: string; draftState: DraftState | null; dirty: boolean; prompt: string }) {
   const [skeletonPhoneme, setSkeletonPhoneme] = useState("duw");
   const [replaceArmed, setReplaceArmed] = useState(false);
   const hasLyrics = Boolean(transcript.trim());
@@ -582,7 +585,10 @@ function LyricsStage({ transcript, transcriptLoaded, transcriptLocked, setTransc
     : replaceArmed
       ? `Confirm creation of a ${skeletonPhoneme} note skeleton${hasLyrics ? " and replacement of the current lyrics" : ""}.`
       : "Create one direct DECTALK phoneme per MIDI note, grouped at MIDI rests.";
-  return <><section className="surface-header lyrics-header"><div className="lyrics-title"><p className="eyebrow">Working lyric draft</p><h1>Lyrics</h1><p>Paste lyrics or create a note skeleton here. Draft timing turns this same text into the editable aligned draft.</p></div><div className="header-actions lyrics-actions"><span className={dirty ? "save-state dirty" : "save-state"}>{!transcriptLoaded ? "Loading lyrics" : replaceArmed ? "Confirm note skeleton" : dirty ? "Working changes" : transcriptLocked ? "Transcript preserved" : "Transcript not captured"}</span><button className="secondary" title={transcriptLocked ? "The original transcript is immutable. Delete its .transcript.txt file manually to replace it." : "Preserve this text once as the original transcript"} onClick={onSave} disabled={!!busy || !transcriptLoaded || transcriptLocked || !transcript.trim()}>Preserve transcript</button><label className="skeleton-control" title={skeletonTitle}><input value={skeletonPhoneme} onChange={(event) => setSkeletonPhoneme(event.target.value)} aria-label="Note skeleton phoneme" placeholder="duw" /><button className="secondary" onClick={createSkeleton} disabled={skeletonDisabled}><Music2 size={16} /> {replaceArmed ? "Confirm skeleton" : "Note skeleton"}</button></label><button className="primary" onClick={onDraft} title={!transcriptLoaded ? "Wait for this role's lyrics to finish loading" : "Draft timing against this role's MIDI notes"} disabled={!!busy || !transcriptLoaded || !transcript.trim()}><WandSparkles size={16} /> Draft timing</button></div></section><LyricsTipBoard /><textarea className="transcript" value={transcript} onChange={(event) => setTranscript(event.target.value)} disabled={!transcriptLoaded} placeholder={transcriptLoaded ? "Paste plain lyrics, or create one direct phoneme per MIDI note. Line breaks are phrase hints; commas and unsupported punctuation are normalized." : "Loading this track's lyric source..."} />{validation && (!validation.ok || validation.normalized_lines.length > 0) && <div className={validation.ok ? "notice" : "warning"}><CircleAlert size={17} /><div>{validation.invalid_words.length > 0 && <><strong>Check these words:</strong> {validation.invalid_words.join(", ")}</>}{validation.normalized_lines.length > 0 && <span> Punctuation will be normalized before drafting.</span>}</div></div>}{draftState?.review_segments.length ? <details className="draft-review" open><summary>{draftState.review_segments.length} rapid multi-note word {draftState.review_segments.length === 1 ? "span needs" : "spans need"} verification <span>gaps at or below {draftState.tight_gap_ms} ms</span></summary><div>{draftState.review_segments.map((segment) => <div key={`${segment.line}-${segment.word_index}`} style={{ "--word-color": wordColor(segment.line, segment.word_index) } as CSSProperties}><strong>{segment.word}</strong><span>{segment.note_count} notes · {Math.round(segment.start_ms / 1000)}s-{Math.round(segment.end_ms / 1000)}s</span></div>)}</div></details> : null}{draftState && <details className="generated"><summary>Generated draft ready for alignment <span>{draftState.path}</span></summary><pre>{draftState.text}</pre></details>}</>;
+  const pendingDraft = transcriptLoaded && hasLyrics && (dirty || !draftState) && !busy;
+  const settledDraft = transcriptLoaded && hasLyrics && !pendingDraft && !busy;
+  const statusText = !transcriptLoaded ? "Loading lyrics" : dirty ? "Changes pending" : "";
+  return <><section className="surface-header lyrics-header"><div className="lyrics-title"><p className="eyebrow">Working lyric draft</p><h1>Lyrics</h1><p>Paste lyrics or create a note skeleton here. Draft alignment turns this same text into the editable aligned draft.</p></div><div className="header-actions lyrics-actions">{statusText && !replaceArmed ? <span className={dirty ? "save-state dirty" : "save-state"}>{statusText}</span> : null}<label className={`skeleton-control${replaceArmed ? " confirming" : ""}`} title={skeletonTitle}><input value={skeletonPhoneme} onChange={(event) => setSkeletonPhoneme(event.target.value)} aria-label="Note skeleton phoneme" placeholder="duw" /><button className="secondary" onClick={createSkeleton} disabled={skeletonDisabled}><Music2 size={16} /> {replaceArmed ? "Confirm skeleton" : "Note skeleton"}</button></label><button className={`primary draft-alignment-control${pendingDraft ? " pending" : ""}${settledDraft ? " settled" : ""}`} onClick={onDraft} title={!transcriptLoaded ? "Wait for this role's lyrics to finish loading" : settledDraft ? "This text already matches the current alignment draft" : "Draft alignment against this role's MIDI notes"} disabled={!!busy || !pendingDraft}><WandSparkles size={16} /> Draft alignment</button></div></section><LyricsTipBoard /><textarea className="transcript" value={transcript} onChange={(event) => setTranscript(event.target.value)} disabled={!transcriptLoaded} placeholder={transcriptLoaded ? "Paste plain lyrics, or create one direct phoneme per MIDI note. Line breaks are phrase hints; commas and unsupported punctuation are normalized." : "Loading this track's lyric source..."} />{validation && (!validation.ok || validation.normalized_lines.length > 0) && <div className={validation.ok ? "notice" : "warning"}><CircleAlert size={17} /><div>{validation.invalid_words.length > 0 && <><strong>Check these words:</strong> {validation.invalid_words.join(", ")}</>}{validation.normalized_lines.length > 0 && <span> Punctuation will be normalized before drafting.</span>}</div></div>}{draftState?.review_segments.length ? <details className="draft-review" open><summary>{draftState.review_segments.length} rapid multi-note word {draftState.review_segments.length === 1 ? "span needs" : "spans need"} verification <span>gaps at or below {draftState.tight_gap_ms} ms</span></summary><div>{draftState.review_segments.map((segment) => <div key={`${segment.line}-${segment.word_index}`} style={{ "--word-color": wordColor(segment.line, segment.word_index) } as CSSProperties}><strong>{segment.word}</strong><span>{segment.note_count} notes · {Math.round(segment.start_ms / 1000)}s-{Math.round(segment.end_ms / 1000)}s</span></div>)}</div></details> : null}{draftState && <details className="generated"><summary>Generated draft ready for alignment <span>{draftState.path}</span></summary><pre>{draftState.text}</pre></details>}</>;
 }
 
 function LyricsTipBoard() {
@@ -945,7 +951,11 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const visualDrag = useRef<{ pointerId: number; role: string; mode: "move" | "resize"; startX: number; startY: number; bounds: DOMRect; position: [number, number, number] } | null>(null);
   const visualPreviewFrameRef = useRef<HTMLDivElement>(null);
   const spectrogramLogRef = useRef<HTMLPreElement>(null);
+  const renderLogRef = useRef<HTMLPreElement>(null);
+  const spectrogramLogFollowRef = useRef(true);
+  const renderLogFollowRef = useRef(true);
   const [spectrogramLogOpen, setSpectrogramLogOpen] = useState(true);
+  const [renderLogOpen, setRenderLogOpen] = useState(true);
   const [visualDragging, setVisualDragging] = useState(false);
   const [visualPreviewSize, setVisualPreviewSize] = useState<{ width: number; height: number } | null>(null);
   const monitorWidth = Math.max(1, window.screen.width);
@@ -1144,12 +1154,19 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     return () => window.clearInterval(timer);
   }, [job?.state, setError]);
   useEffect(() => {
-    if (panel !== "visuals" || !spectrogramLogRef.current) return;
+    if (panel !== "visuals" || !spectrogramLogRef.current || !spectrogramLogFollowRef.current) return;
     const frame = window.requestAnimationFrame(() => {
       if (spectrogramLogRef.current) spectrogramLogRef.current.scrollTop = spectrogramLogRef.current.scrollHeight;
     });
     return () => window.cancelAnimationFrame(frame);
   }, [job?.log, panel]);
+  useEffect(() => {
+    if (!renderLogRef.current || !renderLogFollowRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (renderLogRef.current) renderLogRef.current.scrollTop = renderLogRef.current.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [renderJob?.log]);
   const activeSpectrogramStage = job?.state === "running" ? parseActiveSpectrogramStage(job.log) : null;
   useEffect(() => {
     if (!activeSpectrogramStage) {
@@ -1187,6 +1204,8 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     }
     setBusy("Saving spectrogram layout");
     setError("");
+    setSpectrogramLogOpen(true);
+    spectrogramLogFollowRef.current = true;
     try {
       visualSaveTimers.current.forEach((timer) => window.clearTimeout(timer));
       visualSaveTimers.current.clear();
@@ -1260,6 +1279,8 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
       return;
     }
     setError("");
+    setRenderLogOpen(true);
+    renderLogFollowRef.current = true;
     try {
       setRenderJob(await startRenderJob(song, enabledRoles));
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
@@ -1276,7 +1297,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     ? Math.max(0, (spectrogramStageClock.now - spectrogramStageClock.startedAt) / 1000)
     : 0;
   return <section className={`review-stage ${panel}-panel`}>
-    <header className="surface-header review-header"><div className="review-identity"><p className="eyebrow">Output review</p><h1>{song || "Select a song"}<span>{role?.role ?? "Select a role"}</span></h1><p>Enable renderable tracks in the table; tune an individual role from its cog. <span className="last-rendered" title={inspection?.final_rendered_at_ms ? new Date(inspection.final_rendered_at_ms).toLocaleString() : "No completed render found"}>Last rendered: {formatRenderedAt(inspection?.final_rendered_at_ms)}</span></p></div><section className={`review-render ${renderState}`} aria-label="Render selected tracks"><div className="render-status"><div className="render-status-state">{renderStatusIcon}<span>{renderStatusLabel}</span></div><strong>{enabledRoles.length} tracks enabled</strong><span className="render-status-message" title={renderStatusMessage}>{renderStatusMessage}</span></div><div className="review-render-actions"><button className="primary" type="button" onClick={() => void render()} disabled={renderState === "running" || !enabledRoles.length}>{renderState === "running" ? "Rendering in background..." : <><FileAudio size={16} /> Render enabled tracks <span className="render-duration">{formatDuration(inspection?.midi?.duration_seconds)}</span></>}</button><button className="secondary spectrogram-layout-command" type="button" onClick={() => { const initialRole = enabledVisualRoles.some((item) => item.role === visualRoleName) ? visualRoleName : enabledVisualRoles[0]?.role ?? ""; setVisualRoleName(initialRole); setPanel("visuals"); }} disabled={!hasFinishedRender || !enabledVisualRoles.length}><BarChart3 size={15} /> Spectrogram layout</button></div></section></header>
+    <header className="surface-header review-header"><div className="review-identity"><p className="eyebrow">Output review</p><h1>{song || "Select a song"}<span>{role?.role ?? "Select a role"}</span></h1><p>Enable renderable tracks in the table; tune an individual role from its cog.</p></div><div className="last-rendered" title={inspection?.final_rendered_at_ms ? new Date(inspection.final_rendered_at_ms).toLocaleString() : "No completed render found"}><span>Last rendered</span><strong>{formatRenderedAt(inspection?.final_rendered_at_ms)}</strong></div><section className={`review-render ${renderState}`} aria-label="Render selected tracks"><div className="render-status"><div className="render-status-state">{renderStatusIcon}<span>{renderStatusLabel}</span></div><strong>{enabledRoles.length} tracks enabled</strong><span className="render-status-message" title={renderStatusMessage}>{renderStatusMessage}</span></div><div className="review-render-actions"><button className="primary" type="button" onClick={() => void render()} disabled={renderState === "running" || !enabledRoles.length}>{renderState === "running" ? "Rendering in background..." : <><FileAudio size={16} /> Render enabled tracks <span className="render-duration">{formatDuration(inspection?.midi?.duration_seconds)}</span></>}</button><button className="secondary spectrogram-layout-command" type="button" onClick={() => { const initialRole = enabledVisualRoles.some((item) => item.role === visualRoleName) ? visualRoleName : enabledVisualRoles[0]?.role ?? ""; setVisualRoleName(initialRole); setPanel("visuals"); }} disabled={!hasFinishedRender || !enabledVisualRoles.length}><BarChart3 size={15} /> Spectrogram layout</button></div></section></header>
     {panel !== "overview" && <nav className="review-panel-nav" aria-label="Render audio workspace">
       <button className="secondary review-panel-back" type="button" onClick={() => setPanel("overview")}><ArrowLeft size={15} /><BarChart3 size={15} /> Output overview</button>
       {panel === "tune" && <span>Editing {role?.role ?? "the selected role"} tuning profile</span>}
@@ -1286,7 +1307,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     <section className="range-legend" aria-label="Register color legend"><strong>Register color</strong><span className="range-legend-blue">C2 low</span><span className="range-legend-green">C3 mid</span><span className="range-legend-yellow">C4 mid-high</span><span className="range-legend-orange">C5 weak</span><span className="range-legend-red">C6+ weakest</span></section>
     <ReviewTrackTable roles={inspection?.roles ?? []} selectedRole={role?.role} enabledRoles={enabledRoles} onToggleRole={toggleRenderRole} onSelectRole={onSelectRole} onTuneRole={(nextRole) => { onSelectRole(nextRole); setPanel("tune"); }} final={final} setError={setError} />
     <section className="review-stats" aria-label="Track review statistics"><table><thead><tr><th>Role</th><th>Status</th><th>Notes</th><th>MIDI</th><th>DECtalk / audible</th><th>Poly</th><th>Active loudness min / median / avg / max</th><th>Peak</th></tr></thead><tbody>{inspection?.roles.map((item) => <tr key={item.role} className={item.role === role?.role ? "selected" : ""} onClick={() => onSelectRole(item.role)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectRole(item.role); } }} tabIndex={0} role="button" aria-pressed={item.role === role?.role}><th>{item.role}</th><td>{item.status}</td><td>{item.note_count}</td><td><PitchRange value={item.midi_range} /></td><td><div className="pitch-range-stack"><PitchRange label="render" value={item.render_range} /><PitchRange label="heard" value={item.audible_range} /></div></td><td>{item.polyphony ?? "--"}</td><td>{item.loudness ? item.loudness.error ?? `${formatDb(item.loudness.minimum_dbfs)} / ${formatDb(item.loudness.median_dbfs)} / ${formatDb(item.loudness.average_dbfs)} / ${formatDb(item.loudness.maximum_dbfs)}` : "No stem"}</td><td>{formatDb(item.loudness?.peak_dbfs)}</td></tr>)}</tbody></table><div className="mix-loudness"><strong>Final mix</strong><span>{final ? final.error ?? `${formatDb(final.minimum_dbfs)} min · ${formatDb(final.median_dbfs)} median · ${formatDb(final.average_dbfs)} average · ${formatDb(final.maximum_dbfs)} max · ${formatDb(final.peak_dbfs)} peak` : "No completed mix available"}</span></div></section>
-    {renderJob && renderJob.state !== "idle" && <details className="generated review-log" open={renderJob.state !== "completed"}><summary>{renderJob.message} <span>{renderJob.selected_roles.join(", ")} · {renderJob.state === "running" ? "background job" : `exit ${renderJob.returncode ?? "--"}`}</span></summary><pre>{renderJob.log || "The renderer is starting; live compiler output will appear here."}</pre></details>}
+    {renderJob && renderJob.state !== "idle" && <details className="generated review-log render-process-log" open={renderLogOpen} onToggle={(event) => setRenderLogOpen(event.currentTarget.open)}><summary>{renderJob.message} <span>{renderJob.selected_roles.join(", ")} · {renderJob.state === "running" ? "background job" : `exit ${renderJob.returncode ?? "--"}`}</span></summary><pre ref={renderLogRef} onScroll={(event) => { const log = event.currentTarget; renderLogFollowRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 24; }}>{renderJob.log || "The renderer is starting; live compiler output will appear here."}</pre></details>}
     <section className="track-tuning" role="dialog" aria-modal="true" aria-label={`Tune ${role?.role ?? "selected role"}`}>
       <header className="tuning-modal-header"><span>Track tuning</span><strong>{role?.role ?? "Select a role"}</strong><small>Saved to this role in `settings.yaml`</small></header>
       <button className="tuning-modal-close" type="button" onClick={() => setPanel("overview")} title="Close track tuning" aria-label="Close track tuning"><X size={17} /></button>
@@ -1298,7 +1319,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
           <label className="tuning-field" title="Overrides automatic whole-octave wrapping into the configured DECTALK pitch bounds."><span>Pitch wrap <small>whole octaves</small></span><div className="tuning-input"><select value={tuning.PITCH_WRAP_SHIFT ?? "auto"} onChange={(event) => changeTuning("PITCH_WRAP_SHIFT", event.target.value === "auto" ? null : Number(event.target.value))}><option value="auto">Auto (recommended)</option><option value="-24">-24 st (2 octaves)</option><option value="-12">-12 st (1 octave)</option><option value="0">0 st (do not wrap)</option><option value="12">+12 st (1 octave)</option><option value="24">+24 st (2 octaves)</option></select></div><em>Leave on Auto unless you are intentionally overriding the safe pitch wrap.</em></label>
         </section>
         <section><h2>Level</h2>
-          <label className="tuning-field" title="Beta: replaces only the [:n?] voice command in DEC_SETUP and preserves head size plus other DECtalk directives."><span>Voice <small><b className="beta-badge">Beta</b> DECtalk command</small></span><div className="tuning-input"><select value={tuning.VOICE ?? ""} onChange={(event) => changeTuning("VOICE", event.target.value || null)}><option value="">DECtalk default</option><option value="np">[:np] Perfect Paul</option><option value="nb">[:nb] DECtalk voice</option><option value="nh">[:nh] DECtalk voice</option><option value="nd">[:nd] DECtalk voice</option><option value="nf">[:nf] DECtalk voice</option><option value="nu">[:nu] DECtalk voice</option><option value="nr">[:nr] DECtalk voice</option><option value="nw">[:nw] DECtalk voice</option><option value="nk">[:nk] DECtalk voice</option></select></div><em>Changes only the voice command. Note loudness is compensated automatically for every voice.</em></label>
+          <label className="tuning-field" title="Beta: replaces only the [:n?] voice command in DEC_SETUP and preserves head size plus other DECtalk directives."><span>Voice <small><b className="beta-badge">Beta</b> DECtalk command</small></span><div className="tuning-input"><select value={tuning.VOICE ?? ""} onChange={(event) => changeTuning("VOICE", event.target.value || null)}><option value="">DECtalk default (Perfect Paul)</option><option value="np">[:np] Perfect Paul</option><option value="nh">[:nh] Huge Harry</option><option value="nf">[:nf] Frail Frank</option><option value="nd">[:nd] Doctor Dennis</option><option value="nb">[:nb] Beautiful Betty</option><option value="nu">[:nu] Uppity Ursula</option><option value="nw">[:nw] Whispering Wendy</option><option value="nr">[:nr] Rough Rita</option><option value="nk">[:nk] Kit the Kid</option><option value="nv">[:nv] Val</option></select></div><em>Changes only the voice command. Note loudness is compensated automatically for every voice.</em></label>
           <label className="tuning-field" title="Writes [:dv hs N] into DEC_SETUP. Head size affects voice timbre and loudness; it is not a gain control."><span>Head size <small>DECTALK hs</small></span><div className="tuning-input"><input type="number" min="65" max="200" step="1" value={tuning.HEAD_SIZE ?? ""} placeholder="Set head size" onChange={(event) => changeTuning("HEAD_SIZE", event.target.value === "" ? null : Number(event.target.value))} /><output>hs</output></div><em>This engine clamps lower values to hs 65. Calibration covers hs 65 through 140.</em></label>
           <label className="tuning-field" title="Applies a constant gain to the complete rendered stem."><span>Stem gain <small>decibels</small></span><div className="tuning-input"><input type="number" min="-24" max="24" step="0.5" value={tuning.VOLUME_ADJUST_DB} onChange={(event) => changeTuning("VOLUME_ADJUST_DB", Number(event.target.value))} /><output>dB</output></div><em>0 dB leaves the stem level unchanged. Positive is louder.</em></label>
         </section>
@@ -1324,7 +1345,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
         const previewRegionHeight = (visualPreviewSize?.height ?? 360) * visualPosition[0];
         const labelParts = [options.label || item.role];
         if (options.label_show_voice) labelParts.push(item.dectalk_voice === "np" ? "Perfect Paul [:np]" : item.dectalk_voice ? `[:${item.dectalk_voice}]` : "default voice");
-        if (options.label_show_head_size) labelParts.push(item.head_size ? `hs ${item.head_size}` : "head size default");
+        if (options.label_show_head_size) labelParts.push(`hs ${item.head_size}${item.head_size_is_default ? " (default)" : ""}`);
         const unsaved = visualDirtyRoles.includes(item.role) || (!item.visual_configured && !visualSavedRoles.includes(item.role));
         return <button key={item.role} type="button" className={`visual-region${selected ? " selected" : ""}${unsaved ? " unsaved" : ""}`} title={unsaved ? `Drag ${item.role} to position it; this layout is not saved yet` : `Drag ${item.role} to position it`} onPointerDown={(event) => beginVisualDrag(event, item, "move")} onPointerMove={updateVisualDrag} onPointerUp={finishVisualDrag} onPointerCancel={finishVisualDrag} onClick={() => setVisualRoleName(item.role)} style={{ left: `${visualPosition[1] * 100}%`, top: `${visualPosition[2] * 100}%`, width: `${visualPosition[0] * 100}%`, height: `${visualPosition[0] * 100}%`, background: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${Math.max(18, visualHsb[2] / 2)}%)`, borderColor: `hsl(${visualHsb[0]} ${visualHsb[1]}% ${visualHsb[2]}%)` }}>
           <span className="visual-region-name">{item.role}</span>
@@ -1347,6 +1368,6 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
         <div className="visual-save-state" role="status" aria-live="polite">{visualSaving || visualDirtyRoles.length ? <><LoaderCircle size={14} /> Saving layout...</> : <><CircleCheck size={14} /> Layout saved automatically</>}</div>
       </div>
     </section>
-    {job && job.state !== "idle" && <details className="generated review-log spectrogram-log" open={spectrogramLogOpen} onToggle={(event) => setSpectrogramLogOpen(event.currentTarget.open)}><summary>{job.message} <span>{job.state === "running" ? "background job" : `exit ${job.returncode ?? "--"}`} - process log</span></summary><pre ref={spectrogramLogRef}>{job.log || "The generator is starting; live process output will appear here."}</pre></details>}
+    {job && job.state !== "idle" && <details className="generated review-log spectrogram-log" open={spectrogramLogOpen} onToggle={(event) => setSpectrogramLogOpen(event.currentTarget.open)}><summary>{job.message} <span>{job.state === "running" ? "background job" : `exit ${job.returncode ?? "--"}`} - process log</span></summary><pre ref={spectrogramLogRef} onScroll={(event) => { const log = event.currentTarget; spectrogramLogFollowRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 24; }}>{job.log || "The generator is starting; live process output will appear here."}</pre></details>}
   </section>;
 }

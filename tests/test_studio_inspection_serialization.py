@@ -1,29 +1,41 @@
-from pyFuncs.ChoirInspection import MidiNote, _overlap_metrics, inspect_song
-from tools.choir_studio_bridge import REPO_ROOT, _jsonable, _polyphonic_split_preview
+from pyFuncs.ChoirInspection import (
+    MidiNote,
+    MidiOverlapRegion,
+    MidiTrackInfo,
+    _overlap_metrics,
+)
+from tools.choir_studio_bridge import _jsonable
 
 
 def test_studio_serializes_computed_polyphony_and_note_counts() -> None:
-    payload = _jsonable(inspect_song(REPO_ROOT, "earthangel", include_audio=False))
-    track = next(item for item in payload["roles"] if item["role"] == "Track_06")
+    track = MidiTrackInfo(
+        index=6,
+        name="Bass Chords",
+        notes=(
+            MidiNote(0, 1000, 48, 90, 0),
+            MidiNote(0, 1000, 55, 90, 0),
+            MidiNote(200, 600, 60, 90, 0),
+        ),
+        notes_below_150ms=0,
+        max_polyphony=3,
+        overlap_regions=1,
+        total_overlap_ms=1000.0,
+        longest_overlap_ms=1000.0,
+        overlap_totals=(
+            MidiOverlapRegion(2, 600.0),
+            MidiOverlapRegion(3, 400.0),
+        ),
+        duplicate_note_spans=0,
+        warnings=(),
+    )
+    payload = _jsonable(track)
 
-    assert track["polyphony"] == 3
-    assert track["note_count"] == 1160
-    assert track["midi_track"]["note_count"] == 1160
-    assert track["notes_below_150ms"] == track["midi_track"]["notes_below_150ms"]
-    assert 0 <= track["notes_below_150ms"] <= track["note_count"]
-    assert track["midi_track"]["overlap_regions"] > 0
-    assert track["midi_track"]["overlap_totals"]
-    overlap_counts = [item["note_count"] for item in track["midi_track"]["overlap_totals"]]
+    assert payload["max_polyphony"] == 3
+    assert payload["note_count"] == 3
+    assert payload["notes_below_150ms"] == 0
+    assert payload["overlap_regions"] == 1
+    overlap_counts = [item["note_count"] for item in payload["overlap_totals"]]
     assert overlap_counts == sorted(set(overlap_counts))
-
-
-def test_earthangel_track_six_split_preview_has_three_voices() -> None:
-    preview = _polyphonic_split_preview("earthangel", "Track_06")
-
-    assert preview["splittable"] is True
-    assert preview["max_polyphony"] == 3
-    assert len(preview["lanes"]) == 3
-    assert sum(lane["note_count"] for lane in preview["lanes"]) == 1160
 
 
 def test_overlap_summary_times_each_exact_concurrency_level() -> None:

@@ -434,18 +434,16 @@ fn choir_bridge(app: AppHandle, request: Value) -> Result<Value, String> {
 }
 
 fn trim_job_log(log: String) -> String {
-    const MAX_LOG_CHARS: usize = 12_000;
-    if log.chars().count() <= MAX_LOG_CHARS {
+    const MAX_LOG_BYTES: usize = 512 * 1024;
+    const RETAINED_TAIL_BYTES: usize = 480 * 1024;
+    if log.len() <= MAX_LOG_BYTES {
         return log;
     }
-    let tail = log
-        .chars()
-        .rev()
-        .take(MAX_LOG_CHARS)
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect::<String>();
+    let mut tail_start = log.len().saturating_sub(RETAINED_TAIL_BYTES);
+    while !log.is_char_boundary(tail_start) {
+        tail_start += 1;
+    }
+    let tail = &log[tail_start..];
     let preserved_timings = log
         .lines()
         .filter(|line| {
@@ -456,7 +454,7 @@ fn trim_job_log(log: String) -> String {
     if preserved_timings.is_empty() {
         format!("... earlier generator output omitted ...\n{tail}")
     } else {
-        format!("{preserved_timings}\n... earlier generator output omitted ...\n{tail}")
+        format!("... earlier generator output omitted; timing summaries preserved below ...\n{preserved_timings}\n... recent generator output ...\n{tail}")
     }
 }
 

@@ -18,6 +18,7 @@ import yaml
 
 import pyFuncs.PhonemeProcessing as phoneme_processing
 
+from pyFuncs.DectalkDefaults import DEFAULT_DECTALK_VOICE, default_head_size
 from pyFuncs.PitchMapping import (
     DEFAULT_MAX_DECTALK_PITCH,
     DEFAULT_MIN_DECTALK_PITCH,
@@ -158,6 +159,7 @@ class RoleInspection:
     visual_current_word_use_track_color: bool
     dectalk_voice: str | None
     head_size: int | None
+    head_size_is_default: bool
     render_enabled: bool
     render_eligible: bool
     status: str
@@ -709,6 +711,8 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
         setup = str(config.get("DEC_SETUP", ""))
         voice_match = re.search(r"\[:n([a-z])\]", setup, flags=re.IGNORECASE)
         head_size_match = re.search(r"\[:dv\s+hs\s+(\d+)\]", setup, flags=re.IGNORECASE)
+        dectalk_voice = f"n{voice_match.group(1).lower()}" if voice_match else DEFAULT_DECTALK_VOICE
+        head_size = int(head_size_match.group(1)) if head_size_match else default_head_size(dectalk_voice)
         label_position = str(spectrogram.get("LABEL_POSITION", config.get("VID_LabelPosition", "top-left")))
         word_position = str(spectrogram.get("CURRENT_WORD_POSITION", config.get("VID_CurrentWordPosition", "bottom-center")))
         render_enabled = bool(config.get("RENDER_ENABLED", True))
@@ -744,8 +748,9 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
                 visual_current_word_font=str(spectrogram.get("CURRENT_WORD_FONT", "choir")),
                 visual_current_word_font_size_percent=_as_float(spectrogram.get("CURRENT_WORD_FONT_SIZE_PERCENT"), 10.0),
                 visual_current_word_use_track_color=bool(spectrogram.get("CURRENT_WORD_USE_TRACK_COLOR", False)),
-                dectalk_voice=f"n{voice_match.group(1).lower()}" if voice_match else None,
-                head_size=int(head_size_match.group(1)) if head_size_match else None,
+                dectalk_voice=dectalk_voice,
+                head_size=head_size,
+                head_size_is_default=head_size_match is None,
                 render_enabled=render_enabled,
                 render_eligible=render_eligible,
                 status=status,

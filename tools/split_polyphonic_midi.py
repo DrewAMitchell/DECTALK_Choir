@@ -218,6 +218,7 @@ def build_lane_track(
     lane: VoiceLane,
     lane_number: int,
     lane_count: int,
+    output_channel: int | None = None,
 ) -> mido.MidiTrack:
     """Build one output MIDI track with copied controls and one note voice."""
 
@@ -233,7 +234,14 @@ def build_lane_track(
         (0, -1, -1, mido.MetaMessage("track_name", name=lane_name, time=0))
     ]
     events.extend(
-        (tick, event_priority(message), order, message)
+        (
+            tick,
+            event_priority(message),
+            order,
+            message.copy(channel=output_channel)
+            if output_channel is not None and hasattr(message, "channel")
+            else message,
+        )
         for tick, order, message in analysis.passthrough_events
     )
     for note in lane.notes:
@@ -246,7 +254,7 @@ def build_lane_track(
                     "note_on",
                     note=note.note,
                     velocity=note.velocity,
-                    channel=note.channel,
+                    channel=output_channel if output_channel is not None else note.channel,
                     time=0,
                 ),
             )
@@ -260,7 +268,7 @@ def build_lane_track(
                     "note_off",
                     note=note.note,
                     velocity=note.release_velocity,
-                    channel=note.channel,
+                    channel=output_channel if output_channel is not None else note.channel,
                     time=0,
                 ),
             )
@@ -279,10 +287,22 @@ def build_lane_track(
     return output
 
 
-def clone_non_note_track(track: mido.MidiTrack) -> mido.MidiTrack:
-    """Keep conductor and other no-note tracks byte-for-byte event equivalent."""
+def clone_passthrough_track(
+    track: mido.MidiTrack,
+    stable_name: str | None = None,
+    output_channel: int | None = None,
+) -> mido.MidiTrack:
+    """Clone a track while optionally making its DAW identity explicit."""
 
-    return mido.MidiTrack(message.copy() for message in track)
+    output = mido.MidiTrack()
+    if stable_name and not track.name.strip():
+        output.append(mido.MetaMessage("track_name", name=stable_name, time=0))
+    for message in track:
+        if output_channel is not None and hasattr(message, "channel"):
+            output.append(message.copy(channel=output_channel))
+        else:
+            output.append(message.copy())
+    return output
 
 
 def note_signature(analysis: TrackAnalysis) -> Counter[tuple[int, int, int, int, int]]:
@@ -296,6 +316,7 @@ def split_midi(
     source: Path,
     output: Path,
     target_track_indices: Sequence[int] | None = None,
+    separate_track_channels: bool = True,
 ) -> list[tuple[TrackAnalysis, list[VoiceLane]]]:
     """Write a MIDI with selected source tracks split into monophonic lanes."""
 
@@ -311,9 +332,28 @@ def split_midi(
         if invalid_indices:
             raise MidiSplitError(f"MIDI track index(es) not present: {invalid_indices}.")
 
+    output_note_track_count = sum(
+        len(split_into_lanes(analysis.notes))
+        if analysis.notes and (target_indices is None or analysis.source_index in target_indices)
+        else int(bool(analysis.notes))
+        for analysis in analyses
+    )
+    channel_iterator = iter(channel for channel in range(16) if channel != 9)
+    if separate_track_channels and output_note_track_count > 15:
+        raise MidiSplitError(
+            "DAW channel separation supports at most 15 note tracks because MIDI channel 10 is reserved for percussion."
+        )
+
     for source_track, analysis in zip(source_midi.tracks, analyses):
         if not analysis.notes or (target_indices is not None and analysis.source_index not in target_indices):
-            output_midi.tracks.append(clone_non_note_track(source_track))
+            output_channel = next(channel_iterator) if separate_track_channels and analysis.notes else None
+            output_midi.tracks.append(
+                clone_passthrough_track(
+                    source_track,
+                    stable_name=analysis.source_name if analysis.notes else None,
+                    output_channel=output_channel,
+                )
+            )
             continue
 
         lanes = split_into_lanes(analysis.notes)
@@ -326,7 +366,13 @@ def split_midi(
         first_output_index = len(output_midi.tracks)
         for lane_number, lane in enumerate(lanes, start=1):
             output_midi.tracks.append(
-                build_lane_track(analysis, lane, lane_number, len(lanes))
+                build_lane_track(
+                    analysis,
+                    lane,
+                    lane_number,
+                    len(lanes),
+                    output_channel=next(channel_iterator) if separate_track_channels else None,
+                )
             )
         target_output_indices.extend(
             range(first_output_index, len(output_midi.tracks))
@@ -339,6 +385,7 @@ def split_midi(
         output,
         target_track_indices=target_track_indices,
         target_output_indices=target_output_indices if target_indices is not None else None,
+        ignore_note_channels=separate_track_channels,
     )
     return mappings
 
@@ -348,6 +395,7 @@ def verify_split(
     output: Path,
     target_track_indices: Sequence[int] | None = None,
     target_output_indices: Sequence[int] | None = None,
+    ignore_note_channels: bool = False,
 ) -> None:
     """Ensure no note was lost and targeted output note tracks are monophonic."""
 
@@ -358,13 +406,30 @@ def verify_split(
 
     source_notes = Counter()
     for analysis in source_analyses:
-        source_notes.update(note_signature(analysis))
+        source_notes.update(
+            (start, end, note, velocity, -1 if ignore_note_channels else channel)
+            for start, end, note, velocity, channel in note_signature(analysis)
+        )
     output_notes = Counter()
     for analysis in output_analyses:
-        output_notes.update(note_signature(analysis))
+        output_notes.update(
+            (start, end, note, velocity, -1 if ignore_note_channels else channel)
+            for start, end, note, velocity, channel in note_signature(analysis)
+        )
 
     if source_notes != output_notes:
         raise MidiSplitError("Verification failed: output MIDI does not preserve the source notes.")
+
+    if ignore_note_channels:
+        output_channels = [
+            {note.channel for note in analysis.notes}
+            for analysis in output_analyses
+            if analysis.notes
+        ]
+        if any(len(channels) != 1 for channels in output_channels) or len(
+            {next(iter(channels)) for channels in output_channels}
+        ) != len(output_channels):
+            raise MidiSplitError("Verification failed: DAW output tracks do not use unique MIDI channels.")
 
     if target_output_indices is not None:
         polyphonic_tracks = [
@@ -454,6 +519,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="Only split this zero-based source track index; all other tracks pass through unchanged.",
     )
+    parser.add_argument(
+        "--preserve-channels",
+        action="store_true",
+        help="Keep source MIDI channels instead of assigning one channel per output track.",
+    )
     return parser.parse_args()
 
 
@@ -479,7 +549,12 @@ def main() -> int:
             if args.track_index is not None
             else None
         )
-        mappings = split_midi(source, output, target_track_indices=target_track_indices)
+        mappings = split_midi(
+            source,
+            output,
+            target_track_indices=target_track_indices,
+            separate_track_channels=not args.preserve_channels,
+        )
     except (OSError, ValueError, MidiSplitError) as error:
         raise SystemExit(f"MIDI split failed: {error}") from error
 

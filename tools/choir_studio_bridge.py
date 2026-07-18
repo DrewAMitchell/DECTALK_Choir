@@ -9,6 +9,7 @@ same inspector/drafter/aligner that the command-line workflow uses.
 from __future__ import annotations
 
 import contextlib
+import copy
 from dataclasses import fields, is_dataclass
 import io
 import json
@@ -1074,14 +1075,80 @@ def _safe_midi_filename(value: object) -> str:
     return filename
 
 
+def _append_split_lane_roles(song: str, source_role: str, lanes: list[dict[str, Any]]) -> list[str]:
+    if len(lanes) < 2:
+        return []
+    song_dir, settings = load_settings(song)
+    tracks = settings.get("Tracks") or {}
+    source_settings = tracks.get(source_role)
+    if not isinstance(source_settings, dict):
+        raise BridgeError(f"Role {source_role!r} is not configured for split lane creation.")
+    used = set(str(name) for name in tracks)
+    additions: dict[str, dict[str, Any]] = {}
+    for lane in lanes[1:]:
+        lane_number = int(lane["number"])
+        role_name = _unique_role_name(f"{source_role}_Voice_{lane_number}", lane_number, used)
+        role_settings = copy.deepcopy(source_settings)
+        role_settings["TRACK_FILENAME"] = str(lane["name"])
+        role_settings["LYRICS_FILENAME"] = role_name
+        role_settings["RENDER_ENABLED"] = False
+        role_settings["SPLIT_SOURCE_ROLE"] = source_role
+        role_settings.pop("SPECTROGRAM", None)
+        additions[role_name] = role_settings
+
+    settings_path = song_dir / "settings.yaml"
+    text = settings_path.read_text(encoding="utf-8")
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(keepends=True)
+    tracks_index = next((index for index, line in enumerate(lines) if re.match(r"^Tracks:\s*(?:#.*)?(?:\r?\n)?$", line)), None)
+    if tracks_index is None:
+        raise BridgeError("settings.yaml must define a Tracks mapping before adding split voices.")
+    section_end = next((index for index in range(tracks_index + 1, len(lines)) if re.match(r"^\S", lines[index])), len(lines))
+    rendered = yaml.safe_dump(additions, sort_keys=False, allow_unicode=False, default_flow_style=False)
+    nested = "".join(f"  {line}{newline}" for line in rendered.splitlines())
+    if section_end and not lines[section_end - 1].endswith(("\n", "\r")):
+        lines[section_end - 1] += newline
+    lines.insert(section_end, nested)
+    temporary = settings_path.with_suffix(".yaml.tmp")
+    temporary.write_text("".join(lines), encoding="utf-8", newline="")
+    os.replace(temporary, settings_path)
+    return list(additions)
+
+
+def _remove_split_lane_roles(song: str, source_role: str) -> None:
+    song_dir, settings = load_settings(song)
+    generated_roles = {
+        str(role)
+        for role, values in (settings.get("Tracks") or {}).items()
+        if isinstance(values, dict) and values.get("SPLIT_SOURCE_ROLE") == source_role
+    }
+    if not generated_roles:
+        return
+    settings_path = song_dir / "settings.yaml"
+    lines = settings_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    ranges: list[tuple[int, int]] = []
+    for index, line in enumerate(lines):
+        match = re.match(r"^  ([^:#][^:]*):\s*(?:#.*)?(?:\r?\n)?$", line)
+        if not match or match.group(1).strip() not in generated_roles:
+            continue
+        end = next((cursor for cursor in range(index + 1, len(lines)) if re.match(r"^(?:  \S|\S)", lines[cursor])), len(lines))
+        ranges.append((index, end))
+    for start, end in reversed(ranges):
+        del lines[start:end]
+    temporary = settings_path.with_suffix(".yaml.tmp")
+    temporary.write_text("".join(lines), encoding="utf-8", newline="")
+    os.replace(temporary, settings_path)
+
+
 def _export_polyphonic_split(
     song: str,
     role: str,
     filename: object,
     replace_source: bool,
     confirm_overwrite: bool,
+    separate_track_channels: bool,
 ) -> dict[str, Any]:
-    """Split one configured track, preserving every other source MIDI track."""
+    """Split one configured track while preserving every source note and onset."""
 
     preview = _polyphonic_split_preview(song, role)
     if not preview["splittable"]:
@@ -1089,11 +1156,9 @@ def _export_polyphonic_split(
 
     source = Path(preview["source_path"])
     if replace_source:
-        output = source.with_name(f".{source.stem}.split-{uuid.uuid4().hex}.mid")
+        output = source.with_name(f".{source.stem}.split-{uuid.uuid4().hex}.tmp")
     else:
-        output = source.parent / _safe_midi_filename(filename)
-        if output.resolve() == source.resolve():
-            raise BridgeError("Use Replace working MIDI to update the active source safely.")
+        output = outputs_directory(REPO_ROOT / "songs" / song) / "midi_exports" / _safe_midi_filename(filename)
         if output.exists() and not confirm_overwrite:
             raise BridgeError(f"{output.name} already exists. Confirm overwrite or choose another filename.")
 
@@ -1101,13 +1166,23 @@ def _export_polyphonic_split(
     summary = output.with_name(f"{output.stem}_split_summary.txt")
     backup: Path | None = None
     replaced = False
+    created_roles: list[str] = []
     try:
-        mappings = split_midi(source, output, target_track_indices=[int(preview["track_index"])])
+        mappings = split_midi(
+            source,
+            output,
+            target_track_indices=[int(preview["track_index"])],
+            separate_track_channels=separate_track_channels,
+        )
         if replace_source:
-            backup = source.with_name(f"{source.name}.bak")
-            if not backup.exists():
-                shutil.copy2(source, backup)
-            os.replace(output, source)
+            backup = source.with_name(f"{source.name}.before-split-{uuid.uuid4().hex[:8]}.bak")
+            shutil.copy2(source, backup)
+            created_roles = _append_split_lane_roles(song, role, preview["lanes"])
+            try:
+                os.replace(output, source)
+            except OSError:
+                _remove_split_lane_roles(song, role)
+                raise
             output = source
             replaced = True
             summary = source.with_name(f"{source.stem}_split_summary.txt")
@@ -1137,7 +1212,47 @@ def _export_polyphonic_split(
         "replaced_source": replace_source,
         "lanes": preview["lanes"],
         "warning": summary_warning,
+        "created_roles": created_roles,
     }
+
+
+def _restore_polyphonic_split_backup(song: str, source_role: str, backup_value: object) -> dict[str, Any]:
+    inspection = inspect_song(REPO_ROOT, song)
+    if not inspection.midi_path:
+        raise BridgeError("The song has no working MIDI to restore.")
+    source = Path(inspection.midi_path).resolve()
+    backup = Path(str(backup_value or "")).resolve()
+    legacy_backup = source.with_name(f"{source.name}.bak")
+    valid_named_backup = (
+        backup.parent == source.parent
+        and backup.name.startswith(f"{source.name}.before-split-")
+        and backup.suffix.lower() == ".bak"
+    )
+    if backup != legacy_backup.resolve() and not valid_named_backup:
+        raise BridgeError("The requested MIDI backup does not belong to this song.")
+    if not backup.is_file():
+        raise BridgeError("The MIDI backup is no longer available.")
+
+    recovery_directory = REPO_ROOT / "songs" / song / "outputs" / "recovery"
+    recovery_directory.mkdir(parents=True, exist_ok=True)
+    displaced = recovery_directory / f"{source.stem}.replaced-split-{uuid.uuid4().hex[:8]}{source.suffix}"
+    temporary = source.with_name(f".{source.stem}.restore-{uuid.uuid4().hex}.tmp")
+    try:
+        shutil.copy2(source, displaced)
+        shutil.copy2(backup, temporary)
+        mido.MidiFile(temporary)
+        os.replace(temporary, source)
+        _remove_split_lane_roles(song, source_role)
+        _, settings = load_settings(song)
+        for affected_role in (settings.get("Tracks") or {}):
+            _, _, _, report_path = _role_paths(song, str(affected_role))
+            report_path.unlink(missing_ok=True)
+            sidecar = lyrics_directory(REPO_ROOT / "songs" / song) / ".alignment" / f"{affected_role}.json"
+            sidecar.unlink(missing_ok=True)
+    except (OSError, EOFError, ValueError) as error:
+        temporary.unlink(missing_ok=True)
+        raise BridgeError(f"Could not restore the MIDI backup: {error}") from error
+    return {"path": str(source), "preserved_split_path": str(displaced)}
 
 
 def _write_candidate_alignment(song: str, role: str, report: dict[str, Any], text: str) -> dict[str, Any]:
@@ -1437,6 +1552,8 @@ def handle(request: dict[str, Any]) -> Any:
         return _spectrogram_video_settings(song)
     if command == "update_spectrogram_video_settings":
         return _update_spectrogram_video_settings(song, request.get("intermediate_animation_mode"))
+    if command == "update_render_enabled_roles":
+        return _update_render_enabled_roles(song, request.get("roles"))
     if command == "import_dectalk_track":
         return _import_dectalk_track(song, request.get("role"), request.get("text"))
     role = _role(song, request.get("role"))
@@ -1446,8 +1563,6 @@ def handle(request: dict[str, Any]) -> Any:
         return _track_tuning(song, role)
     if command == "update_track_tuning":
         return _update_track_tuning(song, role, request.get("values"))
-    if command == "update_render_enabled_roles":
-        return _update_render_enabled_roles(song, request.get("roles"))
     if command == "read_transcript":
         return _read_source(song, role)
     if command == "save_transcript":
@@ -1475,7 +1590,10 @@ def handle(request: dict[str, Any]) -> Any:
             request.get("filename"),
             request.get("replace_source") is True,
             request.get("confirm_overwrite") is True,
+            request.get("separate_track_channels") is not False,
         )
+    if command == "restore_polyphonic_split_backup":
+        return _restore_polyphonic_split_backup(song, role, request.get("backup_path"))
     if command == "apply_alignment":
         return _apply_alignment(song, role, request.get("text"))
     if command == "resize_alignment":

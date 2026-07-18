@@ -53,3 +53,38 @@ def test_targeted_split_preserves_source_role_name_and_notes(tmp_path: Path) -> 
         "Lead",
     ]
     assert [len(parse_track(track, index).notes) for index, track in enumerate(result.tracks)] == [0, 2, 1, 1]
+
+
+def test_targeted_split_gives_unnamed_tracks_stable_daw_identities(tmp_path: Path) -> None:
+    source = tmp_path / "unnamed.mid"
+    output = tmp_path / "unnamed_split.mid"
+    midi = mido.MidiFile(type=1, ticks_per_beat=96)
+    midi.tracks.append(mido.MidiTrack([mido.MetaMessage("set_tempo", tempo=500_000, time=0)]))
+    for track_index, pitches in enumerate(((60,), (48, 55), (67,)), start=1):
+        track = mido.MidiTrack()
+        track.append(mido.Message("program_change", channel=0, program=track_index, time=0))
+        for pitch in pitches:
+            track.append(mido.Message("note_on", channel=0, note=pitch, velocity=80, time=0))
+        for pitch_index, pitch in enumerate(pitches):
+            track.append(mido.Message("note_off", channel=0, note=pitch, velocity=0, time=96 if pitch_index == 0 else 0))
+        track.append(mido.MetaMessage("end_of_track", time=0))
+        midi.tracks.append(track)
+    midi.save(source)
+
+    split_midi(source, output, target_track_indices=[2])
+
+    result = mido.MidiFile(output)
+    assert [track.name for track in result.tracks] == [
+        "",
+        "Track 01",
+        "Track 02",
+        "Track 02 - Voice 2",
+        "Track 03",
+    ]
+    note_tracks = [
+        parse_track(track, index)
+        for index, track in enumerate(result.tracks)
+        if parse_track(track, index).notes
+    ]
+    assert [len(analysis.notes) for analysis in note_tracks] == [1, 1, 1, 1]
+    assert len({analysis.notes[0].channel for analysis in note_tracks}) == len(note_tracks)

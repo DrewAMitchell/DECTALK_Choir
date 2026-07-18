@@ -10,6 +10,7 @@ from pyFuncs.spectrogramAnimation import (
     _compress_intermediate_animation,
     _intermediate_animation_mode,
     _load_word_cues,
+    _track_label,
 )
 from tools.choir_studio_bridge import _replace_role_mapping, _replace_top_level_mapping, _word_cues_from_report
 
@@ -88,6 +89,17 @@ def test_spectrogram_video_policy_defaults_to_cleanup_and_uses_distribution_crf(
     assert _intermediate_animation_mode({"spectrogramVideo": {"intermediateAnimationMode": "compress"}}) == "compress"
     assert _intermediate_animation_mode({"spectrogramVideo": {"intermediateAnimationMode": "keep"}}) == "keep"
     assert FINAL_VIDEO_CRF == 23
+
+
+def test_spectrogram_label_shows_builtin_head_size_when_not_overridden():
+    visual = {
+        "LABEL": "Bass",
+        "LABEL_SHOW_HEAD_SIZE": True,
+    }
+
+    assert _track_label("Bass", {"DEC_SETUP": "[:np]"}, visual) == "Bass | hs 100 (default)"
+    assert _track_label("Bass", {"DEC_SETUP": "[:nh]"}, visual) == "Bass | hs 115 (default)"
+    assert _track_label("Bass", {"DEC_SETUP": "[:nh][:dv hs 130]"}, visual) == "Bass | hs 130"
 
 
 def test_intermediate_cleanup_is_opt_in_to_success_policy(tmp_path: Path):

@@ -47,6 +47,7 @@ export type Role = {
   visual_current_word_use_track_color: boolean;
   dectalk_voice: string | null;
   head_size: number | null;
+  head_size_is_default: boolean;
   render_enabled: boolean;
   render_eligible: boolean;
   source_sync_state: "absent" | "pending" | "synced";
