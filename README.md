@@ -65,6 +65,8 @@ Example:
 
 Outputs are saved to `songs/<Song>/outputs/`. One folder for each track is generated to save partial outputs. **_tracks** contains each individual track's compiled output, **_animation** contains generated spectrogram animations, and **_finished** contains the final compiled audio and video.
 
+Align can also enable **Phoneme output** for an individual track. Its next audio render writes a reusable, timing-complete DECTalk command to `outputs/_phonemes/<Track>.txt`. Phrase gaps become timed rests, making an imported phoneme track editable in Studio and exportable again after its alignment is corrected. Normal-speech words (`~word`) and overlapping phrase timelines cannot be represented faithfully in one serial command, so those tracks fail export with a clear render error instead of producing misleading data.
+
 Three example songs are included. Choir Studio can create a complete starting workspace directly from another MIDI file.
 
 ## MIDI

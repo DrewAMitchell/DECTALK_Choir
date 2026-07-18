@@ -160,6 +160,7 @@ class RoleInspection:
     dectalk_voice: str | None
     head_size: int | None
     head_size_is_default: bool
+    export_phoneme_string: bool
     render_enabled: bool
     render_eligible: bool
     status: str
@@ -751,6 +752,7 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
                 dectalk_voice=dectalk_voice,
                 head_size=head_size,
                 head_size_is_default=head_size_match is None,
+                export_phoneme_string=bool(config.get("EXPORT_PHONEME_STRING", False)),
                 render_enabled=render_enabled,
                 render_eligible=render_eligible,
                 status=status,

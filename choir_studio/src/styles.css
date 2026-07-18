@@ -386,6 +386,8 @@ button:disabled { cursor: wait; opacity: .55; }
 .align-surface { min-width: 0; padding-inline: 0; }
 .align-workspace { width: 100%; min-width: 0; min-height: 0; overflow: hidden; }
 .align-workspace > .midi-transport { flex: 0 0 auto; min-width: 0; border-right: 0; border-left: 0; }
+.phoneme-export-control { display: inline-flex; flex: 0 0 auto; min-height: 30px; align-items: center; gap: 5px; padding: 0 7px; border: 1px solid #3f514e; border-radius: 3px; background: #182220; color: #b3c2be; font-size: 10px; white-space: nowrap; cursor: pointer; }.phoneme-export-control:hover { border-color: #688d82; color: #edf6f3; }.phoneme-export-control input { width: 13px; height: 13px; margin: 0; accent-color: #60d4ae; cursor: pointer; }
+:root[data-theme="light"] .phoneme-export-control { border-color: #b5c7c1; background: #f8fbfa; color: #3e5b52; }:root[data-theme="light"] .phoneme-export-control:hover { border-color: #75a494; color: #193b30; }
 .align-roll-shell { position: relative; display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; min-width: 0; min-height: 0; overflow: hidden; padding-inline: 2%; }
 .align-phrase-toolbar { flex: 0 0 clamp(46px, 9vh, 52px); min-width: 0; overflow: hidden; border: 1px solid #2d383a; border-bottom: 0; background: #192223; }
 .align-phrase-toolbar .phrase-workbench { position: relative; height: 100%; min-height: 0; flex-wrap: nowrap; gap: 8px; overflow: hidden; padding: 4px 10px; }

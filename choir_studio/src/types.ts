@@ -48,6 +48,7 @@ export type Role = {
   dectalk_voice: string | null;
   head_size: number | null;
   head_size_is_default: boolean;
+  export_phoneme_string: boolean;
   render_enabled: boolean;
   render_eligible: boolean;
   source_sync_state: "absent" | "pending" | "synced";

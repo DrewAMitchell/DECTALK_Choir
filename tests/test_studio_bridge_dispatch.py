@@ -48,3 +48,22 @@ def test_new_dectalk_song_dispatches_before_existing_song_validation(monkeypatch
     )
 
     assert result == {"song": "NewSong", "role": "Lead", "text": "[dah<300,12>]"}
+
+
+def test_phoneme_export_setting_dispatches_for_valid_role(monkeypatch) -> None:
+    monkeypatch.setattr(bridge, "_song_name", lambda value: "Example")
+    monkeypatch.setattr(bridge, "_role", lambda song, value: "Lead")
+    monkeypatch.setattr(
+        bridge,
+        "_update_phoneme_string_export",
+        lambda song, role, enabled: {"song": song, "role": role, "enabled": enabled},
+    )
+
+    result = bridge.handle({
+        "command": "update_phoneme_string_export",
+        "song": "Example",
+        "role": "Lead",
+        "enabled": True,
+    })
+
+    assert result == {"song": "Example", "role": "Lead", "enabled": True}

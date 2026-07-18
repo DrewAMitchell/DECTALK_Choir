@@ -29,6 +29,7 @@ from pyFuncs.AudioSafety import (
 )
 from pyFuncs.AudioTiming import OUTPUT_LEAD_IN_MS
 from pyFuncs.DectalkErrorDetection import contains_command_error, create_command_error_reference
+from pyFuncs.DectalkStringExport import DectalkStringExportError, build_dectalk_phoneme_string
 from pyFuncs.SongPaths import has_lyric_content, render_lyrics_path
 
 # Make sure song is specified
@@ -826,6 +827,26 @@ for fooPartName in partNamesToOutput:
 		forceCompiledLineDuration(fooCompiledLyrics[-1], lineDurationOverrideMs, fooPartName)
 
 	compiledLyrics[fooPartName] = fooCompiledLyrics
+
+
+phonemeExportDir = Path(songOutputDir) / "_phonemes"
+for fooPartName in partNamesToOutput:
+	trackSettings = settings_yaml['Tracks'][fooPartName]
+	if not isEnabled(trackSettings.get('EXPORT_PHONEME_STRING', False)):
+		continue
+	try:
+		exportedPhonemes = build_dectalk_phoneme_string(
+			compiledLyrics[fooPartName],
+			trackSettings['DEC_SETUP'],
+			lambda noteValue: getDectalkPitch(noteValue, 0),
+		)
+	except DectalkStringExportError as error:
+		print(f"ERROR: Could not export {fooPartName} phoneme string: {error}")
+		exit(1)
+	phonemeExportDir.mkdir(parents=True, exist_ok=True)
+	phonemeExportPath = phonemeExportDir / f"{fooPartName}.txt"
+	phonemeExportPath.write_text(exportedPhonemes, encoding="utf-8")
+	print(f"{fooPartName} phoneme string:{phonemeExportPath}")
 
 # Display lyrics over data
 if '-plt' in sys.argv[1]:

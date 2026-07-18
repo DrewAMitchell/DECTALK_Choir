@@ -472,6 +472,18 @@ def _update_render_enabled_roles(song: str, requested_roles: object) -> dict[str
     return {"settings_path": str(settings_path), "enabled_roles": selected_roles}
 
 
+def _update_phoneme_string_export(song: str, role: str, enabled: object) -> dict[str, Any]:
+    if not isinstance(enabled, bool):
+        raise BridgeError("Phoneme string export must be enabled or disabled.")
+    song_dir, _ = load_settings(song)
+    settings_path = song_dir / "settings.yaml"
+    _replace_role_setting(settings_path, role, "EXPORT_PHONEME_STRING", enabled)
+    output_path = outputs_directory(song_dir) / "_phonemes" / f"{role}.txt"
+    if not enabled:
+        output_path.unlink(missing_ok=True)
+    return {"settings_path": str(settings_path), "enabled": enabled, "output_path": str(output_path)}
+
+
 def _visual_triplet(value: object, label: str, lower: float, upper: float) -> list[float]:
     if not isinstance(value, list) or len(value) != 3:
         raise BridgeError(f"{label} must contain exactly three numeric values.")
@@ -1727,6 +1739,8 @@ def handle(request: dict[str, Any]) -> Any:
         return _track_tuning(song, role)
     if command == "update_track_tuning":
         return _update_track_tuning(song, role, request.get("values"))
+    if command == "update_phoneme_string_export":
+        return _update_phoneme_string_export(song, role, request.get("enabled"))
     if command == "read_transcript":
         return _read_source(song, role)
     if command == "save_transcript":

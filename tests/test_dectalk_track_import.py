@@ -152,6 +152,28 @@ def test_bridge_import_rolls_back_midi_settings_and_lyrics_on_alignment_failure(
     assert not (inputs / "lyrics" / "Failed Voice.transcript.txt").exists()
 
 
+def test_bridge_persists_phoneme_export_and_removes_disabled_stale_file(tmp_path, monkeypatch):
+    root = tmp_path / "repo"
+    song_dir = root / "songs" / "ExportSong"
+    (song_dir / "outputs" / "_phonemes").mkdir(parents=True)
+    settings_path = song_dir / "settings.yaml"
+    settings_path.write_text("Tracks:\n  Lead:\n    TRACK_FILENAME: Lead\n", encoding="utf-8")
+    stale = song_dir / "outputs" / "_phonemes" / "Lead.txt"
+    stale.write_text("stale", encoding="utf-8")
+    monkeypatch.setattr(bridge, "REPO_ROOT", root)
+    monkeypatch.setattr(assistant, "REPO_ROOT", root)
+
+    enabled = bridge._update_phoneme_string_export("ExportSong", "Lead", True)
+    assert enabled["enabled"] is True
+    assert yaml.safe_load(settings_path.read_text(encoding="utf-8"))["Tracks"]["Lead"]["EXPORT_PHONEME_STRING"] is True
+    assert stale.is_file()
+
+    disabled = bridge._update_phoneme_string_export("ExportSong", "Lead", False)
+    assert disabled["enabled"] is False
+    assert yaml.safe_load(settings_path.read_text(encoding="utf-8"))["Tracks"]["Lead"]["EXPORT_PHONEME_STRING"] is False
+    assert not stale.exists()
+
+
 def test_bridge_creates_one_track_song_from_dectalk_string(tmp_path, monkeypatch):
     root = tmp_path / "repo"
     monkeypatch.setattr(bridge, "REPO_ROOT", root)
