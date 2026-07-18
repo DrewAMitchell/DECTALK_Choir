@@ -106,6 +106,7 @@ def _jsonable(value: Any) -> Any:
             result["note_count"] = value.note_count
         elif isinstance(value, RoleInspection):
             result["note_count"] = value.note_count
+            result["notes_below_150ms"] = value.notes_below_150ms
             result["polyphony"] = value.polyphony
         return result
     if isinstance(value, dict):

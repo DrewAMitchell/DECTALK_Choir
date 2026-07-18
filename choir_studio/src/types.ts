@@ -11,6 +11,7 @@ export type MidiTrack = {
   name: string;
   notes: MidiNote[];
   note_count: number;
+  notes_below_150ms: number;
   min_pitch: number | null;
   max_pitch: number | null;
   max_polyphony: number;
@@ -53,6 +54,7 @@ export type Role = {
   render_range: string;
   audible_range: string;
   note_count: number;
+  notes_below_150ms: number;
   polyphony: number | null;
   status: string;
   details: string[];

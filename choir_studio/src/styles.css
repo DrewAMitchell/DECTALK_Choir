@@ -387,10 +387,13 @@ button:disabled { cursor: wait; opacity: .55; }
 .review-track-table .review-col-controls { width: 88px; }
 .review-track-table .review-col-role { width: calc(var(--track-rail-width) - 88px); }
 .review-track-table .review-col-status { width: 140px; }
+.review-track-table .review-col-short { width: 7%; }
 .review-track-table .review-col-midi { width: 150px; }
 .review-track-table .review-col-pitch { width: 220px; }
 .review-track-table .review-col-peak { width: 80px; }
 .review-track-table th, .review-track-table td { overflow-wrap: anywhere; }
+.review-track-table .review-short-note-count { color: #d8e4e0; font-variant-numeric: tabular-nums; text-align: right; }
+:root[data-theme="light"] .review-track-table .review-short-note-count { color: #263f37; }
 
 @media (max-height: 600px) {
   .align-phrase-toolbar { flex-basis: 46px; }

@@ -9,6 +9,8 @@ def test_studio_serializes_computed_polyphony_and_note_counts() -> None:
     assert track["polyphony"] == 3
     assert track["note_count"] == 1160
     assert track["midi_track"]["note_count"] == 1160
+    assert track["notes_below_150ms"] == track["midi_track"]["notes_below_150ms"]
+    assert 0 <= track["notes_below_150ms"] <= track["note_count"]
     assert track["midi_track"]["overlap_regions"] > 0
     assert track["midi_track"]["overlap_totals"]
     overlap_counts = [item["note_count"] for item in track["midi_track"]["overlap_totals"]]

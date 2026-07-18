@@ -37,6 +37,9 @@ from pyFuncs.SongPaths import (
 )
 
 
+SHORT_NOTE_THRESHOLD_MS = 150.0
+
+
 @dataclass(frozen=True)
 class MidiNote:
     """One paired MIDI note, represented in absolute ticks."""
@@ -63,6 +66,7 @@ class MidiTrackInfo:
     index: int
     name: str
     notes: tuple[MidiNote, ...]
+    notes_below_150ms: int
     max_polyphony: int
     overlap_regions: int
     total_overlap_ms: float
@@ -162,6 +166,10 @@ class RoleInspection:
     @property
     def note_count(self) -> int:
         return self.midi_track.note_count if self.midi_track else 0
+
+    @property
+    def notes_below_150ms(self) -> int:
+        return self.midi_track.notes_below_150ms if self.midi_track else 0
 
     @property
     def polyphony(self) -> int | None:
@@ -386,6 +394,11 @@ def inspect_midi(path: Path) -> MidiSummary:
                 index=index,
                 name=name,
                 notes=notes,
+                notes_below_150ms=sum(
+                    0 < tick_to_ms(note.end_tick) - tick_to_ms(note.start_tick)
+                    < SHORT_NOTE_THRESHOLD_MS
+                    for note in notes
+                ),
                 max_polyphony=_max_polyphony(overlap_notes),
                 overlap_regions=overlap_regions,
                 total_overlap_ms=total_overlap_ms,
