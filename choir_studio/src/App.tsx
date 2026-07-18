@@ -836,6 +836,13 @@ function formatDb(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)} dBFS` : "--";
 }
 
+function formatRenderedAt(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "Never";
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit",
+  }).format(new Date(value));
+}
+
 function formatDuration(seconds: number | undefined) {
   const total = Math.max(0, Math.round(seconds ?? 0));
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
@@ -937,6 +944,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const tuningCache = useRef(new Map<string, TrackTuning>());
   const visualDrag = useRef<{ pointerId: number; role: string; mode: "move" | "resize"; startX: number; startY: number; bounds: DOMRect; position: [number, number, number] } | null>(null);
   const visualPreviewFrameRef = useRef<HTMLDivElement>(null);
+  const spectrogramLogRef = useRef<HTMLPreElement>(null);
   const [visualDragging, setVisualDragging] = useState(false);
   const [visualPreviewSize, setVisualPreviewSize] = useState<{ width: number; height: number } | null>(null);
   const monitorWidth = Math.max(1, window.screen.width);
@@ -1134,6 +1142,13 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     }, 750);
     return () => window.clearInterval(timer);
   }, [job?.state, setError]);
+  useEffect(() => {
+    if (panel !== "visuals" || !spectrogramLogRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (spectrogramLogRef.current) spectrogramLogRef.current.scrollTop = spectrogramLogRef.current.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [job?.log, panel]);
   const activeSpectrogramStage = job?.state === "running" ? parseActiveSpectrogramStage(job.log) : null;
   useEffect(() => {
     if (!activeSpectrogramStage) {
@@ -1260,7 +1275,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     ? Math.max(0, (spectrogramStageClock.now - spectrogramStageClock.startedAt) / 1000)
     : 0;
   return <section className={`review-stage ${panel}-panel`}>
-    <header className="surface-header review-header"><div className="review-identity"><p className="eyebrow">Output review</p><h1>{song || "Select a song"}<span>{role?.role ?? "Select a role"}</span></h1><p>Enable renderable tracks in the table; tune an individual role from its cog.</p></div><section className={`review-render ${renderState}`} aria-label="Render selected tracks"><div className="render-status"><div className="render-status-state">{renderStatusIcon}<span>{renderStatusLabel}</span></div><strong>{enabledRoles.length} tracks enabled</strong><span className="render-status-message" title={renderStatusMessage}>{renderStatusMessage}</span></div><div className="review-render-actions"><button className="primary" type="button" onClick={() => void render()} disabled={renderState === "running" || !enabledRoles.length}>{renderState === "running" ? "Rendering in background..." : <><FileAudio size={16} /> Render enabled tracks <span className="render-duration">{formatDuration(inspection?.midi?.duration_seconds)}</span></>}</button><button className="secondary spectrogram-layout-command" type="button" onClick={() => { const initialRole = enabledVisualRoles.some((item) => item.role === visualRoleName) ? visualRoleName : enabledVisualRoles[0]?.role ?? ""; setVisualRoleName(initialRole); setPanel("visuals"); }} disabled={!hasFinishedRender || !enabledVisualRoles.length}><BarChart3 size={15} /> Spectrogram layout</button></div></section></header>
+    <header className="surface-header review-header"><div className="review-identity"><p className="eyebrow">Output review</p><h1>{song || "Select a song"}<span>{role?.role ?? "Select a role"}</span></h1><p>Enable renderable tracks in the table; tune an individual role from its cog. <span className="last-rendered" title={inspection?.final_rendered_at_ms ? new Date(inspection.final_rendered_at_ms).toLocaleString() : "No completed render found"}>Last rendered: {formatRenderedAt(inspection?.final_rendered_at_ms)}</span></p></div><section className={`review-render ${renderState}`} aria-label="Render selected tracks"><div className="render-status"><div className="render-status-state">{renderStatusIcon}<span>{renderStatusLabel}</span></div><strong>{enabledRoles.length} tracks enabled</strong><span className="render-status-message" title={renderStatusMessage}>{renderStatusMessage}</span></div><div className="review-render-actions"><button className="primary" type="button" onClick={() => void render()} disabled={renderState === "running" || !enabledRoles.length}>{renderState === "running" ? "Rendering in background..." : <><FileAudio size={16} /> Render enabled tracks <span className="render-duration">{formatDuration(inspection?.midi?.duration_seconds)}</span></>}</button><button className="secondary spectrogram-layout-command" type="button" onClick={() => { const initialRole = enabledVisualRoles.some((item) => item.role === visualRoleName) ? visualRoleName : enabledVisualRoles[0]?.role ?? ""; setVisualRoleName(initialRole); setPanel("visuals"); }} disabled={!hasFinishedRender || !enabledVisualRoles.length}><BarChart3 size={15} /> Spectrogram layout</button></div></section></header>
     {panel !== "overview" && <nav className="review-panel-nav" aria-label="Render audio workspace">
       <button className="secondary review-panel-back" type="button" onClick={() => setPanel("overview")}><ArrowLeft size={15} /><BarChart3 size={15} /> Output overview</button>
       {panel === "tune" && <span>Editing {role?.role ?? "the selected role"} tuning profile</span>}
@@ -1331,6 +1346,6 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
         <div className="visual-save-state" role="status" aria-live="polite">{visualSaving || visualDirtyRoles.length ? <><LoaderCircle size={14} /> Saving layout...</> : <><CircleCheck size={14} /> Layout saved automatically</>}</div>
       </div>
     </section>
-    {job && job.state !== "idle" && <details className="generated review-log spectrogram-log" open><summary>{job.message} <span>{job.state === "running" ? "background job" : `exit ${job.returncode ?? "--"}`} - process log</span></summary><pre>{job.log || "The generator is starting; live process output will appear here."}</pre></details>}
+    {job && job.state !== "idle" && <details className="generated review-log spectrogram-log" open><summary>{job.message} <span>{job.state === "running" ? "background job" : `exit ${job.returncode ?? "--"}`} - process log</span></summary><pre ref={spectrogramLogRef}>{job.log || "The generator is starting; live process output will appear here."}</pre></details>}
   </section>;
 }

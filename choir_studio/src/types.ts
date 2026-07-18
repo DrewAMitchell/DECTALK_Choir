@@ -84,6 +84,7 @@ export type SongInspection = {
   } | null;
   final_mix: string;
   final_loudness: Loudness | null;
+  final_rendered_at_ms: number | null;
   animation_path: string | null;
   animation_exists: boolean;
   roles: Role[];

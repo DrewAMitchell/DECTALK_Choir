@@ -188,6 +188,7 @@ class SongInspection:
     output_dir: Path
     final_mix: Path
     final_loudness: AudioLoudness | None
+    final_rendered_at_ms: float | None = None
     animation_path: Path | None = None
     animation_exists: bool = False
     warnings: tuple[str, ...] = ()
@@ -753,6 +754,10 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
         )
 
     final_loudness = measure_audio(final_mix) if include_audio and final_mix.is_file() else None
+    try:
+        final_rendered_at_ms = final_mix.stat().st_mtime * 1000 if final_mix.is_file() else None
+    except OSError:
+        final_rendered_at_ms = None
     animation_path = output_dir / "_finished" / f"{song_name}.mp4"
     return SongInspection(
         repo_root=repo_root,
@@ -765,6 +770,7 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
         output_dir=output_dir,
         final_mix=final_mix,
         final_loudness=final_loudness,
+        final_rendered_at_ms=final_rendered_at_ms,
         animation_path=animation_path,
         animation_exists=animation_path.is_file(),
         warnings=tuple(dict.fromkeys(warnings)),
