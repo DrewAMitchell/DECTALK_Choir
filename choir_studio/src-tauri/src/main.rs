@@ -119,6 +119,7 @@ struct MediaPlayer {
     alias: String,
     is_open: bool,
     paused: bool,
+    staged_path: Option<PathBuf>,
 }
 
 fn require_ffmpeg() -> Result<(), String> {
@@ -253,18 +254,41 @@ impl MediaPlayer {
         }
         self.is_open = false;
         self.paused = false;
+        if let Some(path) = self.staged_path.take() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    fn stage_midi(path: &Path) -> Result<PathBuf, String> {
+        // Windows MCI's sequencer can reject valid MIDI files once their absolute
+        // path approaches 128 characters. Keep its private playback copy short.
+        let directory = std::env::temp_dir().join("dectalk-choir-studio");
+        std::fs::create_dir_all(&directory)
+            .map_err(|error| format!("Could not prepare MIDI preview storage: {error}"))?;
+        let staged = directory.join(format!("preview-{}.mid", std::process::id()));
+        std::fs::copy(path, &staged)
+            .map_err(|error| format!("Could not stage the MIDI preview for playback: {error}"))?;
+        Ok(staged)
     }
 
     fn play(&mut self, path: &PathBuf, kind: &str, from_ms: u32) -> Result<MediaStatus, String> {
         self.close();
         let alias = self.alias().to_string();
-        let device = if kind == "midi" {
-            "sequencer"
+        let (device, playback_path) = if kind == "midi" {
+            let staged = Self::stage_midi(path)?;
+            self.staged_path = Some(staged.clone());
+            ("sequencer", staged)
         } else {
-            "waveaudio"
+            ("waveaudio", path.clone())
         };
-        let path = path.to_string_lossy().replace('"', "");
-        Self::send(&format!("open \"{path}\" type {device} alias {alias}"), 0)?;
+        let playback_path = playback_path.to_string_lossy().replace('"', "");
+        if let Err(error) = Self::send(
+            &format!("open \"{playback_path}\" type {device} alias {alias}"),
+            0,
+        ) {
+            self.close();
+            return Err(error);
+        }
         self.is_open = true;
         self.paused = false;
         Self::send(&format!("set {alias} time format milliseconds"), 0)?;
@@ -989,4 +1013,33 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running DECTALK Choir Studio");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MediaPlayer;
+
+    #[test]
+    fn midi_staging_shortens_deep_workspace_paths() {
+        let source_directory = std::env::temp_dir()
+            .join("dectalk-choir-studio-test")
+            .join("a-very-long-imported-song-name-used-to-exercise-the-windows-mci-path-limit")
+            .join("outputs")
+            .join("_midi_preview");
+        std::fs::create_dir_all(&source_directory).expect("create MIDI test source");
+        let source = source_directory.join("01_a-very-long-imported-track-name.mid");
+        std::fs::write(&source, b"MThd-test-preview").expect("write MIDI test source");
+
+        let staged = MediaPlayer::stage_midi(&source).expect("stage MIDI preview");
+
+        assert!(staged.is_file());
+        assert_eq!(
+            std::fs::read(&staged).expect("read staged MIDI"),
+            b"MThd-test-preview"
+        );
+        assert!(staged.as_os_str().len() < source.as_os_str().len());
+
+        let _ = std::fs::remove_file(staged);
+        let _ = std::fs::remove_dir_all(std::env::temp_dir().join("dectalk-choir-studio-test"));
+    }
 }
