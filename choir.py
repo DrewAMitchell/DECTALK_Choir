@@ -108,6 +108,9 @@ else: consonantMinMs = settings_yaml['consonantMinMs']
 if not 'consonantMaxMs' in settings_yaml: consonantMaxMs = 75
 else: consonantMaxMs = settings_yaml['consonantMaxMs']
 
+if not 'codaMaxMs' in settings_yaml: codaMaxMs = 200.0
+else: codaMaxMs = max(0.0, float(settings_yaml['codaMaxMs']))
+
 if not 'minDectalkPitch' in settings_yaml: minDectalkPitch = DEFAULT_MIN_DECTALK_PITCH
 else: minDectalkPitch = settings_yaml['minDectalkPitch']
 
@@ -195,6 +198,8 @@ for fooTrack in settings_yaml['Tracks']:
 	if 'OCTAVE_BOOST' not in trackDict: trackDict['OCTAVE_BOOST'] = 0
 	if 'GAP_MEND_MS' not in trackDict: trackDict['GAP_MEND_MS'] = gapMendMs
 	if 'MINIMUM_NOTE_DURATION_MS' not in trackDict: trackDict['MINIMUM_NOTE_DURATION_MS'] = minimumNoteDurationMs
+	if 'CODA_MAX_MS' not in trackDict: trackDict['CODA_MAX_MS'] = codaMaxMs
+	trackDict['CODA_MAX_MS'] = max(0.0, float(trackDict['CODA_MAX_MS']))
 	if 'NOTE_PEAK_TARGET_DBFS' not in trackDict: trackDict['NOTE_PEAK_TARGET_DBFS'] = notePeakTargetDbfs
 	if 'AUTO_NOTE_LEVEL_ENABLED' not in trackDict: trackDict['AUTO_NOTE_LEVEL_ENABLED'] = autoNoteLevelEnabled
 	if 'STEM_PEAK_CEILING_DBFS' not in trackDict: trackDict['STEM_PEAK_CEILING_DBFS'] = stemPeakCeilingDbfs
@@ -685,8 +690,10 @@ for fooPartName in partNamesToOutput:
 			symbolIsVowel,
 			notesInWord,
 		)
+		singleVowelCodaCount = len(symbolsToSing) - symbolIsVowel.index(1) - 1 if singleVowelNoteGroups is not None else 0
 		singleVowelGroupIndex = 0
 		while symbolSingIndex < len(symbolsToSing):
+			singleVowelGroupIsFinal = False
 			if noteIndex >= len(fooNotes): break
 			# Load next note to be played
 			noteValue = fooNotes[noteIndex][0]
@@ -717,6 +724,7 @@ for fooPartName in partNamesToOutput:
 			if singleVowelNoteGroups is not None:
 				symbolsToSing_subset = singleVowelNoteGroups[singleVowelGroupIndex]
 				symbolIsVowel_subset = [1 if pp.isDirectVowelPhoneme(foo) else 0 for foo in symbolsToSing_subset]
+				singleVowelGroupIsFinal = singleVowelGroupIndex == len(singleVowelNoteGroups) - 1
 				singleVowelGroupIndex += 1
 				notesInWord -= 1
 				if singleVowelGroupIndex >= len(singleVowelNoteGroups):
@@ -778,8 +786,16 @@ for fooPartName in partNamesToOutput:
 				maxConsonantDuration = max(0, (noteDuration - vowelCount*minimumVowelDuration) // consonantCount)
 				if consonantDuration < consonantMinMs:
 					consonantDuration = min(consonantMinMs, maxConsonantDuration)
-				if consonantDuration > consonantMaxMs:
-					consonantDuration = min(consonantMaxMs, maxConsonantDuration)
+				# Final consonants share one coda ceiling. Short notes still use
+				# less according to the normal consonant fraction above.
+				consonantDurationCeiling = pp.consonantDurationCeiling(
+					consonantMaxMs,
+					settings_yaml['Tracks'][fooPartName]['CODA_MAX_MS'],
+					consonantCount,
+					singleVowelGroupIsFinal and singleVowelCodaCount > 0,
+				)
+				if consonantDuration > consonantDurationCeiling:
+					consonantDuration = round(min(consonantDurationCeiling, maxConsonantDuration))
 				vowelDuration = round( (noteDuration -consonantCount*consonantDuration) / vowelCount)
 
 

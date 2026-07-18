@@ -50,24 +50,26 @@ def heldVowelPhases(phoneme):
 
 
 def allocateSingleVowelWordToNotes(symbols, symbolIsVowel, noteCount):
-    """Allocate a one-vowel word without repeating its diphthong or coda."""
+    """Sustain a one-vowel word through every note and finish its coda last."""
     if noteCount <= 1 or sum(symbolIsVowel) != 1:
         return None
     vowelIndex = symbolIsVowel.index(1)
     onset = list(symbols[:vowelIndex])
     vowel = symbols[vowelIndex]
     coda = list(symbols[vowelIndex + 1:])
-    if coda and noteCount == 2:
-        return [onset + [vowel], coda]
-
     nucleus, glide = heldVowelPhases(vowel)
     groups = [onset + [nucleus]]
-    middleCount = noteCount - (3 if coda else 2)
+    middleCount = noteCount - 2
     groups.extend([[nucleus] for _ in range(max(0, middleCount))])
-    groups.append([glide])
-    if coda:
-        groups.append(coda)
+    groups.append([glide] + coda)
     return groups
+
+
+def consonantDurationCeiling(defaultMaxMs, codaMaxMs, consonantCount, isFinalCoda):
+    """Return the per-consonant ceiling, sharing one limit across a final coda."""
+    if isFinalCoda and consonantCount > 0:
+        return max(0.0, float(codaMaxMs)) / consonantCount
+    return max(0.0, float(defaultMaxMs))
 
 def unsupportedDectalkPhonemes(phonemes):
     """Return symbols that cannot be emitted in a DECTALK phoneme command."""

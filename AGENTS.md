@@ -51,7 +51,7 @@ Top-level settings include:
 - `minDectalkPitch` / `maxDectalkPitch`: inclusive generated DECTALK pitch bounds. Defaults are `0` through `36`, mapped as `C3` through `C6` in this project. The bounds must span at least one octave so every pitch class can be octave-wrapped.
 - `notePeakTargetDbfs`: automatic per-note peak target, defaulting to `-5.0 dBFS`. The renderer adjusts every non-silent sung MIDI-note group bidirectionally after pitch correction, so weak and hot registers converge without a hand-authored pitch curve.
 - `ignoreMidiVelocity`: defaults to `true`, so MIDI velocity never changes rendered loudness unless explicitly enabled. `velocityVolumeScaleDb` controls the opt-in dynamic range.
-- `consonantFractionTarget`, `consonantMinMs`, `consonantMaxMs`: control consonant timing.
+- `consonantFractionTarget`, `consonantMinMs`, `consonantMaxMs`: control general consonant timing. `codaMaxMs` caps the complete ending consonant cluster of a one-vowel word spread over multiple notes; tracks can override it with `CODA_MAX_MS`.
 - `gapMendMs`: folds tiny MIDI gaps into the previous note instead of emitting a rest. Tracks can override with `GAP_MEND_MS`.
 - `minimumNoteDurationMs`: extends short notes only into available following rests, preserving every later onset and cross-track synchronization. Tracks can override with `MINIMUM_NOTE_DURATION_MS`; render logs distinguish extended notes from notes that remain constrained.
 - `RENDER_ENABLED`: persisted render participation. Defaults to `true`; Studio disables it for roles excluded from rendering and uses the same set for spectrogram video generation.

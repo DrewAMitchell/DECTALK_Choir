@@ -62,6 +62,7 @@ type TrackTuning = {
   STEM_PEAK_CEILING_DBFS: number;
   GAP_MEND_MS: number;
   MINIMUM_NOTE_DURATION_MS: number;
+  CODA_MAX_MS: number;
 };
 const trackTuningMatches = (left: TrackTuning | null, right: TrackTuning | null) =>
   left !== null && right !== null && JSON.stringify(left) === JSON.stringify(right);
@@ -1292,6 +1293,7 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
           <label className="tuning-field" title="Final peak ceiling for the completed role stem after all phrases are assembled."><span>Stem peak ceiling <small>final role guard</small></span><div className="tuning-input"><input type="number" min="-60" max="0" step="0.5" value={tuning.STEM_PEAK_CEILING_DBFS} onChange={(event) => changeTuning("STEM_PEAK_CEILING_DBFS", Number(event.target.value))} /><output>dBFS</output></div><em>Last safety pass for this output track. -1 dBFS is the default.</em></label>
           <label className="tuning-field" title="Folds MIDI gaps at or below this duration into the preceding note."><span>Mend gaps <small>timing threshold</small></span><div className="tuning-input"><input type="number" min="0" max="100" step="1" value={tuning.GAP_MEND_MS} onChange={(event) => changeTuning("GAP_MEND_MS", Number(event.target.value))} /><output>ms</output></div><em>0 preserves every MIDI gap. Positive values close only short gaps.</em></label>
           <label className="tuning-field" title="Extends short notes into available silence without moving the following note onset."><span>Minimum note <small>rest-only floor</small></span><div className="tuning-input"><input type="number" min="0" max="1000" step="5" value={tuning.MINIMUM_NOTE_DURATION_MS} onChange={(event) => changeTuning("MINIMUM_NOTE_DURATION_MS", Number(event.target.value))} /><output>ms</output></div><em>0 preserves MIDI durations. A positive floor consumes only the following rest and never shifts later notes.</em></label>
+          <label className="tuning-field" title="Caps the total time spent on ending consonants when one-vowel words span multiple notes."><span>Ending consonant cap <small>whole coda</small></span><div className="tuning-input"><input type="number" min="0" max="1000" step="5" value={tuning.CODA_MAX_MS} onChange={(event) => changeTuning("CODA_MAX_MS", Number(event.target.value))} /><output>ms</output></div><em>200 ms limits the complete ending cluster. Short notes naturally use less and return the remaining time to the vowel.</em></label>
         </section>
         <div className="tuning-actions"><button className="secondary" type="button" title="Discard unsaved fields and reload this role's settings.yaml profile" onClick={() => void resetTuning()} disabled={!!busy || !tuningDirty}>Reset</button><button className="primary" type="button" title={tuningDirty ? "Save these tuning changes to settings.yaml" : "No tuning changes to save"} onClick={() => void saveTuning()} disabled={!!busy || !tuningDirty}><Sparkles size={15} /> Save track tuning</button></div>
       </div>}

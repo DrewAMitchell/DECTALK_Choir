@@ -70,6 +70,7 @@ maxDectalkPitch: 36
 consonantFractionTarget: 0.15
 consonantMinMs: 5
 consonantMaxMs: 75
+codaMaxMs: 200
 
 # Production renders automatically target -5 dBFS peaks per sung MIDI note.
 notePeakTargetDbfs: -5.0

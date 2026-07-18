@@ -145,6 +145,7 @@ def _scaffold_midi_song(repo_root: Path, source_value: object, song_value: objec
             "consonantFractionTarget": 0.15,
             "consonantMinMs": 5,
             "consonantMaxMs": 75,
+            "codaMaxMs": 200,
             "Tracks": {
                 role: {
                     "DEC_SETUP": "[:np][:dv hs 100]",
@@ -846,6 +847,7 @@ TRACK_TUNING_DEFAULTS = {
     "STEM_PEAK_CEILING_DBFS": -1.0,
     "GAP_MEND_MS": 0.0,
     "MINIMUM_NOTE_DURATION_MS": 0.0,
+    "CODA_MAX_MS": 200.0,
 }
 DECTALK_VOICE_CODES = frozenset({"np", "nb", "nh", "nd", "nf", "nu", "nr", "nw", "nk"})
 TRACK_TUNING_TOP_LEVEL_KEYS = {
@@ -854,6 +856,7 @@ TRACK_TUNING_TOP_LEVEL_KEYS = {
     "VELOCITY_VOLUME_SCALE_DB": "velocityVolumeScaleDb",
     "GAP_MEND_MS": "gapMendMs",
     "MINIMUM_NOTE_DURATION_MS": "minimumNoteDurationMs",
+    "CODA_MAX_MS": "codaMaxMs",
 }
 
 def _head_size_from_setup(setup: object) -> int | None:
@@ -977,6 +980,8 @@ def _update_track_tuning(song: str, role: str, requested: object) -> dict[str, A
         elif key == "GAP_MEND_MS":
             values[key] = _number_setting(value, key, 0.0, 100.0)
         elif key == "MINIMUM_NOTE_DURATION_MS":
+            values[key] = _number_setting(value, key, 0.0, 1000.0)
+        elif key == "CODA_MAX_MS":
             values[key] = _number_setting(value, key, 0.0, 1000.0)
 
     song_dir, _ = load_settings(song)

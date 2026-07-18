@@ -145,6 +145,7 @@ Consonants are played as separate phonemes. How long each consonant is played fo
 **consonantFractionTarget**: The maximum time taken up by consonants across the whole word.
 **consonantMinMs**: Minimum time per consonant (mS)
 **consonantMaxMs**: Maximum time per consonant (mS)
+**codaMaxMs**: Maximum total time for the ending consonant cluster of a one-vowel word spread across multiple notes. Defaults to `200 ms`; short final notes naturally use less. A track can override this with `CODA_MAX_MS`.
 
 ### Per Track Audio Settings
 The key under `Tracks:` is the output name used for folders, text chunks, WAV stems, and the final mix. `LYRICS_FILENAME` and `TRACK_FILENAME` can point that output to different lyric and MIDI sources.
@@ -154,6 +155,8 @@ The key under `Tracks:` is the output name used for folders, text chunks, WAV st
 **TRACK_FILENAME**: Name of the MIDI track to read. Defaults to the output name. Allows an output stem to use a differently named MIDI track, or multiple output stems to share the same MIDI source.
 
 **MINIMUM_NOTE_DURATION_MS**: Per-track override for `minimumNoteDurationMs`. It consumes only available following silence, so tightly adjacent notes remain unchanged rather than shifting the song out of sync.
+
+**CODA_MAX_MS**: Per-track ceiling for the complete ending consonant cluster on multi-note words such as `time` or `mine`. Remaining final-note time sustains the vowel/glide instead of holding `m` or `n` for the full note.
 
 **PITCH_SHIFT**: Per-track musical transposition in semitones after the song-level `noteOffset`. Use this when two tracks share the same MIDI notes but should sing at different octaves or intervals.
 
