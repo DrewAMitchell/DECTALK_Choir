@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState, type CSSProperties, type ErrorInfo, type PointerEvent, type ReactNode, type WheelEvent } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type CSSProperties, type ErrorInfo, type PointerEvent, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Crosshair, ZoomIn, ZoomOut } from "lucide-react";
 import type { AlignmentEntry, MidiTrack } from "./types";
 
@@ -46,6 +46,9 @@ class PianoRollErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundary
 
 const PLOT_LEFT = 44;
 const PLOT_WIDTH = 948;
+const MAX_TIME_ZOOM = 100;
+const MAX_TIME_ZOOM_REDUCTION = 0.95;
+const MIN_VISIBLE_DURATION_MS = 1_500;
 const WORD_COLORS = ["#f29a4b", "#70a8ff", "#e87098", "#a5c95d", "#c08ae8", "#52bfd6"];
 
 const pitchName = (pitch: number) => {
@@ -108,6 +111,7 @@ function PianoRollCanvas({
   const canvasPanRef = useRef<{ pointerId: number; startX: number; startCenterMs: number; dragging: boolean; feedbackShown: boolean } | null>(null);
   const panFeedbackNonceRef = useRef(0);
   const panFeedbackTimerRef = useRef<number | null>(null);
+  const rollWrapRef = useRef<HTMLDivElement>(null);
   const suppressSelectionRef = useRef(false);
   const manualViewportRef = useRef(false);
   const [canvasPanning, setCanvasPanning] = useState(false);
@@ -184,11 +188,33 @@ function PianoRollCanvas({
     const unassignedTail = alignment.filter((entry) => entry.line === null && entry.note_index > current.last).length;
     return { ...current, previousAvailable, followingAvailable, unassignedTail };
   }, [alignment, selectedPhrase, selectedWord, wordRanges]);
-  const visibleDurationMs = Math.max(1_500, durationMs * (1 - timeZoom * 0.009));
+  const visibleDurationMs = Math.max(
+    MIN_VISIBLE_DURATION_MS,
+    durationMs * (1 - (timeZoom / MAX_TIME_ZOOM) * MAX_TIME_ZOOM_REDUCTION),
+  );
   const lowerBound = Math.max(0, durationMs - visibleDurationMs);
   const viewStartMs = Math.max(0, Math.min(lowerBound, timeCenterMs - visibleDurationMs / 2));
   const viewEndMs = viewStartMs + visibleDurationMs;
   const scaleX = (milliseconds: number) => PLOT_LEFT + ((milliseconds - viewStartMs) / visibleDurationMs) * PLOT_WIDTH;
+  useEffect(() => {
+    const element = rollWrapRef.current;
+    if (!element) return;
+    const handleWheel = (event: globalThis.WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        setTimeZoom((current) => Math.max(0, Math.min(MAX_TIME_ZOOM, current + (event.deltaY < 0 ? 8 : -8))));
+        return;
+      }
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (!delta) return;
+      event.preventDefault();
+      manualViewportRef.current = true;
+      const width = Math.max(1, element.getBoundingClientRect().width);
+      setTimeCenterMs((current) => Math.max(0, Math.min(durationMs, current + (delta / width) * visibleDurationMs)));
+    };
+    element.addEventListener("wheel", handleWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleWheel);
+  }, [durationMs, visibleDurationMs, track]);
   const moveCursor = (milliseconds: number) => {
     const next = Math.max(0, Math.min(durationMs, milliseconds));
     setCursorMs(next);
@@ -332,7 +358,7 @@ function PianoRollCanvas({
     }
   }, [playheadMs, playbackPaused, phrases, followedPhrase, viewStartMs, viewEndMs, onPlaybackPhraseChange]);
 
-  const setZoom = (next: number) => setTimeZoom(Math.max(0, Math.min(90, next)));
+  const setZoom = (next: number) => setTimeZoom(Math.max(0, Math.min(MAX_TIME_ZOOM, next)));
   const showPanLimit = (direction: -1 | 1) => {
     panFeedbackNonceRef.current += 1;
     setPanFeedback({ direction, nonce: panFeedbackNonceRef.current });
@@ -446,30 +472,16 @@ function PianoRollCanvas({
     const fraction = Math.max(0.05, Math.min(0.95, (event.clientX - rect.left) / rect.width));
     setVirtualSplitDrag((current) => current && current.pointerId === event.pointerId ? { ...current, fraction } : current);
   };
-  const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
-    if (event.ctrlKey || event.metaKey) {
-      event.preventDefault();
-      setZoom(timeZoom + (event.deltaY < 0 ? 8 : -8));
-      return;
-    }
-    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-    if (!delta) return;
-    event.preventDefault();
-    manualViewportRef.current = true;
-    const width = Math.max(1, event.currentTarget.getBoundingClientRect().width);
-    setTimeCenterMs((current) => Math.max(0, Math.min(durationMs, current + (delta / width) * visibleDurationMs)));
-  };
-
   if (!track) return <div className="empty-canvas">Choose a note-bearing role from the track rail.</div>;
   if (!notes.length) return <div className="empty-canvas">{track.name} has no paired MIDI notes to display.</div>;
 
   return (
-    <div className={`roll-wrap${panFeedback ? ` pan-limit pan-limit-${panFeedback.direction < 0 ? "earlier" : "later"} pan-limit-${panFeedback.nonce % 2 ? "odd" : "even"}` : ""}`} onWheel={handleWheel}>
+    <div ref={rollWrapRef} className={`roll-wrap${panFeedback ? ` pan-limit pan-limit-${panFeedback.direction < 0 ? "earlier" : "later"} pan-limit-${panFeedback.nonce % 2 ? "odd" : "even"}` : ""}`}>
       <div className="roll-controls">
         <div className="roll-window" title="Drag empty MIDI space to pan. Ctrl + wheel changes horizontal zoom."><Crosshair size={14} /><strong>{cursorMs === null ? "No marker" : formatTime(cursorMs, true)}</strong><span>{formatTime(viewStartMs, true)} - {formatTime(viewEndMs, true)} · {formatTime(durationMs, true)} total</span><em>Drag canvas to pan</em></div>
         <div className="roll-zoom">
           <button type="button" aria-label="Zoom out horizontally" title="Zoom out horizontally" onClick={() => setZoom(timeZoom - 8)}><ZoomOut size={15} /></button>
-          <input aria-label="Horizontal time zoom" type="range" min="0" max="90" value={timeZoom} onChange={(event) => setZoom(Number(event.target.value))} />
+          <input aria-label="Horizontal time zoom" type="range" min="0" max={MAX_TIME_ZOOM} value={timeZoom} onChange={(event) => setZoom(Number(event.target.value))} />
           <button type="button" aria-label="Zoom in horizontally" title="Zoom in horizontally" onClick={() => setZoom(timeZoom + 8)}><ZoomIn size={15} /></button>
         </div>
       </div>
