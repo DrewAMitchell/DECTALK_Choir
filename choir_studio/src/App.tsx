@@ -217,6 +217,7 @@ export default function App() {
   const [templateSources, setTemplateSources] = useState<AlignmentTemplate[]>([]);
   const [selectedPhrase, setSelectedPhrase] = useState<number | null>(null);
   const [deleteSongArmed, setDeleteSongArmed] = useState(false);
+  const [trackDeleteArmed, setTrackDeleteArmed] = useState(false);
   const [midiImportSource, setMidiImportSource] = useState("");
   const [dectalkImportOpen, setDectalkImportOpen] = useState(false);
   const [lyricsModalOpen, setLyricsModalOpen] = useState(false);
@@ -259,6 +260,19 @@ export default function App() {
   }, [invalidateAlignmentLoad]);
   useEffect(() => { bridge<string[]>({ command: "list_songs" }).then((items) => { setSongs(items); const restoredSong = storedUiState.song && items.includes(storedUiState.song) ? storedUiState.song : items[0]; if (restoredSong) void loadSong(restoredSong, restoredSong === storedUiState.song ? storedUiState.role : ""); }).catch((cause) => setError(String(cause))); }, [loadSong]);
   useEffect(() => { document.documentElement.dataset.theme = theme; window.localStorage.setItem("dectalk-choir-studio.theme", theme); }, [theme]);
+  useEffect(() => {
+    const updateDeleteState = (event: KeyboardEvent) => setTrackDeleteArmed(event.ctrlKey || event.key === "Control");
+    const releaseDeleteState = (event: KeyboardEvent) => setTrackDeleteArmed(event.ctrlKey && event.key !== "Control");
+    const clearDeleteState = () => setTrackDeleteArmed(false);
+    window.addEventListener("keydown", updateDeleteState);
+    window.addEventListener("keyup", releaseDeleteState);
+    window.addEventListener("blur", clearDeleteState);
+    return () => {
+      window.removeEventListener("keydown", updateDeleteState);
+      window.removeEventListener("keyup", releaseDeleteState);
+      window.removeEventListener("blur", clearDeleteState);
+    };
+  }, []);
   useEffect(() => {
     if (!errorNotice.message) return;
     const sequence = errorNotice.sequence;
@@ -375,6 +389,16 @@ export default function App() {
       if (remaining[0]) await loadSong(remaining[0]); else setSong("");
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
+  const removeMidiTrack = async (targetRole: string) => {
+    if (!song || !trackDeleteArmed) return;
+    setBusy(`Deleting MIDI track for ${targetRole}`); setError("");
+    try {
+      await media<MediaStatus>("media_stop").catch(() => undefined);
+      await bridge({ command: "delete_midi_track", song, role: targetRole, confirm_delete: true });
+      await loadSong(song, roleName);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(""); setTrackDeleteArmed(false); }
+  };
   const chooseMidiSong = async () => {
     setError("");
     try {
@@ -453,7 +477,7 @@ export default function App() {
     <section className={`workspace ${stage === "review" ? "review-workspace" : ""}`}>
       <aside className="track-rail"><h2 className="rail-song-title" title={song}>{song || "Song"}</h2><div className="rail-heading"><PanelLeft size={16} /> Tracks</div><div className="track-list">{inspection?.roles.map((item) => {
         const syncState = sourceSyncStateFor(item);
-        return <div key={item.role} className={`track-entry${item.role === roleName ? " active" : ""}`}><div className="track"><button className="track-select-hitbox" type="button" onClick={() => selectRole(item.role)} aria-pressed={item.role === roleName} aria-label={`Select ${item.role}`} /><span className="track-copy"><span className="track-name-row"><strong title={`${item.role} · ${item.midi_source_name}`}>{item.role}</strong><SourceSyncMarker state={syncState} /></span><TrackOverlapBadge role={item} onSplit={() => { if (item.role !== roleName) selectRole(item.role); setSplitRoleName(item.role); }} /><RailPitchRange value={item.midi_range} /></span><span className="track-note-total" title={`${item.note_count} MIDI notes`} aria-label={`${item.note_count} MIDI notes`}><b>{item.note_count}</b><Music3 size={13} aria-hidden="true" /></span></div></div>;
+        return <div key={item.role} className={`track-entry${item.role === roleName ? " active" : ""}`}><div className="track"><button className="track-select-hitbox" type="button" onClick={() => selectRole(item.role)} aria-pressed={item.role === roleName} aria-label={`Select ${item.role}`} /><span className="track-copy"><span className="track-name-row"><strong title={`${item.role} · ${item.midi_source_name}`}>{item.role}</strong><SourceSyncMarker state={syncState} /></span><TrackOverlapBadge role={item} onSplit={() => { if (item.role !== roleName) selectRole(item.role); setSplitRoleName(item.role); }} /><span className="track-range-actions"><RailPitchRange value={item.midi_range} /><button className={`track-delete-control${trackDeleteArmed ? " armed" : ""}`} type="button" disabled={!item.midi_track || !trackDeleteArmed || !!busy} title={!item.midi_track ? "This role has no MIDI track to delete" : trackDeleteArmed ? `Permanently delete ${item.midi_source_name} from the working MIDI` : `Hold Ctrl to permanently delete ${item.midi_source_name}`} aria-label={!item.midi_track ? `${item.role} has no MIDI track to delete` : trackDeleteArmed ? `Permanently delete MIDI track for ${item.role}` : `Hold Control to permanently delete MIDI track for ${item.role}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); if (event.ctrlKey) void removeMidiTrack(item.role); }}><Trash2 size={12} /></button></span></span><span className="track-note-total" title={`${item.note_count} MIDI notes`} aria-label={`${item.note_count} MIDI notes`}><b>{item.note_count}</b><Music3 size={13} aria-hidden="true" /></span></div></div>;
       })}</div></aside>
       <section className={`surface${stage === "align" ? " align-surface" : ""}`}>
         {stage === "align" && <AlignStage role={role} inspection={inspection} song={song} alignment={activeAlignment} loading={alignmentLoading || alignmentTransitionPending} templateSources={templateSources} onAdoptTemplate={adoptTemplate} onOpenLyrics={() => setLyricsModalOpen(true)} onOpenSplitter={() => role && setSplitRoleName(role.role)} onApplied={async () => { const refreshed = await bridge<SongInspection>({ command: "inspect_song", song }); setInspection(refreshed); }} setAlignment={setAlignment} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} busy={busy} setBusy={setBusy} setError={setError} />}

@@ -1116,6 +1116,67 @@ def _prepare_midi_preview(song: str, role: str) -> dict[str, Any]:
     }
 
 
+def _delete_midi_track(song: str, role: str, confirmed: bool) -> dict[str, Any]:
+    """Remove one configured source track while preserving its Studio role."""
+
+    if not confirmed:
+        raise BridgeError("Hold Ctrl and click the track trash control to delete a MIDI track.")
+    inspection = inspect_song(REPO_ROOT, song)
+    inspected_role = next((item for item in inspection.roles if item.role == role), None)
+    if not inspection.midi_path or not inspected_role or not inspected_role.midi_track:
+        raise BridgeError("The selected role has no MIDI track to delete.")
+    source = Path(inspection.midi_path)
+    source_track = inspected_role.midi_track
+    shared_roles = [
+        item.role
+        for item in inspection.roles
+        if item.midi_track and item.midi_track.index == source_track.index
+    ]
+    if len(shared_roles) > 1:
+        raise BridgeError(
+            f"This MIDI track is shared by {', '.join(shared_roles)}. Reassign those roles before deleting it."
+        )
+    try:
+        midi = mido.MidiFile(source)
+    except (OSError, EOFError, ValueError) as error:
+        raise BridgeError(f"Could not read the working MIDI: {error}") from error
+    if source_track.index >= len(midi.tracks):
+        raise BridgeError("The selected MIDI track no longer exists. Reload the song and try again.")
+    if len(midi.tracks) <= 1:
+        raise BridgeError("The only track in a MIDI file cannot be deleted.")
+    timing_events = [
+        message.type
+        for message in midi.tracks[source_track.index]
+        if message.type in {"set_tempo", "time_signature"}
+    ]
+    if timing_events:
+        raise BridgeError(
+            "This track owns song timing events and cannot be deleted inline. Move its tempo/time-signature events to a conductor track first."
+        )
+
+    temporary = source.with_name(f".{source.stem}.delete-{uuid.uuid4().hex}{source.suffix}")
+    original_track_count = len(midi.tracks)
+    deleted_name = source_track.name
+    del midi.tracks[source_track.index]
+    try:
+        midi.save(temporary)
+        verified = mido.MidiFile(temporary)
+        if len(verified.tracks) != original_track_count - 1:
+            raise BridgeError("The rewritten MIDI did not preserve the expected track count.")
+        os.replace(temporary, source)
+    except Exception as error:
+        temporary.unlink(missing_ok=True)
+        if isinstance(error, BridgeError):
+            raise
+        raise BridgeError(f"Could not delete the MIDI track: {error}") from error
+
+    return {
+        "path": str(source),
+        "deleted_track": deleted_name,
+        "remaining_tracks": original_track_count - 1,
+    }
+
+
 def _polyphonic_split_preview(song: str, role: str) -> dict[str, Any]:
     """Analyze one configured MIDI track without writing any song artifacts."""
 
@@ -1684,6 +1745,8 @@ def handle(request: dict[str, Any]) -> Any:
         return _align(song, role)
     if command == "prepare_midi_preview":
         return _prepare_midi_preview(song, role)
+    if command == "delete_midi_track":
+        return _delete_midi_track(song, role, request.get("confirm_delete") is True)
     if command == "preview_polyphonic_split":
         return _polyphonic_split_preview(song, role)
     if command == "export_polyphonic_split":
