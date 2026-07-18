@@ -49,8 +49,7 @@ Top-level settings include:
 
 - `noteOffset`: MIDI-to-DECTALK pitch offset. `-48` is the normal starting point; with that default, MIDI `48` (`C3`) emits DECTALK pitch `0`, MIDI `69` (`A4`) emits pitch `21`, and MIDI `84` (`C6`) emits pitch `36`.
 - `minDectalkPitch` / `maxDectalkPitch`: inclusive generated DECTALK pitch bounds. Defaults are `0` through `36`, mapped as `C3` through `C6` in this project. The bounds must span at least one octave so every pitch class can be octave-wrapped.
-- `pitchVolumeBoostStart`, `pitchVolumeBoostDbPerSemitone`, `pitchVolumeBoostMaxDb`: song-level defaults for the per-track `PITCH_VOLUME_BOOST_*` settings. `24` is `C5`, a useful starting point for high-note loudness compensation. Boost thresholds use the final audible pitch after `OCTAVE_BOOST`.
-- `noteNormalizeReferenceMin`, `noteNormalizeReferenceMax`, `noteNormalizeTargetDbfs`, `noteNormalizeMaxBoostDb`, `noteNormalizePeakCeilingDbfs`: song-level defaults for note-level voice leveling. Auto target mode uses the voice's own notes in the reference range when available; the default reference range is `7` through `16` (`G3` through `E4`).
+- `notePeakTargetDbfs`: automatic per-note peak target, defaulting to `-5.0 dBFS`. The renderer adjusts every non-silent sung MIDI-note group bidirectionally after pitch correction, so weak and hot registers converge without a hand-authored pitch curve.
 - `ignoreMidiVelocity`: defaults to `true`, so MIDI velocity never changes rendered loudness unless explicitly enabled. `velocityVolumeScaleDb` controls the opt-in dynamic range.
 - `consonantFractionTarget`, `consonantMinMs`, `consonantMaxMs`: control consonant timing.
 - `gapMendMs`: folds tiny MIDI gaps into the previous note instead of emitting a rest. Tracks can override with `GAP_MEND_MS`.
@@ -83,12 +82,10 @@ Per-track audio controls:
 - `PITCH_SHIFT`: musical transposition in semitones after `noteOffset`.
 - `OCTAVE_BOOST`: render cleanup shift. Positive values make DECTALK sing lower/slower, then the WAV is sped back up. Negative values make DECTALK sing higher/shorter, then the WAV is slowed down. If MIDI contains the desired final octave, use `OCTAVE_BOOST` without `PITCH_SHIFT`. Treat `-24` as too aggressive for this voice path unless a test proves otherwise; it can create low-frequency rumble artifacts.
 - `PITCH_WRAP_SHIFT`: optional manual pitch wrap override. Leave unset for automatic low-note wrapping.
-- `PITCH_VOLUME_BOOST_*`: pitch-dependent gain for high notes that get too quiet.
-- `NOTE_NORMALIZE_*`: preferred per-note voice leveling. It groups all phonemes from one MIDI note before measuring/boosting, preserving consonant/vowel balance inside the note.
-- Studio Review's beta **Voice** selector replaces only the `[:n?]` directive in `DEC_SETUP`; it preserves head size and every other setup command. **Head size** writes or replaces only `[:dv hs N]`. Its **Auto-normalize** action can use staged voice/head-size fields before saving, but is measured only for `[:np]` (Perfect Paul); other voices require their own reference measurement.
+- Automatic note leveling groups all phonemes from one MIDI note before measuring and correcting its peak, preserving consonant/vowel balance. MIDI velocity is applied afterward when explicitly enabled, followed by `VOLUME_ADJUST_DB` on the complete stem.
+- Studio Review's beta **Voice** selector replaces only the `[:n?]` directive in `DEC_SETUP`; it preserves head size and every other setup command. **Head size** writes or replaces only `[:dv hs N]`. This engine clamps values below `65` to the same effective `hs 65` voice.
 - `IGNORE_MIDI_VELOCITY`: defaults to `true`; leave it enabled unless the MIDI intentionally encodes dynamics.
 - `VELOCITY_VOLUME_SCALE_DB`: optional velocity dynamic range, used only when `IGNORE_MIDI_VELOCITY` is `false`.
-- `SEGMENT_NORMALIZE_*`: legacy/surgical measured per-segment boost for weak generated phonemes, with a peak guard. Prefer `NOTE_NORMALIZE_*` for normal singing.
 
 ## MIDI Rules
 
@@ -125,7 +122,8 @@ Phoneme conversion details:
 - `IH` followed by `NG` is normalized to `IY NG`. `IH N` is left alone.
 - CMU `hh` is converted to DECTALK `hx`; `y` is converted to `yx`.
 - Direct syllables are validated before rendering. `doo` and `dxoo` are not valid direct phoneme syllables; use `duw` and `dxuw`. Invalid direct input fails during lyric conversion rather than producing DECTALK command errors.
-- `say.exe` vocalizes "command error in phoneme" into its WAV while still returning exit code `0` with no stdout/stderr. `choir.py` therefore preflights every final emitted phoneme symbol against `DIRECT_PHONEMES` and fails with the affected role and phrase before launching DECTALK; process-log matching cannot detect this engine behavior.
+- `say.exe` vocalizes "command error in phoneme" into its WAV while still returning exit code `0` with no stdout/stderr. `choir.py` preflights emitted symbols, then compares raw partial WAVs against an intentional temporary error reference before mixing. The reference exists only in an OS temporary directory and is never surfaced in Studio or retained with song outputs.
+- When a one-vowel word claims three or more notes, diphthongs sustain their nucleus and delay the glide and coda. For example, `3*time` allocates `t aa | ih | m` instead of repeating `ay` on every note.
 - Timed lyric lines are padded with silence when shorter than the requested duration and trimmed from the end when longer.
 
 ## Lyric Sync Assistant
@@ -168,10 +166,10 @@ Studio keeps lyric editing inside the application. Its primary stages flow from 
 ## Audio Output Invariants
 
 - Each output track stem should be padded or trimmed to the same target length before the final mix.
-- Peak ceilings are safety guards, not only boost limits: `NOTE_NORMALIZE_PEAK_CEILING_DBFS` attenuates already-hot per-note audio after pitch/segment/note boosts, `STEM_PEAK_CEILING_DBFS` guards the complete role stem, and song-level `finalMixPeakCeilingDbfs` guards the 32-bit final mix. All default to `-1.0 dBFS`.
+- Sung notes target `-5.0 dBFS` peaks automatically. `STEM_PEAK_CEILING_DBFS` guards the complete role stem and song-level `finalMixPeakCeilingDbfs` guards the 32-bit final mix; both safety ceilings default to `-1.0 dBFS` and remain separate from the musical note target.
 - Pitch values passed to DECTALK must be inside `minDectalkPitch` / `maxDectalkPitch`. The compiler octave-wraps every emitted pitch into those bounds. Sharps are represented by integer pitch classes, not note-name syntax; for example pitch `% 12 == 1` is `C#`.
-- High soprano or octave-boosted parts may need both fixed gain and segment normalization because DECTALK can get quiet at peak notes.
-- Before tuning high-note gain by pitch alone, use `tools/create_head_size_pitch_reference.py` to generate `HeadSizePitchReference`. It renders the same C3-C6 chromatic line at head sizes 80, 95, 110, 125, and 140 with all loudness correction disabled; after rendering, run it with `--analyze` to write `outputs/analysis/head_size_pitch_levels.csv` for an empirical head-size/pitch comparison.
+- `VOLUME_ADJUST_DB` is the primary manual loudness lever after automatic note correction. High soprano and octave-boosted notes should not require a separate per-semitone gain curve.
+- Use `tools/create_head_size_pitch_reference.py` to generate `HeadSizePitchReference`. It renders the same C3-C6 chromatic line at effective head sizes 65, 80, 95, 110, 125, and 140 with automatic loudness correction disabled; after rendering, run it with `--analyze` to write `outputs/analysis/head_size_pitch_levels.csv`.
 - Use `tools/create_octave_boost_reference_song.py` to regenerate `OctaveBoostReference`. It creates synchronized 13-note chromatic previews for `OCTAVE_BOOST` values `-12`, `0`, `12`, and `24`, covering audible C2-C6 while holding every temporary DECTALK render to C3-C4. Do not restore the unstable `36` (`+3 octave`) profile.
 - When changing duration, note matching, or phoneme splitting logic, compare output lengths and inspect generated partial `.txt` files before assuming the audio backend is the cause.
 - `generateSpectrograms.py` renders independent, lossless region-sized track clips with up to four CPU workers, then serially overlays those clips in configured order and muxes one final video. Choir Studio starts that generator as a native background job and polls its status, keeping the UI responsive.

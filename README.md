@@ -127,9 +127,7 @@ Settings.yaml holds both general settings and per track settings. All settings a
 
 Pitch classes are preserved as integers. There is no `#` spelling in the DECTALK output, but sharps are supported: pitch `% 12 == 1` is `C#`, `3` is `D#`, `6` is `F#`, `8` is `G#`, and `10` is `A#`.
 
-**pitchVolumeBoostStart / pitchVolumeBoostDbPerSemitone / pitchVolumeBoostMaxDb**: Song-level defaults for pitch-dependent gain. These feed the per-track `PITCH_VOLUME_BOOST_*` settings. A useful starting point for quiet high notes is `pitchVolumeBoostStart: 24`, because pitch `24` is `C5` in the project pitch model. The boost threshold uses the final audible pitch after `OCTAVE_BOOST`, not only the temporary DECTALK render pitch.
-
-**noteNormalizeReferenceMin / noteNormalizeReferenceMax / noteNormalizeTargetDbfs / noteNormalizeMaxBoostDb / noteNormalizePeakCeilingDbfs**: Song-level defaults for per-note voice leveling. `noteNormalizeTargetDbfs: auto` uses the voice's own notes in the reference range when available, defaulting to `7` through `16` (`G3` through `E4`), then boosts whole MIDI-note groups toward that target up to `noteNormalizeMaxBoostDb` and the peak ceiling. This is the preferred way to compensate for DECtalk notes that are weak in some registers without changing consonant/vowel balance inside the note.
+**notePeakTargetDbfs**: Automatic per-note peak target, defaulting to `-5.0 dBFS`. Choir groups every sung MIDI note's consonants and vowels, then applies bidirectional correction after pitch processing. This replaces manual high-note gain curves while preserving each note's internal pronunciation balance.
 
 **ignoreMidiVelocity / velocityVolumeScaleDb**: MIDI velocity is ignored by default (`ignoreMidiVelocity: true`), independent of the configured scale. Set `ignoreMidiVelocity: false` and choose a positive `velocityVolumeScaleDb` only when a MIDI performance intentionally encodes dynamics that should survive normalization.
 
@@ -161,20 +159,14 @@ Run `python tools/create_octave_boost_reference_song.py` to regenerate the check
 
 **VOLUME_ADJUST_DB**: Will adjust volume level of each track in decibels. Positive is louder, negative is quieter, and 0 is the same. I usually make higher tracks louder to be audible.
 
-**PITCH_VOLUME_BOOST_START / PITCH_VOLUME_BOOST_DB_PER_SEMITONE / PITCH_VOLUME_BOOST_MAX_DB**: Optional pitch-dependent gain curve for tracks that get quiet on high notes. Final audible pitches above the start value are boosted by the per-semitone amount, capped by the max dB value.
-
-**NOTE_NORMALIZE_REFERENCE_MIN / NOTE_NORMALIZE_REFERENCE_MAX / NOTE_NORMALIZE_TARGET_DBFS / NOTE_NORMALIZE_MAX_BOOST_DB / NOTE_NORMALIZE_PEAK_CEILING_DBFS**: Per-track overrides for the song-level note normalizer. The normalizer groups consonants and vowels from the same MIDI note before measuring and boosting, so the note gets leveled as one musical event.
-
-`NOTE_NORMALIZE_PEAK_CEILING_DBFS` is a bidirectional post-boost safety guard: it attenuates notes already above the ceiling as well as limiting requested positive correction. `STEM_PEAK_CEILING_DBFS` applies the same final guard after a complete role stem is assembled. Both default to `-1.0 dBFS`. `finalMixPeakCeilingDbfs` is the song-level final-mix guard and also defaults to `-1.0 dBFS`; the final mix is accumulated at 32-bit width before this ceiling is applied.
+Automatic note leveling targets `-5.0 dBFS` for every non-silent sung MIDI note. Optional MIDI velocity is applied afterward, then `VOLUME_ADJUST_DB` adjusts the assembled stem. `STEM_PEAK_CEILING_DBFS` and `finalMixPeakCeilingDbfs` remain independent `-1.0 dBFS` safety guards.
 
 **IGNORE_MIDI_VELOCITY / VELOCITY_VOLUME_SCALE_DB**: Per-track velocity controls. `IGNORE_MIDI_VELOCITY` defaults to `true`, keeping velocity out of gain calculations. When set to `false`, `VELOCITY_VOLUME_SCALE_DB` defines the opt-in dynamic range.
-
-**SEGMENT_NORMALIZE_PITCH_START / SEGMENT_NORMALIZE_TARGET_DBFS / SEGMENT_NORMALIZE_MAX_BOOST_DB**: Legacy/surgical measured loudness lift for individual generated phoneme segments. Prefer note normalization for normal singing because segment normalization can change the balance inside a syllable. Set max boost to 0 to disable.
 
 **DEC_SETUP**: Add a bit of scripting to the beginning of each text file read by DECtalk to change settings.
 \[:np\] sets the voice to perfect paul, the most popular voice. Other voices include \[:np\] \[:nb\] \[:nh\] \[:nd\] \[:nf\] \[:nu\] \[:nr\] \[:nw\] & \[:nk\]
 \[:dv hs 95\] changes the head size to be 95% standard. I usually increase head size for lower voices as I think it sounds better.
-Choir Studio Review exposes these voice commands as a beta per-track selector. Saving replaces only the `[:n?]` command and preserves the rest of `DEC_SETUP`; its Auto-normalize baseline is currently measured only for `[:np]`.
+Choir Studio Review exposes these voice commands as a beta per-track selector. Saving replaces only the `[:n?]` command and preserves the rest of `DEC_SETUP`. Head size is a timbre control rather than a gain control; this engine clamps values below `65` to the same effective `hs 65` voice.
 There are a ton of other settings to play with that I haven't taken the time to learn, I've been mostly focused on the synchronization and playback.
 
 

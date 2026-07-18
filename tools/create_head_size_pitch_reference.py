@@ -24,7 +24,7 @@ from pydub import AudioSegment
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SONG_NAME = "HeadSizePitchReference"
-HEAD_SIZES = (80, 95, 110, 125, 140)
+HEAD_SIZES = (65, 80, 95, 110, 125, 140)
 FIRST_MIDI_NOTE = 48  # C3, DECtalk pitch 0 with noteOffset -48.
 NOTE_COUNT = 37  # C3 through C6, inclusive: the configured DECtalk pitch range.
 NOTE_DURATION_MS = 1_000
@@ -74,10 +74,9 @@ def _write_settings(path: Path) -> None:
         "    TRACK_FILENAME: {name}\n"
         "    DEC_SETUP: \"[:np][:dv hs {head_size}]\"\n"
         "    VOLUME_ADJUST_DB: 0.0\n"
-        "    PITCH_VOLUME_BOOST_DB_PER_SEMITONE: 0.0\n"
-        "    PITCH_VOLUME_BOOST_MAX_DB: 0.0\n"
-        "    NOTE_NORMALIZE_MAX_BOOST_DB: 0.0\n"
-        "    SEGMENT_NORMALIZE_MAX_BOOST_DB: 0.0\n".format(name=_track_name(head_size), head_size=head_size)
+        "    AUTO_NOTE_LEVEL_ENABLED: false\n"
+        "    STEM_PEAK_CEILING_DBFS: 0.0\n"
+        .format(name=_track_name(head_size), head_size=head_size)
         for head_size in HEAD_SIZES
     )
     path.write_text(
@@ -87,10 +86,9 @@ def _write_settings(path: Path) -> None:
         "minDectalkPitch: 0\n"
         "maxDectalkPitch: 36\n"
         "velocityVolumeScaleDb: 0.0\n"
-        "pitchVolumeBoostDbPerSemitone: 0.0\n"
-        "pitchVolumeBoostMaxDb: 0.0\n"
-        "noteNormalizeMaxBoostDb: 0.0\n"
-        "segmentNormalizeMaxBoostDb: 0.0\n\n"
+        "autoNoteLevelEnabled: false\n"
+        "stemPeakCeilingDbfs: 0.0\n"
+        "\n"
         "Tracks:\n"
         f"{tracks}",
         encoding="ascii",

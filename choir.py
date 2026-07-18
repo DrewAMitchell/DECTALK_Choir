@@ -10,8 +10,8 @@ import subprocess
 import tempfile
 import time
 import math as m
-import statistics as stats
 from pathlib import Path
+from pydub import AudioSegment
 from pyFuncs.PitchMapping import (
 	DEFAULT_MAX_DECTALK_PITCH,
 	DEFAULT_MIN_DECTALK_PITCH,
@@ -21,8 +21,14 @@ from pyFuncs.PitchMapping import (
 	validate_dectalk_pitch_bounds,
 	wrap_dectalk_pitch,
 )
-from pyFuncs.AudioSafety import DEFAULT_PEAK_CEILING_DBFS, apply_peak_ceiling
+from pyFuncs.AudioSafety import (
+	DEFAULT_NOTE_PEAK_TARGET_DBFS,
+	DEFAULT_PEAK_CEILING_DBFS,
+	apply_note_peak_target,
+	apply_peak_ceiling,
+)
 from pyFuncs.AudioTiming import OUTPUT_LEAD_IN_MS
+from pyFuncs.DectalkErrorDetection import contains_command_error, create_command_error_reference
 from pyFuncs.SongPaths import has_lyric_content, render_lyrics_path
 
 # Make sure song is specified
@@ -114,15 +120,9 @@ else: gapMendMs = float(settings_yaml['gapMendMs'])
 if not 'minimumNoteDurationMs' in settings_yaml: minimumNoteDurationMs = 0.0
 else: minimumNoteDurationMs = max(0.0, float(settings_yaml['minimumNoteDurationMs']))
 
-pitchVolumeBoostStart = settings_yaml.get('pitchVolumeBoostStart', 0)
-pitchVolumeBoostDbPerSemitone = settings_yaml.get('pitchVolumeBoostDbPerSemitone', 0.0)
-pitchVolumeBoostMaxDb = settings_yaml.get('pitchVolumeBoostMaxDb', 6.0)
-noteNormalizeReferenceMin = settings_yaml.get('noteNormalizeReferenceMin', 7)
-noteNormalizeReferenceMax = settings_yaml.get('noteNormalizeReferenceMax', 16)
-noteNormalizeTargetDbfs = settings_yaml.get('noteNormalizeTargetDbfs', 'auto')
-noteNormalizeMaxBoostDb = settings_yaml.get('noteNormalizeMaxBoostDb', 0.0)
-noteNormalizePeakCeilingDbfs = settings_yaml.get('noteNormalizePeakCeilingDbfs', DEFAULT_PEAK_CEILING_DBFS)
-stemPeakCeilingDbfs = settings_yaml.get('stemPeakCeilingDbfs', noteNormalizePeakCeilingDbfs)
+notePeakTargetDbfs = settings_yaml.get('notePeakTargetDbfs', DEFAULT_NOTE_PEAK_TARGET_DBFS)
+autoNoteLevelEnabled = settings_yaml.get('autoNoteLevelEnabled', True)
+stemPeakCeilingDbfs = settings_yaml.get('stemPeakCeilingDbfs', DEFAULT_PEAK_CEILING_DBFS)
 finalMixPeakCeilingDbfs = settings_yaml.get('finalMixPeakCeilingDbfs', DEFAULT_PEAK_CEILING_DBFS)
 velocityVolumeScaleDb = settings_yaml.get('velocityVolumeScaleDb', 0.0)
 ignoreMidiVelocity = settings_yaml.get('ignoreMidiVelocity', True)
@@ -195,18 +195,9 @@ for fooTrack in settings_yaml['Tracks']:
 	if 'OCTAVE_BOOST' not in trackDict: trackDict['OCTAVE_BOOST'] = 0
 	if 'GAP_MEND_MS' not in trackDict: trackDict['GAP_MEND_MS'] = gapMendMs
 	if 'MINIMUM_NOTE_DURATION_MS' not in trackDict: trackDict['MINIMUM_NOTE_DURATION_MS'] = minimumNoteDurationMs
-	if 'PITCH_VOLUME_BOOST_START' not in trackDict: trackDict['PITCH_VOLUME_BOOST_START'] = pitchVolumeBoostStart
-	if 'PITCH_VOLUME_BOOST_DB_PER_SEMITONE' not in trackDict: trackDict['PITCH_VOLUME_BOOST_DB_PER_SEMITONE'] = pitchVolumeBoostDbPerSemitone
-	if 'PITCH_VOLUME_BOOST_MAX_DB' not in trackDict: trackDict['PITCH_VOLUME_BOOST_MAX_DB'] = pitchVolumeBoostMaxDb
-	if 'NOTE_NORMALIZE_REFERENCE_MIN' not in trackDict: trackDict['NOTE_NORMALIZE_REFERENCE_MIN'] = noteNormalizeReferenceMin
-	if 'NOTE_NORMALIZE_REFERENCE_MAX' not in trackDict: trackDict['NOTE_NORMALIZE_REFERENCE_MAX'] = noteNormalizeReferenceMax
-	if 'NOTE_NORMALIZE_TARGET_DBFS' not in trackDict: trackDict['NOTE_NORMALIZE_TARGET_DBFS'] = noteNormalizeTargetDbfs
-	if 'NOTE_NORMALIZE_MAX_BOOST_DB' not in trackDict: trackDict['NOTE_NORMALIZE_MAX_BOOST_DB'] = noteNormalizeMaxBoostDb
-	if 'NOTE_NORMALIZE_PEAK_CEILING_DBFS' not in trackDict: trackDict['NOTE_NORMALIZE_PEAK_CEILING_DBFS'] = noteNormalizePeakCeilingDbfs
+	if 'NOTE_PEAK_TARGET_DBFS' not in trackDict: trackDict['NOTE_PEAK_TARGET_DBFS'] = notePeakTargetDbfs
+	if 'AUTO_NOTE_LEVEL_ENABLED' not in trackDict: trackDict['AUTO_NOTE_LEVEL_ENABLED'] = autoNoteLevelEnabled
 	if 'STEM_PEAK_CEILING_DBFS' not in trackDict: trackDict['STEM_PEAK_CEILING_DBFS'] = stemPeakCeilingDbfs
-	if 'SEGMENT_NORMALIZE_PITCH_START' not in trackDict: trackDict['SEGMENT_NORMALIZE_PITCH_START'] = trackDict['PITCH_VOLUME_BOOST_START']
-	if 'SEGMENT_NORMALIZE_TARGET_DBFS' not in trackDict: trackDict['SEGMENT_NORMALIZE_TARGET_DBFS'] = -18.0
-	if 'SEGMENT_NORMALIZE_MAX_BOOST_DB' not in trackDict: trackDict['SEGMENT_NORMALIZE_MAX_BOOST_DB'] = 0.0
 	if 'PITCH_WRAP_SHIFT' not in trackDict: trackDict['PITCH_WRAP_SHIFT'] = None
 
 	foo_OCTAVE_BOOST = float(trackDict['OCTAVE_BOOST'])
@@ -499,12 +490,8 @@ for fooPartName in partNamesToOutput:
 	]
 	trackDict = settings_yaml['Tracks'][fooPartName]
 	pitchSpanDetails = []
-	if float(trackDict['PITCH_VOLUME_BOOST_DB_PER_SEMITONE']) > 0:
-		pitchSpanDetails.append(f"volume boost starts at {trackDict['PITCH_VOLUME_BOOST_START']}")
-	if float(trackDict['NOTE_NORMALIZE_MAX_BOOST_DB']) > 0:
-		pitchSpanDetails.append(f"note normalize max +{trackDict['NOTE_NORMALIZE_MAX_BOOST_DB']}dB")
-	if float(trackDict['SEGMENT_NORMALIZE_MAX_BOOST_DB']) > 0:
-		pitchSpanDetails.append(f"segment normalize starts at {trackDict['SEGMENT_NORMALIZE_PITCH_START']}")
+	if isEnabled(trackDict['AUTO_NOTE_LEVEL_ENABLED']):
+		pitchSpanDetails.append(f"automatic note peak {float(trackDict['NOTE_PEAK_TARGET_DBFS']):.1f}dBFS")
 	pitchSpanDetailsText = ''
 	if len(pitchSpanDetails) > 0:
 		pitchSpanDetailsText = f"   ({', '.join(pitchSpanDetails)})"
@@ -660,6 +647,12 @@ for fooPartName in partNamesToOutput:
 		# Iterate symbolsToSing & symbolIsVowel, matching notes to lyrics
 		vowelsRemaining = sum(symbolIsVowel)
 		symbolSingIndex = 0
+		singleVowelNoteGroups = pp.allocateSingleVowelWordToNotes(
+			symbolsToSing,
+			symbolIsVowel,
+			notesInWord,
+		)
+		singleVowelGroupIndex = 0
 		while symbolSingIndex < len(symbolsToSing):
 			if noteIndex >= len(fooNotes): break
 			# Load next note to be played
@@ -688,7 +681,15 @@ for fooPartName in partNamesToOutput:
 
 
 			# Select one of three situations on how to keep iterating through word
-			if notesInWord == 1: # Only one note remains, play remainder of phonemes on it
+			if singleVowelNoteGroups is not None:
+				symbolsToSing_subset = singleVowelNoteGroups[singleVowelGroupIndex]
+				symbolIsVowel_subset = [1 if pp.isDirectVowelPhoneme(foo) else 0 for foo in symbolsToSing_subset]
+				singleVowelGroupIndex += 1
+				notesInWord -= 1
+				if singleVowelGroupIndex >= len(singleVowelNoteGroups):
+					symbolSingIndex = len(symbolsToSing)
+
+			elif notesInWord == 1: # Only one note remains, play remainder of phonemes on it
 				# print("LAST NOTE")
 				symbolIsVowel_subset = symbolIsVowel[symbolSingIndex:]
 				symbolsToSing_subset = symbolsToSing[symbolSingIndex:]
@@ -875,6 +876,7 @@ if '-plt' in sys.argv[1]:
 # Save text files of partial tracks and generate .wavs
 print(f"\n\nGenerating partial audio files")
 procSet = [] # Save all currently running processes, to make sure all finish before moving on
+renderedPartials = []
 if True:
 	import subprocess as sp
 
@@ -937,6 +939,7 @@ if True:
 			DEC_proc = sp.Popen([f".{os.sep}say.exe", "-w", outputWav], stdin=partialTxtInput) # Finally actual run DECtalk! Opens a bunch of processes to run every file in parallel
 			partialTxtInput.close()
 			procSet.append(DEC_proc)
+			renderedPartials.append((fooPartName, startTime, outputWav, foo_DEC_SETUP))
 
 			# if fooPartName == "Bass": print(f"./say.exe -w {outputWav} < {partialTxtFileName}")
 
@@ -954,11 +957,33 @@ while len(procSet) > 0:
 		time.sleep(0.5)
 
 
+print("Checking partial audio for DECTalk phoneme-command errors")
+sayPath = Path("say.exe").resolve()
+with tempfile.TemporaryDirectory(prefix="dectalk-error-check-") as errorCheckDirectory:
+	referencesBySetup = {}
+	for fooPartName, startTime, outputWav, foo_DEC_SETUP in renderedPartials:
+		if foo_DEC_SETUP not in referencesBySetup:
+			referencePath = Path(errorCheckDirectory) / f"reference-{len(referencesBySetup)}.wav"
+			referencesBySetup[foo_DEC_SETUP] = create_command_error_reference(
+				sayPath,
+				foo_DEC_SETUP,
+				referencePath,
+			)
+		partialAudio = AudioSegment.from_file(outputWav)
+		detected, similarity = contains_command_error(
+			partialAudio,
+			referencesBySetup[foo_DEC_SETUP],
+		)
+		if detected:
+			print(
+				f"ERROR: {fooPartName} phrase at {startTime} ms contains DECTalk's "
+				f"spoken phoneme-command error (audio similarity {similarity:.3f})."
+			)
+			exit(1)
+
+
 # Mix each partial wav file
 print(f"\n\nMixing partial wav files")
-
-
-from pydub import AudioSegment
 
 
 def fitSpokenAudioToWindow(audioSegment, targetDurationMs):
@@ -1005,38 +1030,6 @@ def getPhenNoteId(fooPhen):
 	if len(fooPhen) >= 5:
 		return fooPhen[4]
 	return None
-
-
-def applyPitchVolumeBoost(audioSegment, fooLine, octaveBoost, trackDict):
-	boostPerSemitone = float(trackDict['PITCH_VOLUME_BOOST_DB_PER_SEMITONE'])
-	if boostPerSemitone <= 0:
-		return audioSegment
-
-	boostStart = float(trackDict['PITCH_VOLUME_BOOST_START'])
-	boostMaxDb = float(trackDict['PITCH_VOLUME_BOOST_MAX_DB'])
-	boostedAudio = AudioSegment.empty()
-	cursorMs = 0
-
-	for fooPhen in fooLine[1:]:
-		if fooPhen == ' ':
-			continue
-
-		segmentLen = round(fooPhen[1]*pow(2, octaveBoost/12))
-		segment = audioSegment[cursorMs:cursorMs+segmentLen]
-		cursorMs += segmentLen
-
-		if fooPhen[0] != '_':
-			noteVal = getFinalAudiblePitch(fooPhen, octaveBoost)
-			boostDb = min(boostMaxDb, max(0.0, (noteVal - boostStart)*boostPerSemitone))
-			if boostDb > 0:
-				segment += boostDb
-
-		boostedAudio += segment
-
-	if cursorMs < len(audioSegment):
-		boostedAudio += audioSegment[cursorMs:]
-
-	return boostedAudio
 
 
 def iterNoteAudioGroups(audioSegment, fooLine, octaveBoost, renderedDurations=False):
@@ -1086,111 +1079,27 @@ def iterNoteAudioGroups(audioSegment, fooLine, octaveBoost, renderedDurations=Fa
 	return groups
 
 
-def getNoteGroupLevel(audioSegment, noteGroup):
-	segment = audioSegment[noteGroup['startMs']:noteGroup['endMs']]
-	if len(segment) == 0 or not m.isfinite(segment.dBFS):
-		return None
-	return {
-		'dbfs': segment.dBFS,
-		'peakDbfs': segment.max_dBFS,
-		'pitchMin': noteGroup['pitchMin'],
-		'pitchMax': noteGroup['pitchMax'],
-	}
-
-
-def getNoteNormalizeTargetDbfs(lineAudioSet, octaveBoost, trackDict):
-	targetSetting = trackDict['NOTE_NORMALIZE_TARGET_DBFS']
-	if str(targetSetting).lower() != 'auto':
-		return float(targetSetting)
-
-	referenceMin = float(trackDict['NOTE_NORMALIZE_REFERENCE_MIN'])
-	referenceMax = float(trackDict['NOTE_NORMALIZE_REFERENCE_MAX'])
-	allLevels = []
-	referenceLevels = []
-	for fooLine, lineAudio in lineAudioSet:
-		if isSpokenCompiledLine(fooLine):
-			continue
-		for noteGroup in iterNoteAudioGroups(lineAudio, fooLine, octaveBoost, renderedDurations=False):
-			level = getNoteGroupLevel(lineAudio, noteGroup)
-			if level is None:
-				continue
-
-			allLevels.append(level['dbfs'])
-			if level['pitchMax'] >= referenceMin and level['pitchMin'] <= referenceMax:
-				referenceLevels.append(level['dbfs'])
-
-	if len(referenceLevels) > 0:
-		return stats.median(referenceLevels)
-	if len(allLevels) > 0:
-		return stats.median(allLevels)
-	return None
-
-
-def applyNoteNormalize(audioSegment, fooLine, octaveBoost, targetDbfs, trackDict):
-	maxBoostDb = float(trackDict['NOTE_NORMALIZE_MAX_BOOST_DB'])
-	peakCeilingDbfs = float(trackDict['NOTE_NORMALIZE_PEAK_CEILING_DBFS'])
+def applyAutomaticNoteLevel(audioSegment, fooLine, octaveBoost, trackDict):
+	peakTargetDbfs = float(trackDict['NOTE_PEAK_TARGET_DBFS'])
 	outAudio = AudioSegment.empty()
 	cursorMs = 0
+	adjustments = []
 
 	for noteGroup in iterNoteAudioGroups(audioSegment, fooLine, octaveBoost, renderedDurations=False):
 		if noteGroup['startMs'] > cursorMs:
 			outAudio += audioSegment[cursorMs:noteGroup['startMs']]
 
 		noteAudio = audioSegment[noteGroup['startMs']:noteGroup['endMs']]
-		adjustmentDb = 0.0
-		if len(noteAudio) > 0 and m.isfinite(noteAudio.dBFS):
-			if maxBoostDb > 0 and targetDbfs is not None:
-				adjustmentDb = min(maxBoostDb, max(0.0, targetDbfs - noteAudio.dBFS))
-			if adjustmentDb:
-				noteAudio += adjustmentDb
-			noteAudio, ceilingGainDb = apply_peak_ceiling(noteAudio, peakCeilingDbfs)
-			adjustmentDb += ceilingGainDb
-
-		if adjustmentDb < -0.01:
-			print(f"note peak guard:{adjustmentDb:+.2f} dB to {peakCeilingDbfs:.1f} dBFS")
+		if len(noteAudio) > 0 and m.isfinite(noteAudio.max_dBFS):
+			noteAudio, adjustmentDb = apply_note_peak_target(noteAudio, peakTargetDbfs)
+			adjustments.append(adjustmentDb)
 		outAudio += noteAudio
 		cursorMs = noteGroup['endMs']
 
 	if cursorMs < len(audioSegment):
 		outAudio += audioSegment[cursorMs:]
 
-	return outAudio
-
-
-def applySegmentNormalize(audioSegment, fooLine, octaveBoost, trackDict):
-	maxBoostDb = float(trackDict['SEGMENT_NORMALIZE_MAX_BOOST_DB'])
-	if maxBoostDb <= 0:
-		return audioSegment
-
-	normalizePitchStart = float(trackDict['SEGMENT_NORMALIZE_PITCH_START'])
-	targetDbfs = float(trackDict['SEGMENT_NORMALIZE_TARGET_DBFS'])
-	peakCeilingDbfs = -1.0
-	normalizedAudio = AudioSegment.empty()
-	cursorMs = 0
-
-	for fooPhen in fooLine[1:]:
-		if fooPhen == ' ':
-			continue
-
-		segmentLen = round(fooPhen[1]*pow(2, octaveBoost/12))
-		segment = audioSegment[cursorMs:cursorMs+segmentLen]
-		cursorMs += segmentLen
-
-		if fooPhen[0] != '_' and len(segment) > 0:
-			noteVal = getFinalAudiblePitch(fooPhen, octaveBoost)
-			if noteVal >= normalizePitchStart and m.isfinite(segment.dBFS):
-				boostDb = min(maxBoostDb, max(0.0, targetDbfs - segment.dBFS))
-				if m.isfinite(segment.max_dBFS):
-					boostDb = min(boostDb, peakCeilingDbfs - segment.max_dBFS)
-				if boostDb > 0:
-					segment += boostDb
-
-		normalizedAudio += segment
-
-	if cursorMs < len(audioSegment):
-		normalizedAudio += audioSegment[cursorMs:]
-
-	return normalizedAudio
+	return outAudio, adjustments
 
 
 outputAudioDict = {}
@@ -1200,6 +1109,7 @@ for fooPartName in partNamesToOutput:
 	firstNote = compiledLyrics[fooPartName][0][0] # Get time of first note
 	outputAudio = None
 	lineAudioSet = []
+	noteLevelAdjustments = []
 
 	for fooLine in compiledLyrics[fooPartName]:
 		# Get average velocities of notes in this line to adjust playback volume
@@ -1213,12 +1123,9 @@ for fooPartName in partNamesToOutput:
 		readWavFileName = f"{songOutputDir}/{fooPartName}/{startTime}.wav"
 
 		# try:
-		nextAudio = AudioSegment.from_file(readWavFileName).set_sample_width(4) +meanVelocity +trackDict['VOLUME_ADJUST_DB']
+		nextAudio = AudioSegment.from_file(readWavFileName).set_sample_width(4)
 		if isSpokenCompiledLine(fooLine):
 			nextAudio = fitSpokenAudioToWindow(nextAudio, fooLine[1][1])
-		else:
-			nextAudio = applyPitchVolumeBoost(nextAudio, fooLine, foo_OCTAVE_BOOST, trackDict)
-			nextAudio = applySegmentNormalize(nextAudio, fooLine, foo_OCTAVE_BOOST, trackDict)
 
 		if not isSpokenCompiledLine(fooLine) and foo_OCTAVE_BOOST != 0: #  Multiply playback speed by OCTAVE_BOOST
 			initRate = nextAudio.frame_rate
@@ -1227,19 +1134,13 @@ for fooPartName in partNamesToOutput:
 			nextAudio = nextAudio._spawn(nextAudio.raw_data, overrides={'frame_rate': new_sample_rate})
 			nextAudio = nextAudio.set_frame_rate(initRate)
 
-		lineAudioSet.append((fooLine, startTime, nextAudio))
+		lineAudioSet.append((fooLine, startTime, nextAudio, meanVelocity))
 
-	noteNormalizeTargetDbfs = getNoteNormalizeTargetDbfs(
-		[(fooLine, nextAudio) for fooLine, startTime, nextAudio in lineAudioSet],
-		foo_OCTAVE_BOOST,
-		trackDict
-	)
-	if float(trackDict['NOTE_NORMALIZE_MAX_BOOST_DB']) > 0 and noteNormalizeTargetDbfs is not None:
-		print(f"{fooPartName} note normalize target:{noteNormalizeTargetDbfs:.1f} dBFS")
-
-	for fooLine, startTime, nextAudio in lineAudioSet:
-		if not isSpokenCompiledLine(fooLine):
-			nextAudio = applyNoteNormalize(nextAudio, fooLine, foo_OCTAVE_BOOST, noteNormalizeTargetDbfs, trackDict)
+	for fooLine, startTime, nextAudio, meanVelocity in lineAudioSet:
+		if not isSpokenCompiledLine(fooLine) and isEnabled(trackDict['AUTO_NOTE_LEVEL_ENABLED']):
+			nextAudio, adjustments = applyAutomaticNoteLevel(nextAudio, fooLine, foo_OCTAVE_BOOST, trackDict)
+			noteLevelAdjustments.extend(adjustments)
+		nextAudio += meanVelocity
 		phraseAudio = AudioSegment.silent(startTime + OUTPUT_LEAD_IN_MS, frame_rate=nextAudio.frame_rate).set_channels(nextAudio.channels).set_sample_width(4) + nextAudio
 		outputAudio = phraseAudio if outputAudio is None else phraseAudio.overlay(outputAudio)
 		# except:
@@ -1261,6 +1162,12 @@ for fooPartName in partNamesToOutput:
 		#     print(f">")
 		#     outputAudio = outputAudio[:startTime] + outputAudio[startTime:].overlay(nextAudio)
 
+	if noteLevelAdjustments:
+		print(
+			f"{fooPartName} automatic note peaks:{float(trackDict['NOTE_PEAK_TARGET_DBFS']):.1f} dBFS "
+			f"({len(noteLevelAdjustments)} notes, gain {min(noteLevelAdjustments):+.1f} to "
+			f"{max(noteLevelAdjustments):+.1f} dB)"
+		)
 	outputAudioDict[fooPartName] = outputAudio if outputAudio is not None else AudioSegment.silent(firstNote + OUTPUT_LEAD_IN_MS).set_sample_width(4)
 
 audioLenth = max( [outputAudioDict[fooPartName].duration_seconds for fooPartName in partNamesToOutput] )
@@ -1271,7 +1178,7 @@ print(f"audioLenth:{audioLenth}")
 # Export equal-length track stems
 for fooPartName in partNamesToOutput:
 	trackDict = settings_yaml['Tracks'][fooPartName]
-	trackAudio = outputAudioDict[fooPartName]
+	trackAudio = outputAudioDict[fooPartName] + float(trackDict['VOLUME_ADJUST_DB'])
 	if len(trackAudio) < targetAudioLengthMs:
 		trackAudio += AudioSegment.silent(targetAudioLengthMs-len(trackAudio))
 	elif len(trackAudio) > targetAudioLengthMs:

@@ -71,20 +71,8 @@ consonantFractionTarget: 0.15
 consonantMinMs: 5
 consonantMaxMs: 75
 
-# Song-level defaults inherited by every track unless overridden.
-# 24 is C5 in this project. The boost is keyed to final audible pitch after
-# OCTAVE_BOOST, so high octave reference voices still get the lift.
-pitchVolumeBoostStart: 24
-pitchVolumeBoostDbPerSemitone: 0.8
-pitchVolumeBoostMaxDb: 9.0
-
-# Note normalization is per voice. Auto mode uses the voice's own strong
-# upper-C3/lower-C4 register when present, then boosts quieter notes as needed.
-noteNormalizeReferenceMin: 7
-noteNormalizeReferenceMax: 16
-noteNormalizeTargetDbfs: auto
-noteNormalizeMaxBoostDb: 9.0
-noteNormalizePeakCeilingDbfs: -1.0
+# Production renders automatically target -5 dBFS peaks per sung MIDI note.
+notePeakTargetDbfs: -5.0
 
 Tracks:
 {tracks_yaml}

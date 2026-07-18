@@ -29,6 +29,45 @@ DIRECT_PHONEMES = sorted(
     reverse=True,
 )
 
+DIPHTHONG_HOLD_PHASES = {
+    'aw': ('aa', 'uw'),
+    'ay': ('aa', 'ih'),
+    'ey': ('eh', 'iy'),
+    'ow': ('ao', 'uw'),
+    'oy': ('ao', 'ih'),
+    'yu': ('uw', 'uw'),
+}
+
+
+def heldVowelPhases(phoneme):
+    """Split a diphthong into the nucleus singers hold and its delayed glide."""
+    text = str(phoneme)
+    nucleus, glide = DIPHTHONG_HOLD_PHASES.get(text.lower(), (text.lower(), text.lower()))
+    if text.isupper():
+        return nucleus.upper(), glide.upper()
+    return nucleus, glide
+
+
+def allocateSingleVowelWordToNotes(symbols, symbolIsVowel, noteCount):
+    """Allocate a one-vowel word without repeating its diphthong or coda."""
+    if noteCount <= 1 or sum(symbolIsVowel) != 1:
+        return None
+    vowelIndex = symbolIsVowel.index(1)
+    onset = list(symbols[:vowelIndex])
+    vowel = symbols[vowelIndex]
+    coda = list(symbols[vowelIndex + 1:])
+    if coda and noteCount == 2:
+        return [onset + [vowel], coda]
+
+    nucleus, glide = heldVowelPhases(vowel)
+    groups = [onset + [nucleus]]
+    middleCount = noteCount - (3 if coda else 2)
+    groups.extend([[nucleus] for _ in range(max(0, middleCount))])
+    groups.append([glide])
+    if coda:
+        groups.append(coda)
+    return groups
+
 def unsupportedDectalkPhonemes(phonemes):
     """Return symbols that cannot be emitted in a DECTALK phoneme command."""
     return sorted({

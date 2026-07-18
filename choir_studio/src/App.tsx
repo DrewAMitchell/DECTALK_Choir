@@ -56,19 +56,12 @@ type TrackTuning = {
   VOLUME_ADJUST_DB: number;
   IGNORE_MIDI_VELOCITY: boolean;
   VELOCITY_VOLUME_SCALE_DB: number;
-  PITCH_VOLUME_BOOST_START: number;
-  PITCH_VOLUME_BOOST_DB_PER_SEMITONE: number;
-  PITCH_VOLUME_BOOST_MAX_DB: number;
-  NOTE_NORMALIZE_TARGET_DBFS: number | "auto";
-  NOTE_NORMALIZE_MAX_BOOST_DB: number;
-  NOTE_NORMALIZE_PEAK_CEILING_DBFS: number;
   STEM_PEAK_CEILING_DBFS: number;
   GAP_MEND_MS: number;
   MINIMUM_NOTE_DURATION_MS: number;
 };
 const trackTuningMatches = (left: TrackTuning | null, right: TrackTuning | null) =>
   left !== null && right !== null && JSON.stringify(left) === JSON.stringify(right);
-type AutoNormalizeTuning = { supported: boolean; head_size: number | null; message: string; values: TrackTuning | null };
 type VisualTextOptions = {
   label: string;
   label_enabled: boolean;
@@ -779,7 +772,6 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
   const [renderJob, setRenderJob] = useState<RenderJobStatus | null>(null);
   const [tuning, setTuning] = useState<TrackTuning | null>(null);
   const [savedTuning, setSavedTuning] = useState<TrackTuning | null>(null);
-  const [autoNormalize, setAutoNormalize] = useState<AutoNormalizeTuning | null>(null);
   const tuningCache = useRef(new Map<string, TrackTuning>());
   const visualDrag = useRef<{ pointerId: number; role: string; mode: "move" | "resize"; startX: number; startY: number; bounds: DOMRect; position: [number, number, number] } | null>(null);
   const visualPreviewFrameRef = useRef<HTMLDivElement>(null);
@@ -863,19 +855,6 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
         setSavedTuning(next);
       }
     }).catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause)); }), 80);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [song, role?.role, setError]);
-  useEffect(() => {
-    if (!song || !role) {
-      setAutoNormalize(null);
-      return;
-    }
-    let cancelled = false;
-    setAutoNormalize(null);
-    // This is advisory calibration data; it should never compete with role selection.
-    const timer = window.setTimeout(() => bridge<AutoNormalizeTuning>({ command: "get_auto_normalize_tuning", song, role: role.role }).then((next) => {
-      if (!cancelled) setAutoNormalize(next);
-    }).catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause)); }), 160);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [song, role?.role, setError]);
   const changeTriplet = (setValue: (value: [number, number, number]) => void, source: [number, number, number], index: number, value: string) => {
@@ -1066,19 +1045,6 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
     setTuning((current) => current ? { ...current, [key]: value } : current);
   };
   const tuningDirty = !trackTuningMatches(tuning, savedTuning);
-  const applyAutoNormalize = async () => {
-    if (!song || !role || !tuning?.HEAD_SIZE) return;
-    setError("");
-    try {
-      const next = await bridge<AutoNormalizeTuning>({ command: "get_auto_normalize_tuning", song, role: role.role, head_size: tuning.HEAD_SIZE, voice: tuning.VOICE ?? "" });
-      setAutoNormalize(next);
-      if (!next.supported || !next.values) {
-        setError(next.message);
-        return;
-      }
-      setTuning(next.values);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-  };
   const saveTuning = async () => {
     if (!song || !role || !tuning || !tuningDirty) return;
     setBusy(`Saving ${role.role} tuning`); setError("");
@@ -1146,25 +1112,19 @@ function ReviewStage({ song, role, inspection, enabledRoles, onEnabledRolesChang
           <label className="tuning-field" title="Overrides automatic whole-octave wrapping into the configured DECTALK pitch bounds."><span>Pitch wrap <small>whole octaves</small></span><div className="tuning-input"><select value={tuning.PITCH_WRAP_SHIFT ?? "auto"} onChange={(event) => changeTuning("PITCH_WRAP_SHIFT", event.target.value === "auto" ? null : Number(event.target.value))}><option value="auto">Auto (recommended)</option><option value="-24">-24 st (2 octaves)</option><option value="-12">-12 st (1 octave)</option><option value="0">0 st (do not wrap)</option><option value="12">+12 st (1 octave)</option><option value="24">+24 st (2 octaves)</option></select></div><em>Leave on Auto unless you are intentionally overriding the safe pitch wrap.</em></label>
         </section>
         <section><h2>Level</h2>
-          <label className="tuning-field" title="Beta: replaces only the [:n?] voice command in DEC_SETUP and preserves head size plus other DECtalk directives."><span>Voice <small><b className="beta-badge">Beta</b> DECtalk command</small></span><div className="tuning-input"><select value={tuning.VOICE ?? ""} onChange={(event) => changeTuning("VOICE", event.target.value || null)}><option value="">DECtalk default</option><option value="np">[:np] Perfect Paul (calibrated)</option><option value="nb">[:nb] DECtalk voice</option><option value="nh">[:nh] DECtalk voice</option><option value="nd">[:nd] DECtalk voice</option><option value="nf">[:nf] DECtalk voice</option><option value="nu">[:nu] DECtalk voice</option><option value="nr">[:nr] DECtalk voice</option><option value="nw">[:nw] DECtalk voice</option><option value="nk">[:nk] DECtalk voice</option></select></div><em>Changes only the voice command. Auto-normalize is measured for Perfect Paul [:np] only.</em></label>
-          <label className="tuning-field" title="Writes [:dv hs N] into DEC_SETUP. Head size affects voice timbre and loudness; it is not a gain control."><span>Head size <small>DECTALK hs</small></span><div className="tuning-input"><input type="number" min="40" max="200" step="1" value={tuning.HEAD_SIZE ?? ""} placeholder="Set head size" onChange={(event) => changeTuning("HEAD_SIZE", event.target.value === "" ? null : Number(event.target.value))} /><output>hs</output></div><em>Voice parameter. The measured [:np] calibration covers hs 80 through 140.</em></label>
+          <label className="tuning-field" title="Beta: replaces only the [:n?] voice command in DEC_SETUP and preserves head size plus other DECtalk directives."><span>Voice <small><b className="beta-badge">Beta</b> DECtalk command</small></span><div className="tuning-input"><select value={tuning.VOICE ?? ""} onChange={(event) => changeTuning("VOICE", event.target.value || null)}><option value="">DECtalk default</option><option value="np">[:np] Perfect Paul</option><option value="nb">[:nb] DECtalk voice</option><option value="nh">[:nh] DECtalk voice</option><option value="nd">[:nd] DECtalk voice</option><option value="nf">[:nf] DECtalk voice</option><option value="nu">[:nu] DECtalk voice</option><option value="nr">[:nr] DECtalk voice</option><option value="nw">[:nw] DECtalk voice</option><option value="nk">[:nk] DECtalk voice</option></select></div><em>Changes only the voice command. Note loudness is compensated automatically for every voice.</em></label>
+          <label className="tuning-field" title="Writes [:dv hs N] into DEC_SETUP. Head size affects voice timbre and loudness; it is not a gain control."><span>Head size <small>DECTALK hs</small></span><div className="tuning-input"><input type="number" min="65" max="200" step="1" value={tuning.HEAD_SIZE ?? ""} placeholder="Set head size" onChange={(event) => changeTuning("HEAD_SIZE", event.target.value === "" ? null : Number(event.target.value))} /><output>hs</output></div><em>This engine clamps lower values to hs 65. Calibration covers hs 65 through 140.</em></label>
           <label className="tuning-field" title="Applies a constant gain to the complete rendered stem."><span>Stem gain <small>decibels</small></span><div className="tuning-input"><input type="number" min="-24" max="24" step="0.5" value={tuning.VOLUME_ADJUST_DB} onChange={(event) => changeTuning("VOLUME_ADJUST_DB", Number(event.target.value))} /><output>dB</output></div><em>0 dB leaves the stem level unchanged. Positive is louder.</em></label>
-          <label className="tuning-field" title="Final audible DECTALK pitch at which high-note gain begins."><span>Weak pitch start <small>DECTALK pitch</small></span><div className="tuning-input"><input type="number" min="0" max="36" step="1" value={tuning.PITCH_VOLUME_BOOST_START} onChange={(event) => changeTuning("PITCH_VOLUME_BOOST_START", Number(event.target.value))} /><output>pitch</output></div><em>24 is C5. 0 disables the curve when dB per semitone is also 0.</em></label>
-          <label className="tuning-field" title="Extra gain applied for every semitone above Weak pitch start."><span>High-note slope <small>gain rate</small></span><div className="tuning-input"><input type="number" min="0" max="24" step="0.1" value={tuning.PITCH_VOLUME_BOOST_DB_PER_SEMITONE} onChange={(event) => changeTuning("PITCH_VOLUME_BOOST_DB_PER_SEMITONE", Number(event.target.value))} /><output>dB/st</output></div><em>0 disables pitch-dependent gain. Example: 1.7 adds 1.7 dB per semitone.</em></label>
-          <label className="tuning-field" title="Maximum total gain allowed from the high-note curve."><span>High-note cap <small>maximum gain</small></span><div className="tuning-input"><input type="number" min="0" max="24" step="0.5" value={tuning.PITCH_VOLUME_BOOST_MAX_DB} onChange={(event) => changeTuning("PITCH_VOLUME_BOOST_MAX_DB", Number(event.target.value))} /><output>dB</output></div><em>Hard ceiling for the high-note curve; 0 permits no high-note boost.</em></label>
         </section>
         <section><h2>Note guard</h2>
           <label className="tuning-toggle" title="Leave checked to keep all MIDI velocities from changing rendered loudness."><input type="checkbox" checked={tuning.IGNORE_MIDI_VELOCITY} onChange={(event) => changeTuning("IGNORE_MIDI_VELOCITY", event.target.checked)} /> Ignore MIDI velocity <small>default: on; no hidden dynamic gain</small></label>
           <label className="tuning-field" title="Dynamic range derived from average MIDI velocity when Ignore MIDI velocity is off."><span>Velocity dynamic range <small>opt-in</small></span><div className="tuning-input"><input type="number" min="0" max="24" step="0.5" disabled={tuning.IGNORE_MIDI_VELOCITY} value={tuning.VELOCITY_VOLUME_SCALE_DB} onChange={(event) => changeTuning("VELOCITY_VOLUME_SCALE_DB", Number(event.target.value))} /><output>dB</output></div><em>0 adds no velocity response. Increase only after unchecking Ignore MIDI velocity.</em></label>
-          <label className="tuning-toggle" title="Use the strongest reference notes to choose the note-level loudness target."><input type="checkbox" checked={tuning.NOTE_NORMALIZE_TARGET_DBFS === "auto"} onChange={(event) => changeTuning("NOTE_NORMALIZE_TARGET_DBFS", event.target.checked ? "auto" : -18)} /> Auto target <small>measures this voice's reference notes</small></label>
-          <label className="tuning-field" title="Target RMS level per MIDI note when Auto target is off."><span>Target level <small>RMS dBFS</small></span><div className="tuning-input"><input type="number" min="-60" max="-1" step="1" disabled={tuning.NOTE_NORMALIZE_TARGET_DBFS === "auto"} value={tuning.NOTE_NORMALIZE_TARGET_DBFS === "auto" ? -18 : tuning.NOTE_NORMALIZE_TARGET_DBFS} onChange={(event) => changeTuning("NOTE_NORMALIZE_TARGET_DBFS", Number(event.target.value))} /><output>dBFS</output></div><em>Used only with Auto target off. Closer to 0 dBFS is louder.</em></label>
-          <label className="tuning-field" title="Caps the correction applied to each grouped MIDI note."><span>Note max boost <small>per note</small></span><div className="tuning-input"><input type="number" min="0" max="24" step="0.5" value={tuning.NOTE_NORMALIZE_MAX_BOOST_DB} onChange={(event) => changeTuning("NOTE_NORMALIZE_MAX_BOOST_DB", Number(event.target.value))} /><output>dB</output></div><em>0 disables note leveling. Higher values allow stronger correction.</em></label>
-          <label className="tuning-field" title="Final peak ceiling for each MIDI-note group after pitch, segment, and note-level gain."><span>Note peak ceiling <small>post-boost guard</small></span><div className="tuning-input"><input type="number" min="-60" max="0" step="0.5" value={tuning.NOTE_NORMALIZE_PEAK_CEILING_DBFS} onChange={(event) => changeTuning("NOTE_NORMALIZE_PEAK_CEILING_DBFS", Number(event.target.value))} /><output>dBFS</output></div><em>Attenuates already-hot notes too. -1 dBFS prevents a 0 dBFS note peak.</em></label>
+          <p className="tuning-guide"><strong>Automatic note leveling</strong><span>Each sung MIDI note is adjusted to a -5 dBFS peak after pitch correction. Stem gain remains the manual loudness control.</span></p>
           <label className="tuning-field" title="Final peak ceiling for the completed role stem after all phrases are assembled."><span>Stem peak ceiling <small>final role guard</small></span><div className="tuning-input"><input type="number" min="-60" max="0" step="0.5" value={tuning.STEM_PEAK_CEILING_DBFS} onChange={(event) => changeTuning("STEM_PEAK_CEILING_DBFS", Number(event.target.value))} /><output>dBFS</output></div><em>Last safety pass for this output track. -1 dBFS is the default.</em></label>
           <label className="tuning-field" title="Folds MIDI gaps at or below this duration into the preceding note."><span>Mend gaps <small>timing threshold</small></span><div className="tuning-input"><input type="number" min="0" max="100" step="1" value={tuning.GAP_MEND_MS} onChange={(event) => changeTuning("GAP_MEND_MS", Number(event.target.value))} /><output>ms</output></div><em>0 preserves every MIDI gap. Positive values close only short gaps.</em></label>
           <label className="tuning-field" title="Extends short notes into available silence without moving the following note onset."><span>Minimum note <small>rest-only floor</small></span><div className="tuning-input"><input type="number" min="0" max="1000" step="5" value={tuning.MINIMUM_NOTE_DURATION_MS} onChange={(event) => changeTuning("MINIMUM_NOTE_DURATION_MS", Number(event.target.value))} /><output>ms</output></div><em>0 preserves MIDI durations. A positive floor consumes only the following rest and never shifts later notes.</em></label>
         </section>
-        <div className="tuning-actions"><button className="secondary" type="button" title={autoNormalize?.message ?? "Set a calibrated [:np] head size, then load the measured baseline."} onClick={() => void applyAutoNormalize()} disabled={!tuning.HEAD_SIZE || !!busy}>Auto-normalize</button><button className="secondary" type="button" title="Discard unsaved fields and reload this role's settings.yaml profile" onClick={() => void resetTuning()} disabled={!!busy || !tuningDirty}>Reset</button><button className="primary" type="button" title={tuningDirty ? "Save these tuning changes to settings.yaml" : "No tuning changes to save"} onClick={() => void saveTuning()} disabled={!!busy || !tuningDirty}><Sparkles size={15} /> Save track tuning</button><span>{autoNormalize?.supported ? `${autoNormalize.message} Review the staged values, then save.` : autoNormalize?.message ?? "Set head size to enable the measured baseline."}</span></div>
+        <div className="tuning-actions"><button className="secondary" type="button" title="Discard unsaved fields and reload this role's settings.yaml profile" onClick={() => void resetTuning()} disabled={!!busy || !tuningDirty}>Reset</button><button className="primary" type="button" title={tuningDirty ? "Save these tuning changes to settings.yaml" : "No tuning changes to save"} onClick={() => void saveTuning()} disabled={!!busy || !tuningDirty}><Sparkles size={15} /> Save track tuning</button></div>
       </div>}
     </details>
     <section className="review-visualizer">

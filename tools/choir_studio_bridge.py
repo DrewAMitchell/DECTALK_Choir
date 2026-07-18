@@ -607,56 +607,18 @@ TRACK_TUNING_DEFAULTS = {
     "VOLUME_ADJUST_DB": 0.0,
     "IGNORE_MIDI_VELOCITY": True,
     "VELOCITY_VOLUME_SCALE_DB": 0.0,
-    "PITCH_VOLUME_BOOST_START": 0,
-    "PITCH_VOLUME_BOOST_DB_PER_SEMITONE": 0.0,
-    "PITCH_VOLUME_BOOST_MAX_DB": 6.0,
-    "NOTE_NORMALIZE_TARGET_DBFS": "auto",
-    "NOTE_NORMALIZE_MAX_BOOST_DB": 0.0,
-    "NOTE_NORMALIZE_PEAK_CEILING_DBFS": -1.0,
     "STEM_PEAK_CEILING_DBFS": -1.0,
     "GAP_MEND_MS": 0.0,
     "MINIMUM_NOTE_DURATION_MS": 0.0,
 }
 DECTALK_VOICE_CODES = frozenset({"np", "nb", "nh", "nd", "nf", "nu", "nr", "nw", "nk"})
 TRACK_TUNING_TOP_LEVEL_KEYS = {
-    "PITCH_VOLUME_BOOST_START": "pitchVolumeBoostStart",
-    "PITCH_VOLUME_BOOST_DB_PER_SEMITONE": "pitchVolumeBoostDbPerSemitone",
-    "PITCH_VOLUME_BOOST_MAX_DB": "pitchVolumeBoostMaxDb",
-    "NOTE_NORMALIZE_TARGET_DBFS": "noteNormalizeTargetDbfs",
-    "NOTE_NORMALIZE_MAX_BOOST_DB": "noteNormalizeMaxBoostDb",
-    "NOTE_NORMALIZE_PEAK_CEILING_DBFS": "noteNormalizePeakCeilingDbfs",
     "STEM_PEAK_CEILING_DBFS": "stemPeakCeilingDbfs",
     "IGNORE_MIDI_VELOCITY": "ignoreMidiVelocity",
     "VELOCITY_VOLUME_SCALE_DB": "velocityVolumeScaleDb",
     "GAP_MEND_MS": "gapMendMs",
     "MINIMUM_NOTE_DURATION_MS": "minimumNoteDurationMs",
 }
-
-# Measured from the raw [:np] head-size reference at pitches G3 through E4.
-# Values align each head size to hs 110 before note-level correction is applied.
-HEAD_SIZE_VOLUME_BASELINES = ((80, 4.5), (95, 2.9), (110, 0.0), (125, -4.5), (140, -11.4))
-AUTO_NORMALIZE_TUNING = {
-    "PITCH_VOLUME_BOOST_START": 15,
-    "PITCH_VOLUME_BOOST_DB_PER_SEMITONE": 1.7,
-    "PITCH_VOLUME_BOOST_MAX_DB": 12.5,
-    "NOTE_NORMALIZE_TARGET_DBFS": "auto",
-    "NOTE_NORMALIZE_MAX_BOOST_DB": 5.0,
-}
-
-
-def _interpolate_head_size_baseline(head_size: int) -> float:
-    first_size, first_gain = HEAD_SIZE_VOLUME_BASELINES[0]
-    last_size, last_gain = HEAD_SIZE_VOLUME_BASELINES[-1]
-    if head_size <= first_size:
-        return first_gain
-    if head_size >= last_size:
-        return last_gain
-    for (lower_size, lower_gain), (upper_size, upper_gain) in zip(HEAD_SIZE_VOLUME_BASELINES, HEAD_SIZE_VOLUME_BASELINES[1:]):
-        if lower_size <= head_size <= upper_size:
-            fraction = (head_size - lower_size) / (upper_size - lower_size)
-            return lower_gain + (upper_gain - lower_gain) * fraction
-    return 0.0
-
 
 def _head_size_from_setup(setup: object) -> int | None:
     match = re.search(r"\[:dv\s+hs\s+(\d+)\]", str(setup or "").lower())
@@ -698,51 +660,6 @@ def _setup_with_head_size(setup: object, head_size: int) -> str:
     if re.search(r"\[:dv\s+hs\s+\d+\]", current, flags=re.IGNORECASE):
         return re.sub(r"\[:dv\s+hs\s+\d+\]", replacement, current, flags=re.IGNORECASE)
     return f"{current}{replacement}"
-
-
-def _auto_normalize_tuning(
-    song: str,
-    role: str,
-    requested_head_size: object = None,
-    requested_voice: object = None,
-) -> dict[str, Any]:
-    _, settings = load_settings(song)
-    track = settings["Tracks"].get(role) or {}
-    setup = str(track.get("DEC_SETUP", "")).lower()
-    voice = _voice_from_setup(setup) if requested_voice is None else _voice_setting(requested_voice)
-    if voice != "np":
-        return {
-            "supported": False,
-            "head_size": None,
-            "message": "Auto-normalize is measured only for Perfect Paul ([:np]). Choose [:np] or tune this voice manually.",
-            "values": None,
-        }
-    if requested_head_size is None:
-        head_size = _head_size_from_setup(setup)
-    else:
-        head_size = _number_setting(requested_head_size, "HEAD_SIZE", 40, 200, integer=True)
-    if head_size is None:
-        return {
-            "supported": False,
-            "head_size": None,
-            "message": "Auto-normalize needs a [:dv hs N] value in DEC_SETUP.",
-            "values": None,
-        }
-
-    values = _track_tuning(song, role)
-    values.update(AUTO_NORMALIZE_TUNING)
-    values["VOICE"] = voice
-    values["HEAD_SIZE"] = head_size
-    values["VOLUME_ADJUST_DB"] = round(_interpolate_head_size_baseline(head_size), 1)
-    return {
-        "supported": True,
-        "head_size": head_size,
-        "message": (
-            f"Measured [:np] baseline for head size {head_size}: "
-            f"{values['VOLUME_ADJUST_DB']:+.1f} dB stem gain, then pitch and note normalization."
-        ),
-        "values": values,
-    }
 
 
 def _track_tuning(song: str, role: str) -> dict[str, Any]:
@@ -798,7 +715,7 @@ def _update_track_tuning(song: str, role: str, requested: object) -> dict[str, A
         if key == "VOICE":
             values[key] = _voice_setting(value)
         elif key == "HEAD_SIZE":
-            values[key] = None if value is None or value == "" else _number_setting(value, key, 40, 200, integer=True)
+            values[key] = None if value is None or value == "" else _number_setting(value, key, 65, 200, integer=True)
         elif key == "PITCH_SHIFT":
             values[key] = _number_setting(value, key, -24, 24, integer=True)
         elif key == "OCTAVE_BOOST":
@@ -819,17 +736,8 @@ def _update_track_tuning(song: str, role: str, requested: object) -> dict[str, A
             values[key] = value
         elif key == "VELOCITY_VOLUME_SCALE_DB":
             values[key] = _number_setting(value, key, 0.0, 24.0)
-        elif key == "PITCH_VOLUME_BOOST_START":
-            values[key] = _number_setting(value, key, 0, 36, integer=True)
-        elif key in {"PITCH_VOLUME_BOOST_DB_PER_SEMITONE", "PITCH_VOLUME_BOOST_MAX_DB", "NOTE_NORMALIZE_MAX_BOOST_DB"}:
-            values[key] = _number_setting(value, key, 0.0, 24.0)
-        elif key in {"NOTE_NORMALIZE_PEAK_CEILING_DBFS", "STEM_PEAK_CEILING_DBFS"}:
+        elif key == "STEM_PEAK_CEILING_DBFS":
             values[key] = _number_setting(value, key, -60.0, 0.0)
-        elif key == "NOTE_NORMALIZE_TARGET_DBFS":
-            if value == "auto":
-                values[key] = "auto"
-            else:
-                values[key] = _number_setting(value, key, -60.0, -1.0)
         elif key == "GAP_MEND_MS":
             values[key] = _number_setting(value, key, 0.0, 100.0)
         elif key == "MINIMUM_NOTE_DURATION_MS":
@@ -1287,8 +1195,6 @@ def handle(request: dict[str, Any]) -> Any:
         return _save_visual_layout(song, role, request.get("position"), request.get("hsb"), request.get("options"))
     if command == "get_track_tuning":
         return _track_tuning(song, role)
-    if command == "get_auto_normalize_tuning":
-        return _auto_normalize_tuning(song, role, request.get("head_size"), request.get("voice"))
     if command == "update_track_tuning":
         return _update_track_tuning(song, role, request.get("values"))
     if command == "update_render_enabled_roles":
