@@ -14,6 +14,10 @@ export type MidiTrack = {
   min_pitch: number | null;
   max_pitch: number | null;
   max_polyphony: number;
+  overlap_regions: number;
+  total_overlap_ms: number;
+  longest_overlap_ms: number;
+  overlap_totals: Array<{ note_count: number; duration_ms: number }>;
   warnings: string[];
 };
 

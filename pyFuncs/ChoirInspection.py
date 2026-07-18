@@ -49,6 +49,14 @@ class MidiNote:
 
 
 @dataclass(frozen=True)
+class MidiOverlapRegion:
+    """One contiguous interval containing two or more simultaneous notes."""
+
+    note_count: int
+    duration_ms: float
+
+
+@dataclass(frozen=True)
 class MidiTrackInfo:
     """The note-bearing information needed to inspect a MIDI source track."""
 
@@ -59,6 +67,7 @@ class MidiTrackInfo:
     overlap_regions: int
     total_overlap_ms: float
     longest_overlap_ms: float
+    overlap_totals: tuple[MidiOverlapRegion, ...]
     duplicate_note_spans: int
     warnings: tuple[str, ...]
 
@@ -239,7 +248,9 @@ def _tick_to_milliseconds(midi: mido.MidiFile):
     return convert
 
 
-def _overlap_metrics(notes: Iterable[MidiNote], tick_to_ms) -> tuple[int, float, float]:
+def _overlap_metrics(
+    notes: Iterable[MidiNote], tick_to_ms
+) -> tuple[int, float, float, tuple[MidiOverlapRegion, ...]]:
     """Report actual simultaneous-note time, ignoring zero-length event boundaries."""
 
     events: list[tuple[int, int]] = []
@@ -250,19 +261,48 @@ def _overlap_metrics(notes: Iterable[MidiNote], tick_to_ms) -> tuple[int, float,
 
     active = 0
     overlap_start_tick: int | None = None
-    durations_ms: list[float] = []
-    for tick, change in events:
+    span_start_tick: int | None = None
+    overlap_durations_ms: list[float] = []
+    spans: list[MidiOverlapRegion] = []
+    event_index = 0
+    while event_index < len(events):
+        tick = events[event_index][0]
+        change = 0
+        while event_index < len(events) and events[event_index][0] == tick:
+            change += events[event_index][1]
+            event_index += 1
+
         before = active
         active += change
+        if before > 1 and active != before and span_start_tick is not None:
+            duration_ms = tick_to_ms(tick) - tick_to_ms(span_start_tick)
+            if duration_ms > 0:
+                spans.append(MidiOverlapRegion(before, duration_ms))
+            span_start_tick = None
+        if active > 1 and active != before:
+            span_start_tick = tick
+
         if before <= 1 and active > 1:
             overlap_start_tick = tick
         elif before > 1 and active <= 1 and overlap_start_tick is not None:
             duration_ms = tick_to_ms(tick) - tick_to_ms(overlap_start_tick)
             if duration_ms > 0:
-                durations_ms.append(duration_ms)
+                overlap_durations_ms.append(duration_ms)
             overlap_start_tick = None
 
-    return len(durations_ms), sum(durations_ms), max(durations_ms, default=0.0)
+    totals_by_count: dict[int, float] = defaultdict(float)
+    for span in spans:
+        totals_by_count[span.note_count] += span.duration_ms
+    totals = tuple(
+        MidiOverlapRegion(note_count, duration_ms)
+        for note_count, duration_ms in sorted(totals_by_count.items())
+    )
+    return (
+        len(overlap_durations_ms),
+        sum(overlap_durations_ms),
+        max(overlap_durations_ms, default=0.0),
+        totals,
+    )
 
 
 def _unique_note_spans(notes: Iterable[MidiNote]) -> tuple[tuple[MidiNote, ...], int]:
@@ -335,9 +375,12 @@ def inspect_midi(path: Path) -> MidiSummary:
     tracks = []
     for index, name, notes, track_warnings in parsed_tracks:
         overlap_notes, duplicate_note_spans = _unique_note_spans(notes)
-        overlap_regions, total_overlap_ms, longest_overlap_ms = _overlap_metrics(
-            overlap_notes, tick_to_ms
-        )
+        (
+            overlap_regions,
+            total_overlap_ms,
+            longest_overlap_ms,
+            overlap_totals,
+        ) = _overlap_metrics(overlap_notes, tick_to_ms)
         tracks.append(
             MidiTrackInfo(
                 index=index,
@@ -347,6 +390,7 @@ def inspect_midi(path: Path) -> MidiSummary:
                 overlap_regions=overlap_regions,
                 total_overlap_ms=total_overlap_ms,
                 longest_overlap_ms=longest_overlap_ms,
+                overlap_totals=overlap_totals,
                 duplicate_note_spans=duplicate_note_spans,
                 warnings=track_warnings,
             )
