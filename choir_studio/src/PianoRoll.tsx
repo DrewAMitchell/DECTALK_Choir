@@ -113,7 +113,7 @@ function PianoRollCanvas({
   const [phraseDrag, setPhraseDrag] = useState<{ edge: "start" | "end"; pointerId: number; movement: number; targetX: number; invalid: boolean; missingWords: number } | null>(null);
   const [virtualSplitDrag, setVirtualSplitDrag] = useState<{ pointerId: number; displayIndex: number; fraction: number } | null>(null);
   const virtualSplitDragRef = useRef<{ pointerId: number; displayIndex: number; fraction: number; left: number; width: number } | null>(null);
-  const canvasPanRef = useRef<{ pointerId: number; startX: number; startCenterMs: number; dragging: boolean; feedbackShown: boolean } | null>(null);
+  const canvasPanRef = useRef<{ pointerId: number; startX: number; startCenterMs: number; dragging: boolean; feedbackDirection: -1 | 1 | null } | null>(null);
   const panFeedbackNonceRef = useRef(0);
   const panFeedbackTimerRef = useRef<number | null>(null);
   const rollWrapRef = useRef<HTMLDivElement>(null);
@@ -418,7 +418,7 @@ function PianoRollCanvas({
     // Boundary handles and Ctrl-drag splits own their gestures. Other surfaces use a
     // drag threshold so a click selects a phrase/note while a drag always pans.
     if (event.button !== 0 || target.closest(".word-boundary-region, .phrase-boundary-region")) return;
-    canvasPanRef.current = { pointerId: event.pointerId, startX: event.clientX, startCenterMs: timeCenterMs, dragging: false, feedbackShown: false };
+    canvasPanRef.current = { pointerId: event.pointerId, startX: event.clientX, startCenterMs: timeCenterMs, dragging: false, feedbackDirection: null };
   };
   const updateCanvasPan = (event: PointerEvent<SVGSVGElement>) => {
     if (virtualSplitDragRef.current?.pointerId === event.pointerId) {
@@ -440,11 +440,17 @@ function PianoRollCanvas({
     }
     event.preventDefault();
     const deltaMs = -(deltaX / rect.width) * visibleDurationMs;
-    if (lowerBound <= 0.5 && !canvasPan.feedbackShown) {
-      canvasPan.feedbackShown = true;
-      showPanLimit(deltaX > 0 ? -1 : 1);
+    const requestedCenter = canvasPan.startCenterMs + deltaMs;
+    const minimumCenter = visibleDurationMs >= durationMs ? durationMs / 2 : visibleDurationMs / 2;
+    const maximumCenter = visibleDurationMs >= durationMs ? durationMs / 2 : durationMs - visibleDurationMs / 2;
+    const feedbackDirection = requestedCenter < minimumCenter ? -1 : requestedCenter > maximumCenter ? 1 : null;
+    if (feedbackDirection !== null && canvasPan.feedbackDirection !== feedbackDirection) {
+      canvasPan.feedbackDirection = feedbackDirection;
+      showPanLimit(feedbackDirection);
+    } else if (feedbackDirection === null) {
+      canvasPan.feedbackDirection = null;
     }
-    setTimeCenterMs(Math.max(0, Math.min(durationMs, canvasPan.startCenterMs + deltaMs)));
+    setTimeCenterMs(Math.max(minimumCenter, Math.min(maximumCenter, requestedCenter)));
   };
   const finishCanvasPan = (event: PointerEvent<SVGSVGElement>) => {
     if (virtualSplitDragRef.current?.pointerId === event.pointerId) {
@@ -536,7 +542,7 @@ function PianoRollCanvas({
           <button type="button" aria-label="Zoom in horizontally" title="Zoom in horizontally" onClick={() => setZoom(timeZoom + 8)}><ZoomIn size={15} /></button>
         </div>
       </div>
-      <span className="sr-only" role="status" aria-live="polite">{panFeedback ? "The full song is already visible. Zoom in to pan the MIDI view." : ""}</span>
+      <span className="sr-only" role="status" aria-live="polite">{panFeedback ? `Reached the ${panFeedback.direction < 0 ? "start" : "end"} of the MIDI view.` : ""}</span>
       <div className="roll-pan-controls" aria-label="Timeline pan controls"><button type="button" aria-label="Pan MIDI view earlier" title="Pan MIDI view earlier" onClick={() => pan(-1)}><ChevronLeft size={17} /></button><button type="button" aria-label="Pan MIDI view later" title="Pan MIDI view later" onClick={() => pan(1)}><ChevronRight size={17} /></button></div>
       <svg className={canvasPanning ? "piano-roll panning" : "piano-roll"} viewBox="0 0 1000 500" preserveAspectRatio="none" overflow="hidden" role="img" aria-label={`${track.name} piano roll`} onPointerDown={beginCanvasPan} onPointerMove={updateCanvasPan} onPointerUp={finishCanvasPan} onPointerCancel={() => { canvasPanRef.current = null; virtualSplitDragRef.current = null; setVirtualSplitDrag(null); onVirtualSplitPreview?.(null); setCanvasPanning(false); }}>
         <rect width="1000" height="500" className="roll-bg" />

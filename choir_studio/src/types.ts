@@ -10,6 +10,7 @@ export type MidiTrack = {
   index: number;
   name: string;
   notes: MidiNote[];
+  first_note_ms: number | null;
   note_count: number;
   notes_below_150ms: number;
   min_pitch: number | null;
@@ -49,6 +50,7 @@ export type Role = {
   head_size: number | null;
   head_size_is_default: boolean;
   export_phoneme_string: boolean;
+  track_order: number;
   render_enabled: boolean;
   render_eligible: boolean;
   source_sync_state: "absent" | "pending" | "synced";
@@ -81,6 +83,7 @@ export type SongInspection = {
   midi: {
     duration_ticks: number;
     duration_seconds: number;
+    tempo_bpms: number[];
     tracks: MidiTrack[];
     warnings: string[];
   } | null;

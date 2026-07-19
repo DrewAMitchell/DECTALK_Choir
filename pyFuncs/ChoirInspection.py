@@ -75,6 +75,7 @@ class MidiTrackInfo:
     overlap_totals: tuple[MidiOverlapRegion, ...]
     duplicate_note_spans: int
     warnings: tuple[str, ...]
+    first_note_ms: float | None = None
 
     @property
     def note_count(self) -> int:
@@ -95,6 +96,7 @@ class MidiSummary:
     ticks_per_beat: int
     duration_ticks: int
     duration_seconds: float
+    tempo_bpms: tuple[float, ...]
     tracks: tuple[MidiTrackInfo, ...]
     warnings: tuple[str, ...]
 
@@ -161,6 +163,7 @@ class RoleInspection:
     head_size: int | None
     head_size_is_default: bool
     export_phoneme_string: bool
+    track_order: int
     render_enabled: bool
     render_eligible: bool
     status: str
@@ -340,6 +343,7 @@ def inspect_midi(path: Path) -> MidiSummary:
     parsed_tracks: list[tuple[int, str, tuple[MidiNote, ...], tuple[str, ...]]] = []
     duration_ticks = 0
     warnings: list[str] = []
+    tempo_bpms: set[float] = set()
 
     for index, track in enumerate(midi.tracks):
         absolute_tick = 0
@@ -348,6 +352,8 @@ def inspect_midi(path: Path) -> MidiSummary:
         track_warnings: list[str] = []
         for message in track:
             absolute_tick += message.time
+            if message.type == "set_tempo":
+                tempo_bpms.add(round(float(mido.tempo2bpm(message.tempo)), 3))
             if _is_note_on(message):
                 active[(message.channel, message.note)].append(
                     (absolute_tick, message.velocity)
@@ -398,6 +404,7 @@ def inspect_midi(path: Path) -> MidiSummary:
                 index=index,
                 name=name,
                 notes=notes,
+                first_note_ms=round(min((tick_to_ms(note.start_tick) for note in notes), default=0.0), 3) if notes else None,
                 notes_below_150ms=sum(
                     0 < tick_to_ms(note.end_tick) - tick_to_ms(note.start_tick)
                     < SHORT_NOTE_THRESHOLD_MS
@@ -418,6 +425,7 @@ def inspect_midi(path: Path) -> MidiSummary:
         ticks_per_beat=midi.ticks_per_beat,
         duration_ticks=duration_ticks,
         duration_seconds=midi.length,
+        tempo_bpms=tuple(sorted(tempo_bpms or {120.0})),
         tracks=tuple(tracks),
         warnings=tuple(warnings),
     )
@@ -616,7 +624,7 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
             tracks_by_name[source_track.name].append(source_track)
 
     roles: list[RoleInspection] = []
-    for role, raw_config in tracks_config.items():
+    for configured_index, (role, raw_config) in enumerate(tracks_config.items()):
         config = raw_config if isinstance(raw_config, dict) else {}
         role_name = str(role)
         source_name = str(config.get("TRACK_FILENAME", role_name))
@@ -753,6 +761,7 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
                 head_size=head_size,
                 head_size_is_default=head_size_match is None,
                 export_phoneme_string=bool(config.get("EXPORT_PHONEME_STRING", False)),
+                track_order=_as_int(config.get("TRACK_ORDER"), configured_index),
                 render_enabled=render_enabled,
                 render_eligible=render_eligible,
                 status=status,
@@ -760,6 +769,7 @@ def inspect_song(repo_root: Path, song_name: str, include_audio: bool = True) ->
             )
         )
 
+    roles.sort(key=lambda item: item.track_order)
     final_loudness = measure_audio(final_mix) if include_audio and final_mix.is_file() else None
     try:
         final_rendered_at_ms = final_mix.stat().st_mtime * 1000 if final_mix.is_file() else None

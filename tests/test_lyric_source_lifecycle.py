@@ -143,7 +143,7 @@ def test_candidate_rewording_preserves_phrase_and_note_ownership() -> None:
     assert updated["line_timings"] == report["line_timings"]
 
 
-def test_candidate_word_count_mismatch_does_not_write_files(tmp_path: Path) -> None:
+def test_candidate_word_count_change_reflows_existing_midi_notes(tmp_path: Path) -> None:
     paths = (
         tmp_path / "inputs" / "lyrics" / "Lead.txt",
         tmp_path / "inputs" / "lyrics" / "Lead.transcript.txt",
@@ -155,16 +155,43 @@ def test_candidate_word_count_mismatch_does_not_write_files(tmp_path: Path) -> N
     paths[1].write_text("old first last\n", encoding="utf-8")
     paths[2].write_text("2*old first\nlast\n", encoding="utf-8")
     paths[3].write_text(__import__("json").dumps(_alignment_report(), indent=2) + "\n", encoding="utf-8")
-    candidate_before = paths[2].read_bytes()
-    report_before = paths[3].read_bytes()
+    with patch.object(bridge, "_role_paths", return_value=paths):
+        result = bridge._update_candidate_text("Example", "Lead", "too few")
+
+    assert paths[2].read_text(encoding="utf-8") == "too few\n"
+    assert [item["word"] for item in result["report"]["token_counts"]] == ["too", "few"]
+    assert [item["lyric"] for item in result["report"]["notes"]] == ["too", "few", None, None]
+    assert result["report"]["virtual_splits"] == _alignment_report()["virtual_splits"]
+    assert paths[1].read_text(encoding="utf-8") == "old first last\n"
+
+
+def test_empty_candidate_requires_override_and_remains_authoritative(tmp_path: Path) -> None:
+    paths = (
+        tmp_path / "inputs" / "lyrics" / "Lead.txt",
+        tmp_path / "inputs" / "lyrics" / "Lead.transcript.txt",
+        tmp_path / "outputs" / "lyrics_drafts" / "Lead.txt",
+        tmp_path / "outputs" / "lyrics_drafts" / "Lead.json",
+    )
+    paths[0].parent.mkdir(parents=True)
+    paths[2].parent.mkdir(parents=True)
+    paths[0].write_text("published lyrics\n", encoding="utf-8")
+    paths[1].write_text("original lyrics\n", encoding="utf-8")
+    paths[2].write_text("2*old first\nlast\n", encoding="utf-8")
+    paths[3].write_text(__import__("json").dumps(_alignment_report(), indent=2) + "\n", encoding="utf-8")
 
     with patch.object(bridge, "_role_paths", return_value=paths):
-        with pytest.raises(bridge.BridgeError, match="Nothing was saved"):
-            bridge._update_candidate_text("Example", "Lead", "too few")
+        with pytest.raises(bridge.BridgeError, match="Hold Ctrl"):
+            bridge._update_candidate_text("Example", "Lead", "")
+        result = bridge._update_candidate_text("Example", "Lead", "", allow_empty=True)
+        source = bridge._read_source("Example", "Lead")
 
-    assert paths[2].read_bytes() == candidate_before
-    assert paths[3].read_bytes() == report_before
-    assert paths[1].read_text(encoding="utf-8") == "old first last\n"
+    assert result["text"] == ""
+    assert result["report"]["token_counts"] == []
+    assert all(item["line"] is None and item["lyric"] is None for item in result["report"]["notes"])
+    assert paths[2].read_text(encoding="utf-8") == ""
+    assert source["kind"] == "candidate"
+    assert source["text"] == ""
+    assert source["candidate_exists"] is True
 
 
 def test_existing_lifecycle_cannot_be_redrafted(tmp_path: Path) -> None:

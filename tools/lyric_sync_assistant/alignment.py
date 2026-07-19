@@ -426,11 +426,35 @@ def replace_alignment_words(
     ]
     aligned_tokens = [token for line in token_lines for token in line]
     if len(edited_tokens) != len(aligned_tokens):
-        raise ValueError(
-            f"This candidate has {len(aligned_tokens)} aligned words, but the edited text has "
-            f"{len(edited_tokens)}. Nothing was saved. Use the Align word controls to insert "
-            "or remove words before bulk rewording."
+        edited_token_lines = _token_lines_from_text(normalized_edited_text)
+        notes = [
+            NoteEvent(
+                pitch=int(note["midi_pitch"]),
+                velocity=int(note.get("velocity", 0)),
+                start_ms=float(note["start_ms"]),
+                end_ms=float(note["end_ms"]),
+            )
+            for note in report.get("notes", [])
+        ]
+        summary = dict(report.get("summary") or {})
+        entries, rebuilt_summary = align_tokens(
+            _tokens_from_lines(edited_token_lines),
+            notes,
+            float(summary.get("phrase_gap_ms", 0)),
+            float(summary.get("word_gap_ms", 0)),
+            placeholder_word=summary.get("placeholder_word") or None,
         )
+        updated_report = dict(report)
+        updated_report["summary"] = {**summary, **rebuilt_summary}
+        updated_report["notes"] = [asdict(entry) for entry in entries]
+        updated_report["token_counts"] = _token_counts(edited_token_lines, entries)
+        updated_report["version"] = max(4, int(report.get("version", 1)))
+        rendered = render_aligned_lyrics(
+            edited_token_lines,
+            entries,
+            line_timings=report.get("line_timings"),
+        )
+        return updated_report, "\n".join(rendered).rstrip() + ("\n" if rendered else "")
 
     for aligned, edited in zip(aligned_tokens, edited_tokens):
         aligned.word = edited.word

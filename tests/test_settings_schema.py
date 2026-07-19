@@ -8,6 +8,7 @@ def test_settings_schema_accepts_current_and_legacy_migration_keys() -> None:
         "Tracks": {
             "Lead": {
                 "DEC_SETUP": "[:np]",
+                "TRACK_ORDER": 0,
                 "NOTE_PEAK_TARGET_DBFS": -5,
                 "VID_HSB": [0, 100, 100],
                 "SPECTROGRAM": {

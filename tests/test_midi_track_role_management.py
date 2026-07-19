@@ -76,6 +76,7 @@ def test_remove_role_preserves_midi_and_authored_artifacts_then_allows_reimport(
     settings = yaml.safe_load((song_dir / "settings.yaml").read_text(encoding="utf-8"))
     assert added["track_name"] == "Harmony"
     assert settings["Tracks"]["Harmony"]["TRACK_FILENAME"] == "Harmony"
+    assert settings["Tracks"]["Harmony"]["TRACK_ORDER"] == 1
     assert settings["Tracks"]["Harmony"]["RENDER_ENABLED"] is False
     assert lyric.read_text(encoding="utf-8") == "aligned words\n"
     assert working_midi.read_bytes() == original_midi
@@ -104,3 +105,47 @@ def test_last_role_can_be_removed_and_added_back(tmp_path, monkeypatch):
         "role": "Solo",
     })
     assert "Solo" in yaml.safe_load((song_dir / "settings.yaml").read_text(encoding="utf-8"))["Tracks"]
+
+
+def test_track_order_persists_without_reordering_yaml_or_midi(tmp_path, monkeypatch):
+    source = tmp_path / "source.mid"
+    _source_midi(source)
+    _patch_repo(monkeypatch, tmp_path)
+    imported = bridge._scaffold_midi_song(tmp_path, source, "TrackOrder")
+    song_dir = tmp_path / "songs" / "TrackOrder"
+    settings_path = song_dir / "settings.yaml"
+    original_midi = Path(imported["midi_path"]).read_bytes()
+
+    result = bridge.handle({
+        "command": "update_track_order",
+        "song": "TrackOrder",
+        "roles": ["Harmony", "Melody"],
+    })
+
+    settings = yaml.safe_load(settings_path.read_text(encoding="utf-8"))
+    assert list(settings["Tracks"]) == ["Melody", "Harmony"]
+    assert settings["Tracks"]["Harmony"]["TRACK_ORDER"] == 0
+    assert settings["Tracks"]["Melody"]["TRACK_ORDER"] == 1
+    assert Path(imported["midi_path"]).read_bytes() == original_midi
+    assert result["roles"] == ["Harmony", "Melody"]
+    inspection = bridge.inspect_song(tmp_path, "TrackOrder", include_audio=False)
+    assert [role.role for role in inspection.roles] == ["Harmony", "Melody"]
+    assert inspection.midi.tempo_bpms == (120.0,)
+
+
+def test_track_order_requires_every_configured_role_once(tmp_path, monkeypatch):
+    source = tmp_path / "source.mid"
+    _source_midi(source)
+    _patch_repo(monkeypatch, tmp_path)
+    bridge._scaffold_midi_song(tmp_path, source, "TrackOrderValidation")
+
+    try:
+        bridge.handle({
+            "command": "update_track_order",
+            "song": "TrackOrderValidation",
+            "roles": ["Melody", "Melody"],
+        })
+    except bridge.BridgeError as error:
+        assert "every configured role exactly once" in str(error)
+    else:
+        raise AssertionError("Invalid track order was accepted")

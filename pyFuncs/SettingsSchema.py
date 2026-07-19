@@ -46,6 +46,7 @@ TRACK_KEYS = frozenset({
     "SPLIT_SOURCE_ROLE",
     "STEM_PEAK_CEILING_DBFS",
     "TRACK_FILENAME",
+    "TRACK_ORDER",
     "VELOCITY_VOLUME_SCALE_DB",
     "VID_CurrentWordEnabled",
     "VID_CurrentWordPosition",

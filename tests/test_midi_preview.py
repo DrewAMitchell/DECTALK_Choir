@@ -4,6 +4,7 @@ import mido
 import pytest
 
 from pyFuncs.MidiPreview import MidiPreviewError, write_single_track_preview
+from pyFuncs.ChoirInspection import inspect_midi
 
 
 def _absolute_messages(track: mido.MidiTrack):
@@ -52,6 +53,7 @@ def test_preview_replaces_program_changes_and_preserves_note_timing(tmp_path: Pa
         (600, "note_on", 0, 64),
         (840, "note_off", 0, 64),
     ]
+    assert inspect_midi(source_path).tracks[1].first_note_ms == 125.0
 
 
 @pytest.mark.parametrize("program", [-1, 128, True])

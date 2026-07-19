@@ -152,6 +152,7 @@ def _scaffold_midi_song(repo_root: Path, source_value: object, song_value: objec
             "codaMaxMs": 200,
             "Tracks": {
                 role: {
+                    "TRACK_ORDER": order,
                     "DEC_SETUP": "[:np][:dv hs 100]",
                     "VOLUME_ADJUST_DB": 0,
                     "RENDER_ENABLED": False,
@@ -164,7 +165,7 @@ def _scaffold_midi_song(repo_root: Path, source_value: object, song_value: objec
                     "GAP_MEND_MS": 0,
                     "MINIMUM_NOTE_DURATION_MS": 0,
                 }
-                for _, role in roles
+                for order, (_, role) in enumerate(roles)
             },
         }
         (temporary / "settings.yaml").write_text(
@@ -245,10 +246,11 @@ def _role_paths(song: str, role: str) -> tuple[Path, Path, Path, Path]:
 def _source_sync_state(song: str, role: str) -> str:
     """Return the Studio publish state without rebuilding alignment metadata."""
 
-    source, transcript, candidate, _ = _role_paths(song, role)
+    source, transcript, candidate, report = _role_paths(song, role)
     if not transcript.is_file():
         return "absent"
-    active = candidate if _has_lyric_content(candidate) else source
+    candidate_exists = _has_lyric_content(candidate) or (candidate.is_file() and report.is_file())
+    active = candidate if candidate_exists else source
     if not source.is_file() or not _has_lyric_content(active):
         return "pending"
     try:
@@ -260,17 +262,18 @@ def _source_sync_state(song: str, role: str) -> str:
 
 
 def _read_source(song: str, role: str) -> dict[str, Any]:
-    source, transcript, candidate, _ = _role_paths(song, role)
+    source, transcript, candidate, report = _role_paths(song, role)
     # The working candidate is authoritative once timing work has begun. Source
     # is only a fallback for legacy aligned roles without a durable candidate.
     # Deleting the transcript is the explicit reset, so stale candidates are
     # deliberately ignored until a new transcript lifecycle is created.
-    preferred_paths = (candidate, source, transcript) if transcript.is_file() else (source, transcript)
+    candidate_exists = _has_lyric_content(candidate) or (candidate.is_file() and report.is_file())
+    preferred_paths = (candidate, source, transcript) if transcript.is_file() and candidate_exists else (source, transcript)
     active = next(
         (
             path
             for path in preferred_paths
-            if _has_lyric_content(path)
+            if path.is_file() and (path == candidate or _has_lyric_content(path))
         ),
         transcript,
     )
@@ -283,7 +286,7 @@ def _read_source(song: str, role: str) -> dict[str, Any]:
         "path": str(active),
         "kind": "candidate" if active == candidate else "alignment" if active == source else "transcript",
         "transcript_exists": transcript.is_file(),
-        "candidate_exists": _has_lyric_content(candidate),
+        "candidate_exists": candidate_exists,
     }
 
 
@@ -506,14 +509,9 @@ def _visual_triplet(value: object, label: str, lower: float, upper: float) -> li
     return parsed
 
 
-def _replace_role_setting(path: Path, role: str, key: str, value: str) -> None:
-    """Update one known per-role YAML setting without reformatting unrelated settings."""
+def _settings_with_role_setting(text: str, role: str, key: str, value: str) -> str:
+    """Update one per-role YAML scalar in memory without reformatting the document."""
 
-    try:
-        with path.open("r", encoding="utf-8", newline="") as settings_file:
-            text = settings_file.read()
-    except OSError as error:
-        raise BridgeError(f"Could not read settings.yaml: {error}") from error
     newline = "\r\n" if "\r\n" in text else "\n"
     lines = text.splitlines(keepends=True)
     role_pattern = re.compile(rf"^  {re.escape(role)}:\s*(?:#.*)?(?:\r?\n)?$")
@@ -535,7 +533,18 @@ def _replace_role_setting(path: Path, role: str, key: str, value: str) -> None:
         lines.insert(section_end, rendered)
     else:
         lines[setting_index] = rendered
-    updated = "".join(lines)
+    return "".join(lines)
+
+
+def _replace_role_setting(path: Path, role: str, key: str, value: str) -> None:
+    """Update one known per-role YAML setting without reformatting unrelated settings."""
+
+    try:
+        with path.open("r", encoding="utf-8", newline="") as settings_file:
+            text = settings_file.read()
+    except OSError as error:
+        raise BridgeError(f"Could not read settings.yaml: {error}") from error
+    updated = _settings_with_role_setting(text, role, key, value)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
         with temporary.open("w", encoding="utf-8", newline="") as settings_file:
@@ -544,7 +553,48 @@ def _replace_role_setting(path: Path, role: str, key: str, value: str) -> None:
     except OSError as error:
         with contextlib.suppress(OSError):
             temporary.unlink()
-        raise BridgeError(f"Could not save visualizer settings: {error}") from error
+        raise BridgeError(f"Could not save track settings: {error}") from error
+
+
+def _update_track_order(song: str, requested_roles: object) -> dict[str, Any]:
+    """Persist one complete Studio role ordering independently of YAML map order."""
+
+    if not isinstance(requested_roles, list):
+        raise BridgeError("Track order must be a list of configured role names.")
+    ordered_roles = [str(role) for role in requested_roles]
+    song_dir, settings = load_settings(song)
+    configured_roles = list((settings.get("Tracks") or {}).keys())
+    if len(ordered_roles) != len(set(ordered_roles)) or set(ordered_roles) != set(configured_roles):
+        raise BridgeError("Track order must contain every configured role exactly once.")
+    settings_path = song_dir / "settings.yaml"
+    temporary = settings_path.with_suffix(settings_path.suffix + ".order.tmp")
+    try:
+        with settings_path.open("r", encoding="utf-8", newline="") as settings_file:
+            updated = settings_file.read()
+        for index, role in enumerate(ordered_roles):
+            updated = _settings_with_role_setting(updated, role, "TRACK_ORDER", str(index))
+        with temporary.open("w", encoding="utf-8", newline="") as settings_file:
+            settings_file.write(updated)
+        temporary.replace(settings_path)
+    except OSError as error:
+        with contextlib.suppress(OSError):
+            temporary.unlink()
+        raise BridgeError(f"Could not save track order: {error}") from error
+    return {"settings_path": str(settings_path), "roles": ordered_roles}
+
+
+def _next_track_order(tracks: dict[object, object]) -> int:
+    """Return an append-only Studio order after every configured role."""
+
+    highest = -1
+    for fallback, raw_settings in enumerate(tracks.values()):
+        settings = raw_settings if isinstance(raw_settings, dict) else {}
+        try:
+            order = int(settings.get("TRACK_ORDER", fallback))
+        except (TypeError, ValueError):
+            order = fallback
+        highest = max(highest, order)
+    return highest + 1
 
 
 def _settings_with_imported_role(
@@ -554,6 +604,7 @@ def _settings_with_imported_role(
     *,
     track_filename: str | None = None,
     render_enabled: bool = True,
+    track_order: int | None = None,
 ) -> str:
     """Append one role to the Tracks mapping without reformatting the song profile."""
 
@@ -573,6 +624,7 @@ def _settings_with_imported_role(
     block = [
         newline,
         f"  {role}:{newline}",
+        f"    TRACK_ORDER: {max(0, int(track_order or 0))}{newline}",
         f"    TRACK_FILENAME: {_format_setting_value(track_filename or role)}{newline}",
         f"    LYRICS_FILENAME: {_format_setting_value(role)}{newline}",
         f"    DEC_SETUP: {_format_setting_value(setup)}{newline}",
@@ -671,6 +723,7 @@ def _add_midi_track_role(song: str, track_index: object, role_value: object) -> 
             "[:np][:dv hs 100]",
             track_filename=source_track.name,
             render_enabled=False,
+            track_order=_next_track_order(tracks),
         )
         with temporary.open("w", encoding="utf-8", newline="") as settings_file:
             settings_file.write(updated_text)
@@ -736,6 +789,7 @@ def _remove_midi_track_role(song: str, role: str) -> dict[str, Any]:
 
 def _imported_track_settings(role: str, setup: str) -> dict[str, Any]:
     return {
+        "TRACK_ORDER": 0,
         "TRACK_FILENAME": role,
         "LYRICS_FILENAME": role,
         "DEC_SETUP": setup,
@@ -810,7 +864,12 @@ def _import_dectalk_track(song: str, requested_role: object, source_text: object
         midi.save(temporary_midi)
         settings_text = original_settings.decode("utf-8-sig")
         temporary_settings.write_text(
-            _settings_with_imported_role(settings_text, role, imported.setup or "[:np][:dv hs 100]"),
+            _settings_with_imported_role(
+                settings_text,
+                role,
+                imported.setup or "[:np][:dv hs 100]",
+                track_order=_next_track_order(settings.get("Tracks") or {}),
+            ),
             encoding="utf-8",
             newline="",
         )
@@ -1303,6 +1362,7 @@ def _prepare_midi_preview(song: str, role: str, requested_program: object = 0) -
     return {
         "path": str(path),
         "duration_ms": round(inspection.midi.duration_seconds * 1000),
+        "start_ms": round(source_track.first_note_ms or 0),
         "track": source_track.name,
         "program": program,
     }
@@ -1427,6 +1487,7 @@ def _append_split_lane_roles(song: str, source_role: str, lanes: list[dict[str, 
         raise BridgeError(f"Role {source_role!r} is not configured for split lane creation.")
     used = set(str(name) for name in tracks)
     additions: dict[str, dict[str, Any]] = {}
+    first_added_order = _next_track_order(tracks)
     for lane in lanes[1:]:
         lane_number = int(lane["number"])
         role_name = _unique_role_name(f"{source_role}_Voice_{lane_number}", lane_number, used)
@@ -1435,6 +1496,7 @@ def _append_split_lane_roles(song: str, source_role: str, lanes: list[dict[str, 
         role_settings["LYRICS_FILENAME"] = role_name
         role_settings["RENDER_ENABLED"] = False
         role_settings["SPLIT_SOURCE_ROLE"] = source_role
+        role_settings["TRACK_ORDER"] = first_added_order + len(additions)
         role_settings.pop("SPECTROGRAM", None)
         additions[role_name] = role_settings
 
@@ -1600,7 +1662,7 @@ def _restore_polyphonic_split_backup(song: str, source_role: str, backup_value: 
 def _write_candidate_alignment(song: str, role: str, report: dict[str, Any], text: str) -> dict[str, Any]:
     source_path, transcript_path, candidate_path, report_path = _role_paths(song, role)
     candidate_path.parent.mkdir(parents=True, exist_ok=True)
-    normalized_text = text.rstrip() + "\n"
+    normalized_text = text.rstrip() + "\n" if text.strip() else ""
     candidate_path.write_text(normalized_text, encoding="utf-8")
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     try:
@@ -1614,14 +1676,17 @@ def _write_candidate_alignment(song: str, role: str, report: dict[str, Any], tex
     return {"text": normalized_text, "path": str(candidate_path), "report": report, "report_path": str(report_path), "source_in_sync": source_in_sync}
 
 
-def _update_candidate_text(song: str, role: str, text: object) -> dict[str, Any]:
+def _update_candidate_text(song: str, role: str, text: object, allow_empty: bool = False) -> dict[str, Any]:
     """Save positional lyric edits while preserving the complete alignment map."""
 
     _, transcript_path, candidate_path, report_path = _role_paths(song, role)
     if not transcript_path.is_file():
         raise BridgeError("This role has no preserved transcript. Draft its first alignment before editing the candidate.")
-    if not _has_lyric_content(candidate_path) or not report_path.is_file():
+    if not candidate_path.is_file() or not report_path.is_file():
         raise BridgeError("This role has no alignment candidate to update.")
+    edited_text = str(text or "")
+    if not edited_text.strip() and not allow_empty:
+        raise BridgeError("The candidate is empty. Hold Ctrl while saving to confirm clearing it.")
     try:
         current_text = candidate_path.read_text(encoding="utf-8")
         report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -1630,7 +1695,7 @@ def _update_candidate_text(song: str, role: str, text: object) -> dict[str, Any]
     if not isinstance(report, dict):
         raise BridgeError("The alignment candidate report is invalid.")
     try:
-        updated_report, updated_text = replace_alignment_words(report, current_text, str(text or ""))
+        updated_report, updated_text = replace_alignment_words(report, current_text, edited_text)
     except (TypeError, ValueError) as error:
         raise BridgeError(str(error)) from error
     return _write_candidate_alignment(song, role, updated_report, updated_text)
@@ -1640,15 +1705,15 @@ def _load_candidate(song: str, role: str) -> dict[str, Any]:
     """Return the durable working alignment, rebuilding only missing review metadata."""
 
     source_path, transcript_path, candidate_path, report_path = _role_paths(song, role)
-    candidate_has_content = _has_lyric_content(candidate_path)
-    if not candidate_has_content and not _has_lyric_content(source_path):
+    candidate_exists = _has_lyric_content(candidate_path) or (candidate_path.is_file() and report_path.is_file())
+    if not candidate_exists and not _has_lyric_content(source_path):
         return {"exists": False}
-    alignment_path = candidate_path if candidate_has_content else source_path
+    alignment_path = candidate_path if candidate_exists else source_path
     try:
         text = alignment_path.read_text(encoding="utf-8")
         report = (
             json.loads(report_path.read_text(encoding="utf-8"))
-            if candidate_has_content and report_path.is_file()
+            if candidate_exists
             else None
         )
     except (OSError, json.JSONDecodeError) as error:
@@ -1688,7 +1753,7 @@ def _alignment_template_sources(song: str, role: str) -> list[dict[str, str]]:
         if candidate_track["lyrics_filename"] != target["lyrics_filename"]:
             continue
         _, _, candidate_path, report_path = _role_paths(song, candidate_role)
-        if candidate_path.is_file() and report_path.is_file():
+        if _has_lyric_content(candidate_path) and report_path.is_file():
             sources.append({"role": candidate_role, "path": str(candidate_path)})
     return sources
 
@@ -1932,6 +1997,8 @@ def handle(request: dict[str, Any]) -> Any:
         return _update_spectrogram_video_settings(song, request.get("intermediate_animation_mode"))
     if command == "update_render_enabled_roles":
         return _update_render_enabled_roles(song, request.get("roles"))
+    if command == "update_track_order":
+        return _update_track_order(song, request.get("roles"))
     if command == "import_dectalk_track":
         return _import_dectalk_track(song, request.get("role"), request.get("text"))
     if command == "add_midi_track_role":
@@ -1952,7 +2019,7 @@ def handle(request: dict[str, Any]) -> Any:
     if command == "save_transcript":
         return _write_transcript(song, role, request.get("text"))
     if command == "update_candidate_text":
-        return _update_candidate_text(song, role, request.get("text"))
+        return _update_candidate_text(song, role, request.get("text"), request.get("allow_empty") is True)
     if command == "validate_transcript":
         return _validate_transcript(request.get("text"))
     if command == "create_note_skeleton":

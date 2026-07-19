@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ArrowLeft, BarChart3, Check, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, FileAudio, FileInput, FolderOpen, GitBranch, Inbox, Info, LoaderCircle, MessageSquareText, Minus, Moon, Music2, Music3, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BarChart3, Check, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheck, FileAudio, FileInput, FolderOpen, GitBranch, GripVertical, Inbox, Info, LoaderCircle, MessageSquareText, Minus, Moon, Music2, Music3, PanelLeft, Pause, PenLine, Play, Plus, Settings2, Sparkles, Square, Sun, Trash2, WandSparkles, X } from "lucide-react";
 import { bridge, deleteSong, media, openFfmpegDownload, openMedia, openSongFolder, renderJobStatus, spectrogramJobStatus, startRenderJob, startSpectrogramJob, type MediaStatus, type RenderJobStatus, type SpectrogramJobStatus } from "./bridge";
 import { PianoRoll } from "./PianoRoll";
 import { midiInstrumentGroups, midiInstrumentName } from "./midiInstruments";
@@ -18,6 +18,7 @@ const lyricEditorTips = [
   { lead: "Avoid extremely short notes.", message: <>Tiny MIDI notes leave too little time for DECTALK to pronounce a phoneme cleanly. In Track tuning, raise <strong>Minimum note duration</strong> to borrow available following rest time; lengthen or merge notes externally when no rest is available.</> },
 ];
 const lyricTipIntervals = [10000, 6500, 4000];
+const PHRASE_WORDS_PER_PAGE = 8;
 const FFMPEG_WINGET_COMMAND = "winget install --id Gyan.FFmpeg.Shared --exact";
 const UI_STATE_KEY = "dectalk-choir-studio.ui-state";
 type StoredUiState = { song?: string; role?: string; stage?: Stage; theme?: "dark" | "light"; midi_instrument?: number; render_roles?: Record<string, string[]> };
@@ -242,6 +243,9 @@ export default function App() {
   const [midiTrackImportOpen, setMidiTrackImportOpen] = useState(false);
   const [lyricsModalOpen, setLyricsModalOpen] = useState(false);
   const [splitRoleName, setSplitRoleName] = useState("");
+  const [draggedTrackRole, setDraggedTrackRole] = useState("");
+  const [trackDropTarget, setTrackDropTarget] = useState<{ role: string; edge: "before" | "after" } | null>(null);
+  const [trackDeleteArmed, setTrackDeleteArmed] = useState(false);
   const [busy, setBusy] = useState("");
   const [errorNotice, setErrorNotice] = useState({ message: "", sequence: 0 });
   const error = errorNotice.message;
@@ -280,6 +284,19 @@ export default function App() {
   }, [invalidateAlignmentLoad]);
   useEffect(() => { bridge<string[]>({ command: "list_songs" }).then((items) => { setSongs(items); const restoredSong = storedUiState.song && items.includes(storedUiState.song) ? storedUiState.song : items[0]; if (restoredSong) void loadSong(restoredSong, restoredSong === storedUiState.song ? storedUiState.role : ""); }).catch((cause) => setError(String(cause))); }, [loadSong]);
   useEffect(() => { document.documentElement.dataset.theme = theme; window.localStorage.setItem("dectalk-choir-studio.theme", theme); }, [theme]);
+  useEffect(() => {
+    const armTrackDelete = (event: KeyboardEvent) => setTrackDeleteArmed(event.ctrlKey || event.key === "Control");
+    const disarmTrackDelete = (event: KeyboardEvent) => setTrackDeleteArmed(event.ctrlKey);
+    const clearTrackDelete = () => setTrackDeleteArmed(false);
+    window.addEventListener("keydown", armTrackDelete);
+    window.addEventListener("keyup", disarmTrackDelete);
+    window.addEventListener("blur", clearTrackDelete);
+    return () => {
+      window.removeEventListener("keydown", armTrackDelete);
+      window.removeEventListener("keyup", disarmTrackDelete);
+      window.removeEventListener("blur", clearTrackDelete);
+    };
+  }, []);
   useEffect(() => {
     if (!errorNotice.message) return;
     const sequence = errorNotice.sequence;
@@ -328,13 +345,14 @@ export default function App() {
       startAlignmentTransition(() => {
         setTemplateSources(workspace.templates);
         const candidate = workspace.candidate;
-        if (!candidate.exists || !candidate.text || !candidate.path || !candidate.report) {
+        if (!candidate.exists || !candidate.path || !candidate.report) {
           setDraftState(null); setDraftRole(""); setAlignment(null); setAlignmentRole(""); setSelectedPhrase(null);
           setAlignmentLoading(false);
           return;
         }
-        setDraftState({ text: candidate.text, path: candidate.path, warnings: [], review_segments: [], tight_gap_ms: 0 });
-        setDraftRole(roleName); setAlignment({ text: candidate.text, report: candidate.report, source_in_sync: candidate.source_in_sync }); setAlignmentRole(roleName); setSelectedPhrase(firstPhraseLine(candidate.report));
+        const candidateText = candidate.text ?? "";
+        setDraftState({ text: candidateText, path: candidate.path, warnings: [], review_segments: [], tight_gap_ms: 0 });
+        setDraftRole(roleName); setAlignment({ text: candidateText, report: candidate.report, source_in_sync: candidate.source_in_sync }); setAlignmentRole(roleName); setSelectedPhrase(firstPhraseLine(candidate.report));
         setAlignmentLoading(false);
       });
     }).catch((cause) => { if (!cancelled && requestId === alignmentRequestRef.current) { setTemplateSources([]); setAlignmentLoading(false); setError(String(cause)); } });
@@ -356,14 +374,14 @@ export default function App() {
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [lyricsModalOpen]);
-  const runDraft = async () => {
+  const runDraft = async (allowEmpty = false) => {
     if (!song || !roleName) return;
     invalidateAlignmentLoad();
     const updatingCandidate = transcriptState?.kind === "candidate";
     setBusy(updatingCandidate ? "Saving alignment candidate" : "Drafting and aligning lyrics"); setError("");
     try {
       if (updatingCandidate) {
-        const pending = await bridge<AlignmentState & { path: string }>({ command: "update_candidate_text", song, role: roleName, text: transcript });
+        const pending = await bridge<AlignmentState & { path: string }>({ command: "update_candidate_text", song, role: roleName, text: transcript, allow_empty: allowEmpty });
         setDraftState({ text: pending.text, path: pending.path, warnings: [], review_segments: [], tight_gap_ms: 0 }); setDraftRole(roleName);
         setTranscript(pending.text); setSavedTranscript(pending.text); setTranscriptState((current) => current ? { ...current, text: pending.text, kind: "candidate", candidate_exists: true } : current);
         setAlignment(pending); setAlignmentRole(roleName); setSelectedPhrase((current) => current ?? firstPhraseLine(pending.report)); setLyricsPrompt(""); setLyricsModalOpen(false); setStage("align");
@@ -383,7 +401,8 @@ export default function App() {
       setError("Wait for this role's lyric source to finish loading before creating a note skeleton.");
       return;
     }
-    if (transcriptState?.transcript_exists) {
+    const replacingEmptyCandidate = transcriptState?.kind === "candidate" && !transcript.trim();
+    if (transcriptState?.transcript_exists && !replacingEmptyCandidate) {
       setError("A preserved transcript or alignment candidate already exists. Edit the candidate directly, or delete the transcript manually to restart drafting.");
       return;
     }
@@ -391,7 +410,11 @@ export default function App() {
     setBusy("Creating note skeleton"); setError("");
     try {
       const skeleton = await bridge<NoteSkeleton>({ command: "create_note_skeleton", song, role: roleName, placeholder });
-      setTranscript(skeleton.text); setDraftState(null); setDraftRole(""); setAlignment(null); setAlignmentRole(""); setSelectedPhrase(null); setLyricsPrompt("");
+      setTranscript(skeleton.text);
+      if (!replacingEmptyCandidate) {
+        setDraftState(null); setDraftRole(""); setAlignment(null); setAlignmentRole(""); setSelectedPhrase(null);
+      }
+      setLyricsPrompt("");
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
   const selectStage = (nextStage: Stage) => {
@@ -449,6 +472,11 @@ export default function App() {
   const noteBearingMidiTracks = inspection?.midi?.tracks.filter((item) => item.note_count > 0) ?? [];
   const availableMidiTracks = noteBearingMidiTracks.filter((item) => !configuredMidiSources.has(item.name));
   const importedMidiTrackCount = noteBearingMidiTracks.filter((item) => configuredMidiSources.has(item.name)).length;
+  const tempoBpms = inspection?.midi?.tempo_bpms ?? [];
+  const formatBpm = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(1);
+  const tempoLabel = tempoBpms.length
+    ? `${formatBpm(tempoBpms[0])}${tempoBpms.length > 1 ? `–${formatBpm(tempoBpms[tempoBpms.length - 1])}` : ""} BPM`
+    : "Tempo unknown";
   const sourceSyncStateFor = (item: Role): Role["source_sync_state"] => item.role === roleName && activeAlignment && item.source_sync_state !== "absent"
     ? activeAlignment.source_in_sync === true ? "synced" : "pending"
     : item.source_sync_state;
@@ -471,6 +499,90 @@ export default function App() {
       setRenderRolesBySong((current) => ({ ...current, [song]: previous }));
       setError(cause instanceof Error ? cause.message : String(cause));
     }
+  };
+  const reorderTrack = async (sourceRole: string, targetRole: string, edge: "before" | "after") => {
+    if (!song || !inspection || sourceRole === targetRole || busy) return;
+    const previousRoles = inspection.roles;
+    const movingRole = previousRoles.find((item) => item.role === sourceRole);
+    if (!movingRole) return;
+    const reordered = previousRoles.filter((item) => item.role !== sourceRole);
+    const targetIndex = reordered.findIndex((item) => item.role === targetRole);
+    if (targetIndex < 0) return;
+    reordered.splice(targetIndex + (edge === "after" ? 1 : 0), 0, movingRole);
+    if (reordered.every((item, index) => item.role === previousRoles[index]?.role)) return;
+    const orderedRoles = reordered.map((item, index) => ({ ...item, track_order: index }));
+    setInspection({ ...inspection, roles: orderedRoles });
+    setBusy("Saving track order");
+    setError("");
+    try {
+      await bridge({ command: "update_track_order", song, roles: orderedRoles.map((item) => item.role) });
+    } catch (cause) {
+      setInspection((current) => current ? { ...current, roles: previousRoles } : current);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy("");
+      setDraggedTrackRole("");
+      setTrackDropTarget(null);
+    }
+  };
+  const beginTrackPointerDrag = (event: ReactPointerEvent<HTMLButtonElement>, sourceRole: string) => {
+    if (busy || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.focus();
+    const pointerId = event.pointerId;
+    const startY = event.clientY;
+    let dragging = false;
+    let target: { role: string; edge: "before" | "after" } | null = null;
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+    };
+    const move = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      if (!dragging && Math.abs(pointerEvent.clientY - startY) < 4) return;
+      if (!dragging) {
+        dragging = true;
+        setDraggedTrackRole(sourceRole);
+      }
+      pointerEvent.preventDefault();
+      const list = document.querySelector<HTMLElement>(".track-list");
+      if (list) {
+        const listBounds = list.getBoundingClientRect();
+        if (pointerEvent.clientY < listBounds.top + 24) list.scrollBy({ top: -18 });
+        else if (pointerEvent.clientY > listBounds.bottom - 24) list.scrollBy({ top: 18 });
+      }
+      const candidates = [...document.querySelectorAll<HTMLElement>(".track-entry[data-track-role]")]
+        .filter((entry) => entry.dataset.trackRole !== sourceRole)
+        .map((entry) => {
+          const bounds = entry.getBoundingClientRect();
+          return {
+            role: entry.dataset.trackRole ?? "",
+            edge: pointerEvent.clientY < bounds.top + bounds.height / 2 ? "before" as const : "after" as const,
+            distance: Math.abs(pointerEvent.clientY - (bounds.top + bounds.height / 2)),
+          };
+        })
+        .sort((left, right) => left.distance - right.distance);
+      target = candidates[0] ? { role: candidates[0].role, edge: candidates[0].edge } : null;
+      setTrackDropTarget(target);
+    };
+    const finish = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      cleanup();
+      if (dragging && target) void reorderTrack(sourceRole, target.role, target.edge);
+      else { setDraggedTrackRole(""); setTrackDropTarget(null); }
+    };
+    const cancel = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      cleanup();
+      setDraggedTrackRole("");
+      setTrackDropTarget(null);
+    };
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", cancel);
   };
   const closeSplitModal = useCallback(() => setSplitRoleName(""), []);
   const refreshAfterMidiSplit = useCallback(async () => {
@@ -510,9 +622,29 @@ export default function App() {
     {deleteSongArmed && <section className="song-delete-confirm" role="alertdialog" aria-label={`Delete ${song}`}><div><strong>Delete {song}?</strong><span>Its inputs, settings, and generated outputs will be removed.</span></div><button className="secondary" type="button" onClick={() => setDeleteSongArmed(false)} disabled={!!busy}>Cancel</button><button className="danger" type="button" onClick={() => void removeSong()} disabled={!!busy}>Delete song</button></section>}
     {error && <div className="error-toast" role="alert" aria-live="assertive" onMouseEnter={resetErrorTimeout} onFocus={resetErrorTimeout}><CircleAlert size={17} /><span>{error}</span><div className="error-actions">{/ffmpeg/i.test(error) && <><button type="button" className="error-action" onClick={() => void openFfmpegDownload().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Open FFmpeg's official Windows download guidance">Get FFmpeg</button><button type="button" className="error-action" onClick={() => void navigator.clipboard.writeText(FFMPEG_WINGET_COMMAND).then(() => setError(`Copied: ${FFMPEG_WINGET_COMMAND}`)).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))} title="Copy the Windows Package Manager install command">Copy winget</button></>}<button type="button" onClick={() => setError("")} title="Dismiss error" aria-label="Dismiss error"><X size={16} /></button></div></div>}
     <section className={`workspace ${stage === "review" ? "review-workspace" : ""}`}>
-      <aside className="track-rail"><h2 className="rail-song-title" title={song}>{song || "Song"}</h2><div className="rail-heading"><PanelLeft size={16} /><span><b>Tracks</b><small>{importedMidiTrackCount} / {noteBearingMidiTracks.length} imported</small></span></div><div className="track-list">{inspection?.roles.map((item) => {
+      <aside className="track-rail"><h2 className="rail-song-title" title={song}>{song || "Song"}</h2><div className="rail-heading"><PanelLeft size={16} /><span><b>Tracks</b><small title={tempoBpms.length > 1 ? `MIDI tempo values: ${tempoBpms.map(formatBpm).join(", ")} BPM` : tempoLabel}>{importedMidiTrackCount} / {noteBearingMidiTracks.length} imported · {tempoLabel}</small></span></div><div className="track-list">{inspection?.roles.map((item, itemIndex) => {
         const syncState = sourceSyncStateFor(item);
-        return <div key={item.role} className={`track-entry${item.role === roleName ? " active" : ""}`}><div className="track"><button className="track-select-hitbox" type="button" onClick={() => selectRole(item.role)} aria-pressed={item.role === roleName} aria-label={`Select ${item.role}`} /><span className="track-copy"><span className="track-name-row"><strong title={`${item.role} · ${item.midi_source_name}`}>{item.role}</strong><SourceSyncMarker state={syncState} /></span><TrackOverlapBadge role={item} onSplit={() => { if (item.role !== roleName) selectRole(item.role); setSplitRoleName(item.role); }} /><span className="track-range-actions"><RailPitchRange value={item.midi_range} /><button className="track-delete-control" type="button" disabled={!!busy} title={`Remove ${item.role} from Choir; its MIDI and lyric files will be kept`} aria-label={`Remove ${item.role} from Choir`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void removeMidiTrack(item.role); }}><Trash2 size={12} /></button></span></span><span className="track-note-total" title={`${item.note_count} MIDI notes`} aria-label={`${item.note_count} MIDI notes`}><b>{item.note_count}</b><Music3 size={13} aria-hidden="true" /></span></div></div>;
+        const dropEdge = trackDropTarget?.role === item.role ? trackDropTarget.edge : "";
+        return <div
+          key={item.role}
+          data-track-role={item.role}
+          className={`track-entry${item.role === roleName ? " active" : ""}${item.role === draggedTrackRole ? " dragging" : ""}${dropEdge ? ` order-${dropEdge}` : ""}`}
+        ><div className="track"><button
+          className="track-order-handle"
+          type="button"
+          draggable={false}
+          aria-disabled={!!busy}
+          title={`Reorder ${item.role}\nDrag to move; use Up or Down while focused`}
+          aria-label={`Reorder ${item.role}`}
+          onPointerDown={(event) => beginTrackPointerDrag(event, item.role)}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+            event.preventDefault();
+            const target = inspection.roles[itemIndex + (event.key === "ArrowUp" ? -1 : 1)];
+            if (target) void reorderTrack(item.role, target.role, event.key === "ArrowUp" ? "before" : "after");
+          }}
+        ><GripVertical size={15} aria-hidden="true" /></button><button className="track-select-hitbox" type="button" onClick={() => selectRole(item.role)} aria-pressed={item.role === roleName} aria-label={`Select ${item.role}`} /><span className="track-copy"><span className="track-name-row"><strong title={`${item.role} · ${item.midi_source_name}`}>{item.role}</strong><SourceSyncMarker state={syncState} /></span><TrackOverlapBadge role={item} onSplit={() => { if (item.role !== roleName) selectRole(item.role); setSplitRoleName(item.role); }} /><span className="track-range-actions"><RailPitchRange value={item.midi_range} /><button className={`track-delete-control${trackDeleteArmed ? " armed" : ""}`} type="button" disabled={!!busy || !trackDeleteArmed} title={trackDeleteArmed ? `Ctrl-click to remove ${item.role}; its MIDI and lyric files will be kept` : `Hold Ctrl to remove ${item.role} from Choir`} aria-label={trackDeleteArmed ? `Remove ${item.role} from Choir` : `Hold Ctrl to remove ${item.role} from Choir`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); if (!event.ctrlKey) return; void removeMidiTrack(item.role); }}><Trash2 size={12} /></button></span></span><span className="track-note-total" title={`${item.note_count} MIDI notes`} aria-label={`${item.note_count} MIDI notes`}><b>{item.note_count}</b><Music3 size={13} aria-hidden="true" /></span></div></div>;
       })}</div><button className="rail-add-track" type="button" onClick={() => setMidiTrackImportOpen(true)} disabled={!availableMidiTracks.length || !!busy} title={availableMidiTracks.length ? `Add one of ${availableMidiTracks.length} unconfigured note-bearing MIDI tracks` : "Every note-bearing MIDI track is already configured"}><Plus size={14} /><span>{availableMidiTracks.length ? "Add MIDI track" : "All MIDI tracks added"}</span>{availableMidiTracks.length > 0 && <b>{availableMidiTracks.length}</b>}</button></aside>
       <section className={`surface${stage === "align" ? " align-surface" : ""}`}>
         {stage === "align" && <AlignStage role={role} inspection={inspection} song={song} alignment={activeAlignment} loading={alignmentLoading || alignmentTransitionPending} midiInstrument={midiInstrument} onMidiInstrumentChange={setMidiInstrument} templateSources={templateSources} onAdoptTemplate={adoptTemplate} onOpenLyrics={() => setLyricsModalOpen(true)} onOpenSplitter={() => role && setSplitRoleName(role.role)} onApplied={async () => { const refreshed = await bridge<SongInspection>({ command: "inspect_song", song }); setInspection(refreshed); }} setAlignment={setAlignment} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} busy={busy} setBusy={setBusy} setError={setError} />}
@@ -620,7 +752,7 @@ function DectalkImportModal({ song, onClose, onImported, setError }: { song: str
     {createNewSong && <label><span>Song name</span><input autoFocus value={songName} onChange={(event) => setSongName(event.target.value)} pattern="[A-Za-z0-9_-]+" maxLength={64} title="Use letters, numbers, underscores, or hyphens" placeholder="ImportedSong" disabled={working} /></label>}
     <label><span>Track name</span><input autoFocus={!createNewSong} value={role} onChange={(event) => setRole(event.target.value)} placeholder="Imported Voice" disabled={working} /></label>
     <label className="dectalk-import-source"><span>DECTalk command string</span><textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="[:np][d&lt;80,12&gt;ao&lt;500,12&gt;ng&lt;80,12&gt;][:tone 440,500]" disabled={working} /></label>
-    <p className="dectalk-import-note">Contiguous phonemes at one pitch become one MIDI note. Timed underscores become rests; rests of 250 ms or longer start a new phrase. Tone events use <code>[:tone frequency_hz,duration_ms]</code>; Studio retains that exact command and maps its frequency to the nearest MIDI note for alignment.</p>
+    <p className="dectalk-import-note">Contiguous phonemes at one pitch become one MIDI note. Timed underscores become rests; rests of 250 ms or longer start a new phrase. Long runs are grouped into at most eight-note alignment phrases without adding silence. Tone events use <code>[:tone frequency_hz,duration_ms]</code>; Studio retains that exact command and maps its frequency to the nearest MIDI note for alignment.</p>
     <div className="split-actions"><button type="button" className="secondary" onClick={onClose} disabled={working}>Cancel</button><button type="submit" className="primary" disabled={working || !role.trim() || !text.trim() || (createNewSong ? !songName.trim() : !song)}>{working ? <><LoaderCircle size={15} /> Importing...</> : <><FileInput size={15} /> {createNewSong ? "Create song and open Align" : "Import and open Align"}</>}</button></div>
   </form></section>;
 }
@@ -687,13 +819,15 @@ function PolyphonicSplitModal({ song, role, onClose, onSourceChanged, setError }
   </section></section>;
 }
 
-function LyricsStage({ transcript, transcriptLoaded, transcriptState, setTranscript, validation, onDraft, onNoteSkeleton, busy, draftState, dirty, prompt }: { transcript: string; transcriptLoaded: boolean; transcriptState: TranscriptState | null; setTranscript(value: string): void; validation: { invalid_words: string[]; normalized_lines: string[]; ok: boolean } | null; onDraft(): void; onNoteSkeleton(placeholder: string): void; busy: string; draftState: DraftState | null; dirty: boolean; prompt: string }) {
+function LyricsStage({ transcript, transcriptLoaded, transcriptState, setTranscript, validation, onDraft, onNoteSkeleton, busy, draftState, dirty, prompt }: { transcript: string; transcriptLoaded: boolean; transcriptState: TranscriptState | null; setTranscript(value: string): void; validation: { invalid_words: string[]; normalized_lines: string[]; ok: boolean } | null; onDraft(allowEmpty?: boolean): void; onNoteSkeleton(placeholder: string): void; busy: string; draftState: DraftState | null; dirty: boolean; prompt: string }) {
   const [skeletonPhoneme, setSkeletonPhoneme] = useState("duw");
   const [replaceArmed, setReplaceArmed] = useState(false);
+  const [emptyCandidateArmed, setEmptyCandidateArmed] = useState(false);
   const hasLyrics = Boolean(transcript.trim());
   const candidateMode = transcriptState?.kind === "candidate";
   const lifecycleLocked = Boolean(transcriptState?.transcript_exists);
-  const skeletonDisabled = Boolean(busy) || !transcriptLoaded || !skeletonPhoneme.trim() || lifecycleLocked;
+  const emptyCandidate = candidateMode && !hasLyrics;
+  const skeletonDisabled = Boolean(busy) || !transcriptLoaded || !skeletonPhoneme.trim() || (lifecycleLocked && !emptyCandidate);
   const createSkeleton = () => {
     if (!replaceArmed) {
       setReplaceArmed(true);
@@ -706,22 +840,42 @@ function LyricsStage({ transcript, transcriptLoaded, transcriptState, setTranscr
     if (prompt) document.querySelector<HTMLTextAreaElement>(".transcript")?.focus();
   }, [prompt]);
   useEffect(() => { setReplaceArmed(false); }, [transcript, skeletonPhoneme]);
+  useEffect(() => {
+    const armEmptyCandidate = (event: KeyboardEvent) => setEmptyCandidateArmed(event.ctrlKey || event.key === "Control");
+    const disarmEmptyCandidate = (event: KeyboardEvent) => setEmptyCandidateArmed(event.ctrlKey);
+    const clearEmptyCandidate = () => setEmptyCandidateArmed(false);
+    window.addEventListener("keydown", armEmptyCandidate);
+    window.addEventListener("keyup", disarmEmptyCandidate);
+    window.addEventListener("blur", clearEmptyCandidate);
+    return () => {
+      window.removeEventListener("keydown", armEmptyCandidate);
+      window.removeEventListener("keyup", disarmEmptyCandidate);
+      window.removeEventListener("blur", clearEmptyCandidate);
+    };
+  }, []);
   const skeletonTitle = !transcriptLoaded
     ? "Wait for this role's lyric source to finish loading before creating a note skeleton."
-    : lifecycleLocked
+    : lifecycleLocked && !emptyCandidate
       ? "An alignment lifecycle already exists. Edit the candidate directly, or delete the preserved transcript manually to restart."
+    : emptyCandidate
+      ? replaceArmed
+        ? `Confirm replacing the empty candidate with a ${skeletonPhoneme} note skeleton.`
+        : "Create a note skeleton in this empty candidate; save it to rebuild ownership against the MIDI notes."
     : replaceArmed
       ? `Confirm creation of a ${skeletonPhoneme} note skeleton${hasLyrics ? " and replacement of the current lyrics" : ""}.`
       : "Create one direct DECTALK phoneme per MIDI note, grouped at MIDI rests.";
   const canCreateFirstDraft = transcriptLoaded && !lifecycleLocked;
-  const pendingDraft = transcriptLoaded && hasLyrics && (candidateMode ? dirty : canCreateFirstDraft) && !busy;
+  const emptyCandidateOverride = candidateMode && dirty && !hasLyrics && emptyCandidateArmed;
+  const pendingDraft = transcriptLoaded && (hasLyrics || emptyCandidateOverride) && (candidateMode ? dirty : canCreateFirstDraft) && !busy;
   const settledDraft = transcriptLoaded && hasLyrics && !pendingDraft && !busy;
   const statusText = !transcriptLoaded ? "Loading lyrics" : dirty ? "Changes pending" : "";
   const actionLabel = candidateMode ? "Save candidate" : "Draft alignment";
   const actionTitle = !transcriptLoaded
     ? "Wait for this role's lyrics to finish loading"
     : candidateMode
-      ? dirty ? "Save word changes without changing phrase timing or note ownership" : "This text already matches the alignment candidate"
+      ? dirty
+        ? `Save candidate changes; structural word changes are reflowed across the existing MIDI notes${!hasLyrics ? `\n${emptyCandidateArmed ? "Ctrl-click to save an intentionally empty candidate" : "Hold Ctrl to confirm clearing this candidate"}` : ""}`
+        : "This text already matches the alignment candidate"
       : lifecycleLocked
         ? "Delete the preserved transcript manually before restarting timing draft generation"
         : "Draft alignment against this role's MIDI notes";
@@ -738,7 +892,7 @@ function LyricsStage({ transcript, transcriptLoaded, transcriptState, setTranscr
           <input value={skeletonPhoneme} onChange={(event) => setSkeletonPhoneme(event.target.value)} aria-label="Note skeleton phoneme" placeholder="duw" />
           <button className="secondary" onClick={createSkeleton} disabled={skeletonDisabled}><Music2 size={16} /> {replaceArmed ? "Confirm skeleton" : "Note skeleton"}</button>
         </label>
-        <button className={`primary draft-alignment-control${pendingDraft ? " pending" : ""}${settledDraft ? " settled" : ""}`} onClick={onDraft} title={actionTitle} disabled={!!busy || !pendingDraft}><WandSparkles size={16} /> {actionLabel}</button>
+        <button className={`primary draft-alignment-control${pendingDraft ? " pending" : ""}${settledDraft ? " settled" : ""}`} onClick={(event) => onDraft(event.ctrlKey)} title={actionTitle} disabled={!!busy || !pendingDraft}><WandSparkles size={16} /> {actionLabel}</button>
       </div>
     </section>
     <LyricsTipBoard />
@@ -776,18 +930,19 @@ function AlignStage({ role, inspection, song, alignment, loading, midiInstrument
   const [insertWord, setInsertWord] = useState("");
   const [insertOpen, setInsertOpen] = useState(false);
   const [draggedWord, setDraggedWord] = useState<number | null>(null);
-  const [dragTargetWord, setDragTargetWord] = useState<number | null>(null);
+  const [dragTargetWord, setDragTargetWord] = useState<{ wordIndex: number; edge: "before" | "after" } | null>(null);
   const suppressWordClickRef = useRef(false);
-  const [showAllWords, setShowAllWords] = useState(false);
+  const [wordPage, setWordPage] = useState(0);
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [applyArmed, setApplyArmed] = useState(false);
   const [templateRole, setTemplateRole] = useState("");
   const [virtualSplitPreviewNote, setVirtualSplitPreviewNote] = useState<number | null>(null);
-  const [cursorMs, setCursorMs] = useState(0);
+  const [cursorMs, setCursorMs] = useState(role?.midi_track?.first_note_ms ?? 0);
   const [mediaState, setMediaState] = useState<MediaStatus | null>(null);
   const [mediaLabel, setMediaLabel] = useState("Preview this role while you align its lyrics.");
   const active = Boolean(mediaState && !["stopped", "not ready"].includes(mediaState.mode));
   const missingNoteWords = Number(alignment?.report.summary.zero_note_tokens ?? 0);
+  const emptyCandidate = alignment !== null && !alignment.text.trim();
   const sourceInSync = alignment?.source_in_sync === true;
   const invalidPhraseLines = alignment?.report.token_counts?.filter((item) => item.note_count === 0).map((item) => item.line) ?? [];
   const phraseEntries = alignment?.report.notes.filter((entry) => entry.line === selectedPhrase) ?? [];
@@ -802,18 +957,27 @@ function AlignStage({ role, inspection, song, alignment, loading, midiInstrument
     ?.filter((item) => item.line === selectedPhrase)
     .map((item) => ({ line: item.line, word_index: item.word_index, lyric: item.word, note_count: item.note_count, mode: item.mode ?? "sing", duration_ms: wordDurations.get(`${item.line}:${item.word_index}`) ?? 0 }))
     ?? phraseEntries.filter((entry, index, items) => index === 0 || entry.word_index !== items[index - 1].word_index).map((entry) => ({ ...entry, mode: "sing", note_count: entry.word_note_count ?? 1 }));
-  const visibleWords = showAllWords ? words : words.slice(0, 10);
-  const hiddenWordCount = words.length - visibleWords.length;
+  const wordPageCount = Math.max(1, Math.ceil(words.length / PHRASE_WORDS_PER_PAGE));
+  const currentWordPage = Math.min(wordPage, wordPageCount - 1);
+  const visibleWords = words.slice(currentWordPage * PHRASE_WORDS_PER_PAGE, (currentWordPage + 1) * PHRASE_WORDS_PER_PAGE);
+  const selectedWordPosition = words.findIndex((item) => item.line === selectedWord?.line && item.word_index === selectedWord?.wordIndex);
   useEffect(() => {
     if (!active) return;
     const timer = window.setInterval(() => media<MediaStatus>("media_status").then(setMediaState).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause))), 250);
     return () => window.clearInterval(timer);
   }, [active, setError]);
   useEffect(() => {
-    setCursorMs(0); setMediaState(null); setMediaLabel("Preview this role while you align its lyrics."); setSelectedWord(null); setInsertWord(""); setInsertOpen(false); setApplyArmed(false); setTemplateRole(""); setShowAllWords(false); setVirtualSplitPreviewNote(null);
+    setCursorMs(role?.midi_track?.first_note_ms ?? 0); setMediaState(null); setMediaLabel("Preview this role while you align its lyrics."); setSelectedWord(null); setInsertWord(""); setInsertOpen(false); setApplyArmed(false); setTemplateRole(""); setWordPage(0); setVirtualSplitPreviewNote(null);
     return () => { void media<MediaStatus>("media_stop").catch(() => undefined); };
-  }, [role?.role]);
+  }, [role?.role, role?.midi_track?.first_note_ms]);
   useEffect(() => { setApplyArmed(false); }, [alignment?.text]);
+  useEffect(() => { setWordPage(0); }, [selectedPhrase]);
+  useEffect(() => {
+    if (selectedWordPosition >= 0) setWordPage(Math.floor(selectedWordPosition / PHRASE_WORDS_PER_PAGE));
+  }, [selectedWordPosition]);
+  useEffect(() => {
+    setWordPage((current) => Math.min(current, wordPageCount - 1));
+  }, [wordPageCount]);
   useEffect(() => {
     const armDelete = (event: KeyboardEvent) => setDeleteArmed(event.ctrlKey || event.key === "Control");
     const disarmDelete = (event: KeyboardEvent) => setDeleteArmed(event.ctrlKey);
@@ -831,7 +995,7 @@ function AlignStage({ role, inspection, song, alignment, loading, midiInstrument
     if (!role || !song) return;
     setError(""); setMediaLabel("Preparing selected MIDI track...");
     try {
-      const preview = await bridge<{ path: string; duration_ms: number; track: string; program: number }>({ command: "prepare_midi_preview", song, role: role.role, program: midiInstrument });
+      const preview = await bridge<{ path: string; duration_ms: number; start_ms: number; track: string; program: number }>({ command: "prepare_midi_preview", song, role: role.role, program: midiInstrument });
       const next = await media<MediaStatus>("media_play", { path: preview.path, kind: "midi", fromMs: cursorMs });
       setMediaState({ ...next, duration_ms: Math.max(next.duration_ms, preview.duration_ms) }); setMediaLabel(`Playing ${preview.track} with ${midiInstrumentName(preview.program)}.`);
     } catch (cause) { const message = cause instanceof Error ? cause.message : String(cause); setError(message); setMediaLabel("MIDI preview unavailable."); }
@@ -917,7 +1081,7 @@ function AlignStage({ role, inspection, song, alignment, loading, midiInstrument
     const startX = event.clientX;
     const startY = event.clientY;
     let dragging = false;
-    let targetWordIndex: number | null = null;
+    let target: { wordIndex: number; edge: "before" | "after" } | null = null;
     suppressWordClickRef.current = false;
 
     const cleanup = () => {
@@ -935,22 +1099,17 @@ function AlignStage({ role, inspection, song, alignment, loading, midiInstrument
         setDraggedWord(sourceWordIndex);
       }
       pointerEvent.preventDefault();
-      const direction = horizontalDelta < 0 ? -1 : 1;
-      const candidates = [...document.querySelectorAll<HTMLElement>(`.word-token[data-line="${line}"][data-word-index]`)]
-        .map((element) => ({ element, index: Number.parseInt(element.dataset.wordIndex ?? "", 10) }))
-        .filter(({ index }) => Number.isInteger(index) && (direction < 0 ? index < sourceWordIndex : index > sourceWordIndex))
-        .map(({ element, index }) => {
-          const bounds = element.getBoundingClientRect();
-          return { index, distance: Math.abs(pointerEvent.clientX - (bounds.left + bounds.width / 2)) + Math.abs(pointerEvent.clientY - (bounds.top + bounds.height / 2)) * 0.5 };
-        })
-        .sort((left, right) => left.distance - right.distance);
-      targetWordIndex = candidates[0]?.index ?? null;
-      setDragTargetWord(targetWordIndex);
+      const hovered = document.elementFromPoint(pointerEvent.clientX, pointerEvent.clientY)?.closest<HTMLElement>(`.word-token[data-line="${line}"][data-word-index]`);
+      const hoveredIndex = Number.parseInt(hovered?.dataset.wordIndex ?? "", 10);
+      target = Number.isInteger(hoveredIndex) && hoveredIndex !== sourceWordIndex
+        ? { wordIndex: hoveredIndex, edge: hoveredIndex < sourceWordIndex ? "before" : "after" }
+        : null;
+      setDragTargetWord(target);
     };
     const finish = (pointerEvent: PointerEvent) => {
       if (pointerEvent.pointerId !== pointerId) return;
       cleanup();
-      if (dragging && targetWordIndex !== null) void reorderWord(sourceWordIndex, targetWordIndex);
+      if (dragging && target) void reorderWord(sourceWordIndex, target.wordIndex);
       else { setDraggedWord(null); setDragTargetWord(null); }
       window.setTimeout(() => { suppressWordClickRef.current = false; }, 0);
     };
@@ -978,7 +1137,6 @@ function AlignStage({ role, inspection, song, alignment, loading, midiInstrument
       await onApplied();
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(""); }
   };
-  const selectedWordPosition = words.findIndex((item) => item.line === selectedWord?.line && item.word_index === selectedWord?.wordIndex);
   const selectedWordNoteCount = selectedWordPosition >= 0 ? words[selectedWordPosition].note_count : 0;
   const virtualSplitTargetLabel = selectedWordPosition >= 0 && selectedWordNoteCount === 0 ? words[selectedWordPosition].lyric ?? undefined : undefined;
   const canDecreaseWordNotes = words.length > 1 && selectedWordNoteCount > 1;
@@ -993,21 +1151,22 @@ function AlignStage({ role, inspection, song, alignment, loading, midiInstrument
       const isSelected = selectedWord?.line === item.line && selectedWord.wordIndex === item.word_index;
       const previewsSplitClaim = virtualSplitPreviewNote !== null && isSelected && item.note_count === 0;
       const wordTooltip = `${item.lyric ?? "Word"}\n${item.note_count} ♩ | ${item.note_count === 0 ? "Needs a note" : `${item.duration_ms} ms`}\nDrag to reorder within this phrase`;
-      return <div className={`word-token ${draggedWord === item.word_index ? "dragging" : ""} ${dragTargetWord === item.word_index && draggedWord !== item.word_index ? "drop-target" : ""} ${item.note_count === 0 ? "invalid" : ""} ${previewsSplitClaim ? "split-target" : ""}`} style={{ "--word-color": wordColor(item.line, item.word_index) } as CSSProperties} key={`${item.line}-${item.word_index}`} data-line={item.line} data-word-index={item.word_index} title={wordTooltip} onPointerDown={(event) => beginWordPointerDrag(event, item.line!, item.word_index!)}>
+      return <div className={`word-token ${draggedWord === item.word_index ? "dragging" : ""} ${dragTargetWord?.wordIndex === item.word_index && draggedWord !== item.word_index ? `drop-${dragTargetWord.edge}` : ""} ${item.note_count === 0 ? "invalid" : ""} ${previewsSplitClaim ? "split-target" : ""}`} style={{ "--word-color": wordColor(item.line, item.word_index) } as CSSProperties} key={`${item.line}-${item.word_index}`} data-line={item.line} data-word-index={item.word_index} title={wordTooltip} onPointerDown={(event) => beginWordPointerDrag(event, item.line!, item.word_index!)}>
         <button className={isSelected ? "selected" : ""} onClick={() => { if (suppressWordClickRef.current) return; setSelectedWord({ line: item.line!, wordIndex: item.word_index! }); setInsertOpen(false); }}>{item.lyric}<small>{previewsSplitClaim ? "Will claim split" : item.note_count === 0 ? "Needs note" : `${item.duration_ms} ms`}</small></button>
         {isSelected && <span className="word-quick-controls"><button type="button" className={item.mode === "speak" ? "active" : ""} title={item.mode === "speak" ? "Use pitched singing for this word" : "Speak this word normally within its claimed MIDI time"} aria-label={item.mode === "speak" ? "Switch this word to singing" : "Switch this word to normal speech"} disabled={!!busy} onPointerDown={(event) => event.stopPropagation()} onClick={() => void toggleWordMode()}><MessageSquareText size={12} /></button><button type="button" title="Give one note back to this phrase" aria-label="Decrease this word's note count" disabled={!!busy || !canDecreaseWordNotes} onPointerDown={(event) => event.stopPropagation()} onClick={() => void adjustWordNoteCount(-1)}><Minus size={12} /></button><button type="button" title="Assign one more note from this phrase" aria-label="Increase this word's note count" disabled={!!busy || !canIncreaseWordNotes} onPointerDown={(event) => event.stopPropagation()} onClick={() => void adjustWordNoteCount(1)}><Plus size={12} /></button></span>}
         <span className="word-bottom-controls"><span className="word-note-count" aria-label={`${item.note_count} owned note${item.note_count === 1 ? "" : "s"}`}>{previewsSplitClaim ? "0->1♩" : `${item.note_count}♩`}</span><button className={deleteArmed ? "word-delete armed" : "word-delete"} type="button" title={deleteArmed ? `Ctrl-click to remove ${item.lyric}` : `Hold Ctrl to remove ${item.lyric}`} aria-label={deleteArmed ? `Remove ${item.lyric}` : `Hold Ctrl to remove ${item.lyric}`} draggable={false} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { if (!event.ctrlKey) return; void removeWord(item.line!, item.word_index!); }} disabled={!!busy || !deleteArmed}><Minus size={11} /></button></span>
       </div>;
-    })}{hiddenWordCount > 0 && <button className="word-more" type="button" onClick={() => setShowAllWords(true)}>{hiddenWordCount} more</button>}{showAllWords && words.length > 10 && <button className="word-more" type="button" onClick={() => setShowAllWords(false)}>Collapse</button>}<div className="word-insert-anchor"><button className="add-word" type="button" title="Insert a word after the selected word" aria-label="Insert a word" onClick={() => { const anchor = selectedWord ?? (words.length ? { line: words[words.length - 1].line!, wordIndex: words[words.length - 1].word_index! } : null); if (anchor) { setSelectedWord(anchor); setInsertOpen(true); } }} disabled={!words.length || !!busy}><Plus size={15} /></button></div></div>}
+    })}</div>}
+    {hasSelectedPhrase && <div className="phrase-word-actions">{wordPageCount > 1 && <nav className="word-pagination" aria-label="Phrase word pages"><button type="button" title="Previous words" aria-label="Previous word page" onClick={() => setWordPage((page) => Math.max(0, page - 1))} disabled={currentWordPage === 0}><ArrowLeft size={13} /></button><span>{currentWordPage + 1}/{wordPageCount}</span><button type="button" title="Next words" aria-label="Next word page" onClick={() => setWordPage((page) => Math.min(wordPageCount - 1, page + 1))} disabled={currentWordPage >= wordPageCount - 1}><ArrowRight size={13} /></button></nav>}<div className="word-insert-anchor"><button className="add-word" type="button" title="Insert a word after the selected word" aria-label="Insert a word" onClick={() => { const anchor = selectedWord ?? (words.length ? { line: words[words.length - 1].line!, wordIndex: words[words.length - 1].word_index! } : null); if (anchor) { setSelectedWord(anchor); setInsertOpen(true); } }} disabled={!words.length || !!busy}><Plus size={15} /></button></div></div>}
     {insertOpen && <form className="word-insert-popover" onSubmit={(event) => { event.preventDefault(); void insert(); }}><input autoFocus value={insertWord} onChange={(event) => setInsertWord(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setInsertOpen(false); setInsertWord(""); } }} placeholder="New word" /><button className="primary" type="submit" disabled={!!busy || !insertWord.trim()}>Insert</button><button className="secondary" type="button" aria-label="Cancel insert" title="Cancel insert" onClick={() => { setInsertOpen(false); setInsertWord(""); }}><X size={14} /></button></form>}
   </div> : null;
   return (
     <section className="align-workspace">
       <section className="midi-transport align-transport">
         <div className="transport-group"><button className="primary" onClick={() => void playMidi()} disabled={!role?.midi_track}><Play size={15} /> Play MIDI</button><button className="secondary icon-command" title={mediaState?.paused ? "Resume preview" : "Pause preview"} onClick={() => void togglePause()} disabled={!active}>{mediaState?.paused ? <Play size={15} /> : <Pause size={15} />}</button><button className="secondary icon-command" title="Stop playback" onClick={() => void stop()} disabled={!mediaState}><Square size={14} /></button><label className="midi-instrument-control" title="Use one consistent General MIDI instrument for every selected-track preview"><Music3 size={14} /><select aria-label="MIDI preview instrument" value={midiInstrument} onChange={(event) => void changeMidiInstrument(Number(event.target.value))}>{midiInstrumentGroups.map(([group, names], groupIndex) => <optgroup key={group} label={group}>{names.map((name, index) => { const program = groupIndex * 8 + index; return <option key={program} value={program}>{name}</option>; })}</optgroup>)}</select></label><button className="secondary align-lyrics-command" type="button" title="Edit the working lyric draft without leaving Align" onClick={onOpenLyrics}><PenLine size={15} /> Edit track lyrics</button><span>{mediaLabel}</span></div>
-        <div className="transport-group align-actions"><span className={missingNoteWords ? "save-state dirty" : "save-state"}>{loading ? "Loading alignment..." : alignment ? missingNoteWords ? `${missingNoteWords} word${missingNoteWords === 1 ? "" : "s"} need a note` : sourceInSync ? "Source in sync" : alignment.report.template?.source_role ? `Template: ${alignment.report.template.source_role}` : "Pending source update" : "Not drafted"}</span>{templateSources.length > 0 && <label className="template-picker" title="Copy a saved same-lyrics alignment and remap it to this track by time"><select value={templateRole} onChange={(event) => setTemplateRole(event.target.value)}><option value="">Aligned template</option>{templateSources.map((source) => <option key={source.role} value={source.role}>{source.role}</option>)}</select><button type="button" className="secondary" onClick={() => onAdoptTemplate(templateRole)} disabled={!!busy || !templateRole}>Use</button></label>}<label className="phoneme-export-control" title={`Generate outputs/_phonemes/${role?.role ?? "Track"}.txt during Render Audio using this track's final aligned timing`}><input type="checkbox" checked={role?.export_phoneme_string ?? false} onChange={(event) => void setPhonemeStringExport(event.target.checked)} disabled={!role || !!busy} /><span>Phoneme output</span></label>{role?.polyphony && role.polyphony > 1 ? <button type="button" className="polyphony-warning-control" onClick={onOpenSplitter} title={overlapTooltip(role, "Rendering sequentializes overlaps; split it to preserve each chord voice.")}><CircleAlert size={14} /><span>{role.polyphony}-note overlap</span><GitBranch size={14} /></button> : null}{alignment && <button className={`secondary apply-source-control${applyArmed ? " apply-alignment-confirm" : ""}${sourceInSync ? " apply-alignment-complete" : ""}`} title={sourceInSync ? "The configured lyric source matches this alignment" : missingNoteWords ? "Resolve words without MIDI notes before applying" : applyArmed ? "Confirm publishing this alignment to the configured lyric source" : "Validate and replace the configured lyric input used by choir.py"} onClick={() => { if (applyArmed) void apply(); else setApplyArmed(true); }} disabled={!!busy || missingNoteWords > 0 || sourceInSync}>{sourceInSync ? <><Check size={14} /> Applied</> : applyArmed ? "Apply alignment" : "Apply to source"}</button>}</div>
+        <div className="transport-group align-actions"><span className={missingNoteWords || emptyCandidate ? "save-state dirty" : "save-state"}>{loading ? "Loading alignment..." : alignment ? emptyCandidate ? "Empty candidate" : missingNoteWords ? `${missingNoteWords} word${missingNoteWords === 1 ? "" : "s"} need a note` : sourceInSync ? "Source in sync" : alignment.report.template?.source_role ? `Template: ${alignment.report.template.source_role}` : "Pending source update" : "Not drafted"}</span>{templateSources.length > 0 && <label className="template-picker" title="Copy a saved same-lyrics alignment and remap it to this track by time"><select value={templateRole} onChange={(event) => setTemplateRole(event.target.value)}><option value="">Aligned template</option>{templateSources.map((source) => <option key={source.role} value={source.role}>{source.role}</option>)}</select><button type="button" className="secondary" onClick={() => onAdoptTemplate(templateRole)} disabled={!!busy || !templateRole}>Use</button></label>}<label className="phoneme-export-control" title={`Generate outputs/_phonemes/${role?.role ?? "Track"}.txt during Render Audio using this track's final aligned timing`}><input type="checkbox" checked={role?.export_phoneme_string ?? false} onChange={(event) => void setPhonemeStringExport(event.target.checked)} disabled={!role || !!busy} /><span>Phoneme output</span></label>{role?.polyphony && role.polyphony > 1 ? <button type="button" className="polyphony-warning-control" onClick={onOpenSplitter} title={overlapTooltip(role, "Rendering sequentializes overlaps; split it to preserve each chord voice.")}><CircleAlert size={14} /><span>{role.polyphony}-note overlap</span><GitBranch size={14} /></button> : null}{alignment && <button className={`secondary apply-source-control${applyArmed ? " apply-alignment-confirm" : ""}${sourceInSync ? " apply-alignment-complete" : ""}`} title={sourceInSync ? "The configured lyric source matches this alignment" : emptyCandidate ? "Add lyrics before applying this candidate" : missingNoteWords ? "Resolve words without MIDI notes before applying" : applyArmed ? "Confirm publishing this alignment to the configured lyric source" : "Validate and replace the configured lyric input used by choir.py"} onClick={() => { if (applyArmed) void apply(); else setApplyArmed(true); }} disabled={!!busy || emptyCandidate || missingNoteWords > 0 || sourceInSync}>{sourceInSync ? <><Check size={14} /> Applied</> : applyArmed ? "Apply alignment" : "Apply to source"}</button>}</div>
       </section>
-      <div className="align-roll-shell">{overlay && <div className="align-phrase-toolbar">{overlay}</div>}<PianoRoll track={role?.midi_track ?? null} durationSeconds={inspection?.midi?.duration_seconds ?? 0} durationTicks={inspection?.midi?.duration_ticks} alignment={alignment?.report.notes} virtualSplits={alignment?.report.virtual_splits} selectedPhrase={selectedPhrase} selectedWord={selectedWord} invalidPhraseLines={invalidPhraseLines} playheadMs={active ? mediaState?.position_ms : null} playbackPaused={Boolean(mediaState?.paused)} onCursorChange={(milliseconds) => void seek(milliseconds)} onSelectPhrase={(line) => { setSelectedPhrase(line); setSelectedWord(null); setShowAllWords(false); }} onPlaybackPhraseChange={(line) => { setSelectedPhrase(line); setSelectedWord(null); setShowAllWords(false); }} onSelectWord={(line, wordIndex) => { setSelectedPhrase(line); setSelectedWord({ line, wordIndex }); setShowAllWords(wordIndex >= 10); }} onResizeWord={(edge, movement) => void adjust(edge, movement)} onResizePhrase={(edge, movement) => void adjustPhrase(edge, movement)} onVirtualSplitPreview={setVirtualSplitPreviewNote} virtualSplitTargetLabel={virtualSplitTargetLabel} onAddVirtualSplit={(noteIndex, fraction) => void addVirtualSplit(noteIndex, fraction)} />{loading && <div className="align-loading" role="status" aria-live="polite"><LoaderCircle size={17} /><span>Loading alignment and phrase map...</span></div>}</div>
+      <div className="align-roll-shell">{overlay && <div className="align-phrase-toolbar">{overlay}</div>}<PianoRoll track={role?.midi_track ?? null} durationSeconds={inspection?.midi?.duration_seconds ?? 0} durationTicks={inspection?.midi?.duration_ticks} alignment={alignment?.report.notes} virtualSplits={alignment?.report.virtual_splits} selectedPhrase={selectedPhrase} selectedWord={selectedWord} invalidPhraseLines={invalidPhraseLines} playheadMs={active ? mediaState?.position_ms : null} playbackPaused={Boolean(mediaState?.paused)} onCursorChange={(milliseconds) => void seek(milliseconds)} onSelectPhrase={(line) => { setSelectedPhrase(line); setSelectedWord(null); setWordPage(0); }} onPlaybackPhraseChange={(line) => { setSelectedPhrase(line); setSelectedWord(null); setWordPage(0); }} onSelectWord={(line, wordIndex) => { setSelectedPhrase(line); setSelectedWord({ line, wordIndex }); }} onResizeWord={(edge, movement) => void adjust(edge, movement)} onResizePhrase={(edge, movement) => void adjustPhrase(edge, movement)} onVirtualSplitPreview={setVirtualSplitPreviewNote} virtualSplitTargetLabel={virtualSplitTargetLabel} onAddVirtualSplit={(noteIndex, fraction) => void addVirtualSplit(noteIndex, fraction)} />{loading && <div className="align-loading" role="status" aria-live="polite"><LoaderCircle size={17} /><span>Loading alignment and phrase map...</span></div>}</div>
     </section>
   );
 }

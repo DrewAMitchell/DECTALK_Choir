@@ -66,6 +66,7 @@ Under `Tracks:`, the YAML key is the output part name. It controls output folder
 
 - `LYRICS_FILENAME`: lyric file stem in `inputs/lyrics/`. Defaults to the output part name.
 - `TRACK_FILENAME`: MIDI track title to read. Defaults to the output part name.
+- `TRACK_ORDER`: zero-based Choir Studio display order. Reordering the rail rewrites these values atomically; it never reorders the YAML mapping, MIDI tracks, filenames, or render identity. New roles append after the highest existing value, while profiles without the field retain their YAML order until first moved.
 - This allows separate output identities while sharing sources:
   ```yaml
   Tracks:
@@ -166,7 +167,7 @@ The header's timed-DECTalk importer is the deliberate exception to the normal dr
 
 When a phrase is shortened, release surplus notes from the nearest multi-note word on the dragged edge before moving inward; the literal first or last word does not need to own two notes.
 
-The lyric modal's large editor is the sole visible working surface. Before the first draft it edits the transcript input; after a candidate exists it loads and edits that candidate directly. Candidate bulk rewording maps words positionally while preserving phrase lines, note ownership, virtual splits, and timing even when pasted line wrapping differs. A word-count mismatch must leave both candidate artifacts untouched and direct structural insertion/deletion to Align. Timing heuristics must never rerun for an existing candidate; deleting the immutable transcript manually is the explicit reset boundary. Do not add a second generated-text preview.
+The lyric modal's large editor is the sole visible working surface. Before the first draft it edits the transcript input; after a candidate exists it loads and edits that candidate directly. Same-count candidate rewording maps words positionally while preserving phrase lines, note ownership, virtual splits, and timing even when pasted line wrapping differs. Structural word-count edits are allowed and reflow against the candidate's existing MIDI note timeline; they do not rerun transcript drafting. An intentionally empty candidate requires Ctrl while saving, remains the authoritative empty working file, and cannot be applied or rendered. Deleting the immutable transcript manually is the explicit full reset boundary. Do not add a second generated-text preview.
 
 ## Consonant/Vowel Timing
 

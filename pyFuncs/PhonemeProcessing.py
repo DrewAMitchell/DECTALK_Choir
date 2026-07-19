@@ -11,7 +11,7 @@ DECTALK_Arpabet_Conversions = {
 
 DIRECT_VOWEL_PHONEMES = {
     'aa', 'ae', 'ah', 'ao', 'ar', 'aw', 'ax', 'ay',
-    'eh', 'en', 'er', 'ey',
+    'eh', 'el', 'en', 'er', 'ey',
     'ih', 'ir', 'iy', 'ix',
     'or', 'ow', 'oy',
     'uh', 'ur', 'uw', 'yu',
@@ -209,7 +209,7 @@ def convertDirectSyllableToPhonemes(fooWord):
         return([])
 
     outPhonemes = splitDirectPhonemeSyllable(fooWord[1:], strict=True)
-    if len(outPhonemes) == 0 or not any(isDirectVowelPhoneme(foo) for foo in outPhonemes):
+    if len(outPhonemes) == 0:
         return([])
     return(stressDirectVowels(outPhonemes))
 

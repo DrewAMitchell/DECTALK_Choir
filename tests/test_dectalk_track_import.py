@@ -7,6 +7,7 @@ from pyFuncs.DectalkTrackImport import (
     append_imported_track,
     parse_dectalk_track,
 )
+from pyFuncs.ChoirInspection import _lyric_conversion_issue
 from pyFuncs.PhonemeProcessing import TONE_EVENT_MARKER, lyricsToPhonemes
 from tools import choir_studio_bridge as bridge
 import assistant
@@ -36,6 +37,40 @@ def test_parse_respects_bracket_note_boundaries_and_inherited_pitch():
 
     assert [note.midi_pitch for note in imported.notes] == [78, 78, 73, 75]
     assert [note.lyric_token for note in imported.notes] == ["`dah", "`dah", "`fray", "`dey"]
+
+
+def test_parse_attaches_natural_duration_trailing_codas_to_timed_note():
+    imported = parse_dectalk_track("[ssteh<300,28>pp][ngaw<300,33>nn]", -48)
+
+    assert [note.midi_pitch for note in imported.notes] == [76, 81]
+    assert [note.lyric_token for note in imported.notes] == ["`sstehpp", "`ngawnn"]
+    assert imported.duration_ms == 600
+
+
+def test_parse_assigns_untimed_codas_and_onsets_between_timed_notes():
+    imported = parse_dectalk_track(
+        "[kae<400,15>n yu<400,18>w][keh<400,28>ts r eh<400,30>d][spae<400,20>ngel<400,22>d]",
+        -48,
+    )
+
+    assert [note.lyric_token for note in imported.notes] == [
+        "`kaen", "`yuw", "`kehts", "`rehd", "`spae", "`ngeld",
+    ]
+
+
+def test_alignment_validation_accepts_explicit_consonant_only_note(tmp_path):
+    source = tmp_path / "Consonants.txt"
+    source.write_text("`rrll\n", encoding="utf-8")
+
+    assert _lyric_conversion_issue(source) is None
+
+
+def test_imported_visual_phrases_cap_at_eight_notes_without_adding_rest():
+    source = "[" + "".join(f"dah<100,{12 + index % 2}>" for index in range(9)) + "]"
+    imported = parse_dectalk_track(source, -48)
+
+    assert [len(line.split()) for line in imported.lyric_text.rstrip().splitlines()] == [8, 1]
+    assert imported.notes[7].end_ms == imported.notes[8].start_ms == 800
 
 
 def test_parse_maps_tone_frequency_and_duration_without_polluting_setup():

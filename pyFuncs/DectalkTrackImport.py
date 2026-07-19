@@ -16,6 +16,8 @@ TOKEN_PATTERN = re.compile(
 )
 COMMAND_PATTERN = re.compile(r"\[:([^\]]+)\]")
 TONE_PATTERN = re.compile(r"\[:(?:t|tone)\s+(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*\]", re.IGNORECASE)
+BRACKET_PATTERN = re.compile(r"\[([^\]]*)\]")
+MAX_PHRASE_NOTES = 8
 
 
 class DectalkTrackImportError(ValueError):
@@ -63,6 +65,57 @@ def _setup_from_commands(text: str) -> str:
     return "".join(commands)
 
 
+def _merge_untimed_phonemes(text: str) -> str:
+    """Fold natural-duration phonemes into the neighboring timed event."""
+
+    def bare_symbols(fragment: str) -> str | None:
+        if re.sub(r"[A-Za-z\s]", "", fragment):
+            return None
+        return "".join(re.findall(r"[A-Za-z]+", fragment))
+
+    def require_symbols(symbols: str) -> None:
+        if symbols and not phonemes.splitDirectPhonemeSyllable(symbols, strict=True):
+            raise DectalkTrackImportError(f"Unsupported untimed DECTalk phoneme: {symbols}")
+
+    def normalize_group(group_match: re.Match[str]) -> str:
+        body = group_match.group(1)
+        if body.lstrip().startswith(":"):
+            return group_match.group(0)
+        timed = list(TOKEN_PATTERN.finditer(body))
+        if not timed:
+            return group_match.group(0)
+        symbols = [match.group(1) for match in timed]
+        prefix = bare_symbols(body[:timed[0].start()])
+        if prefix is None:
+            return group_match.group(0)
+        require_symbols(prefix)
+        symbols[0] = prefix + symbols[0]
+        for index in range(1, len(timed)):
+            gap = body[timed[index - 1].end():timed[index].start()]
+            adjacent_coda = re.match(r"[A-Za-z]+", gap)
+            coda = adjacent_coda.group(0) if adjacent_coda else ""
+            remainder = gap[len(coda):]
+            onset = bare_symbols(remainder)
+            if onset is None:
+                return group_match.group(0)
+            require_symbols(coda)
+            require_symbols(onset)
+            symbols[index - 1] += coda
+            symbols[index] = onset + symbols[index]
+        suffix = bare_symbols(body[timed[-1].end():])
+        if suffix is None:
+            return group_match.group(0)
+        require_symbols(suffix)
+        symbols[-1] += suffix
+        normalized = "".join(
+            symbol + body[match.end(1):match.end()]
+            for symbol, match in zip(symbols, timed)
+        )
+        return f"[{normalized}]"
+
+    return BRACKET_PATTERN.sub(normalize_group, text)
+
+
 def parse_dectalk_track(
     text: str,
     note_offset: int,
@@ -84,8 +137,9 @@ def parse_dectalk_track(
             + ", ".join(sorted(set(unsupported_events)))
         )
 
-    phoneme_matches = list(TOKEN_PATTERN.finditer(source))
-    tone_matches = list(TONE_PATTERN.finditer(source))
+    parse_source = _merge_untimed_phonemes(source)
+    phoneme_matches = list(TOKEN_PATTERN.finditer(parse_source))
+    tone_matches = list(TONE_PATTERN.finditer(parse_source))
     events = sorted(
         [(match.start(), "phoneme", match) for match in phoneme_matches]
         + [(match.start(), "tone", match) for match in tone_matches],
@@ -95,7 +149,7 @@ def parse_dectalk_track(
         raise DectalkTrackImportError("No timed phonemes or tone events were found.")
 
     first_event_offset = events[0][0]
-    for command_match in COMMAND_PATTERN.finditer(source):
+    for command_match in COMMAND_PATTERN.finditer(parse_source):
         command_name = command_match.group(1).strip().lower().split(None, 1)[0]
         if command_match.start() > first_event_offset and command_name not in {"t", "tone"}:
             raise DectalkTrackImportError(
@@ -103,7 +157,7 @@ def parse_dectalk_track(
                 "place track-wide voice and rate commands before the first timed event."
             )
 
-    remainder = TOKEN_PATTERN.sub("", COMMAND_PATTERN.sub("", source))
+    remainder = TOKEN_PATTERN.sub("", COMMAND_PATTERN.sub("", parse_source))
     remainder = remainder.replace("[", "").replace("]", "")
     if remainder.strip():
         preview = " ".join(remainder.split())[:80]
@@ -153,7 +207,7 @@ def parse_dectalk_track(
         symbol = match.group(1).lower()
         duration_ms = float(match.group(2))
         pitch_text = match.group(3)
-        separator = source[previous_match_end:match.start()]
+        separator = parse_source[previous_match_end:match.start()]
         if current is not None and "]" in separator and "[" in separator:
             finish_note()
         previous_match_end = match.end()
@@ -198,7 +252,7 @@ def parse_dectalk_track(
 
     lines: list[list[str]] = []
     for note in notes:
-        if note.phrase_break_before or not lines:
+        if note.phrase_break_before or not lines or len(lines[-1]) >= MAX_PHRASE_NOTES:
             lines.append([])
         lines[-1].append(note.lyric_token)
     lyric_text = "\n".join(" ".join(line) for line in lines) + "\n"
